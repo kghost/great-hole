@@ -32,12 +32,12 @@ class udp : public std::enable_shared_from_this<udp> {
 				friend class udp;
 		};
 
-		udp(boost::asio::io_service& io_service) : socket(io_service) {
+		udp(boost::asio::io_service& io_service) : socket(io_service), read_pending(false), write_pending(false) {
 			socket.open(boost::asio::ip::udp::v4());
 			socket.bind(boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), 0));
 		}
 
-		udp(boost::asio::io_service& io_service, boost::asio::ip::udp::endpoint bind) : socket(io_service) {
+		udp(boost::asio::io_service& io_service, boost::asio::ip::udp::endpoint bind) : socket(io_service), read_pending(false), write_pending(false) {
 			socket.open(boost::asio::ip::udp::v4());
 			socket.bind(bind);
 		}
@@ -51,6 +51,8 @@ class udp : public std::enable_shared_from_this<udp> {
 		void write(const boost::asio::ip::udp::endpoint &peer, packet &p, std::function<write_handler> &handler);
 		void schedule_read();
 		void schedule_write();
+
+		bool read_pending, write_pending;
 
 		boost::asio::ip::udp::socket socket;
 

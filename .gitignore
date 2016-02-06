@@ -1,7 +1,9 @@
 *~
 *.swp
 *.o
+*.lo
 .deps/
+.libs/
 Makefile
 Makefile.in
 /aclocal.m4
@@ -18,5 +20,7 @@ Makefile.in
 /missing
 /stamp-h1
 /compile
+/libtool
+/ltmain.sh
 
 /src/great-hole

@@ -1,22 +1,20 @@
 #include "endpoint-udp.hpp"
 
 void udp::read(boost::asio::ip::udp::endpoint peer, std::function<read_handler> handler) {
-	bool start_read = false;
-	if (reading_channel.empty()) {
-		start_read = true;
-	}
-
 	assert(reading_channel.find(peer) == reading_channel.end());
 	reading_channel[peer] = handler;
-
-	if (start_read) schedule_read();
+	schedule_read();
 }
 
 void udp::schedule_read() {
+	if (read_pending) return;
+	read_pending = true;
+
 	packet p;
 	socket.async_receive_from(
 		boost::asio::buffer(p.data.get(), p.sz), read_peer,
 		[this, p](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+			read_pending = false;
 			if (!ec) {
 				packet r(p);
 				r.sz = bytes_transferred;
@@ -31,22 +29,19 @@ void udp::schedule_read() {
 			} else {
 				BOOST_LOG_TRIVIAL(info) << "udp read error: " << ec.category().name() << ':' << ec.value();
 			}
-			if (!reading_channel.empty()) schedule_read();
+			schedule_read();
 		});
 }
 
 void udp::write(const boost::asio::ip::udp::endpoint &peer, packet &p, std::function<write_handler> &handler) {
-	bool start_write = false;
-	if (write_queue.empty()) {
-		start_write = true;
-	}
-
 	write_queue.push(std::make_tuple(peer, p, handler));
-
-	if (start_write) schedule_write();
+	schedule_write();
 }
 
 void udp::schedule_write() {
+	if (write_pending) return;
+	write_pending = true;
+
 	auto next = write_queue.front();
 	auto p = std::get<1>(next);
 	auto handler = std::get<2>(next);
@@ -54,6 +49,7 @@ void udp::schedule_write() {
 	socket.async_send_to(
 		boost::asio::buffer(p.data.get(), p.sz), std::get<0>(next),
 		[this, handler, p](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+			write_pending = false;
 			packet r(p);
 			r.sz = bytes_transferred;
 			handler(ec, r);

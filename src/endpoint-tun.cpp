@@ -2,7 +2,7 @@
 
 #include <linux/if_tun.h>
 
-tun::tun(boost::asio::io_service &io_service) :
+tun::tun(boost::asio::io_service &io_service, const std::string &&name) :
 	boost::asio::posix::basic_descriptor<tun_service>(io_service)
 {
 	int fd = ::open("/dev/net/tun", O_RDWR);
@@ -15,6 +15,7 @@ tun::tun(boost::asio::io_service &io_service) :
 	try {
 		struct ifreq ifr;
 		memset(&ifr, 0, sizeof(ifr));
+		strncpy(ifr.ifr_name, name.c_str(), IFNAMSIZ);
 		ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
 		int err;
 		if ((err = ::ioctl(fd, TUNSETIFF, (void *) &ifr)) < 0) {

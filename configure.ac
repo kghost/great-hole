@@ -4,6 +4,7 @@ AC_CONFIG_MACRO_DIRS([m4])
 
 AC_INIT(great-hole, 0.1.0)
 AC_CONFIG_SRCDIR([src/main.cpp])
+LT_INIT
 AM_INIT_AUTOMAKE
 AM_CONFIG_HEADER(config.h)
 
@@ -44,4 +45,4 @@ dnl Checks for typedefs, structures, and compiler characteristics.
 
 dnl Checks for library functions.
 
-AC_OUTPUT([Makefile src/Makefile])
+AC_OUTPUT([Makefile src/Makefile libs/Makefile libs/lua-5.3.2/Makefile])

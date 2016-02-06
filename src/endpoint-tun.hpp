@@ -142,8 +142,7 @@ class tun_service : public boost::asio::detail::service_base<tun_service> {
 
 class tun : public boost::asio::posix::basic_descriptor<tun_service> {
 	public:
-		tun(boost::asio::io_service &io_service);
-		tun(boost::asio::io_service &io_service, const std::string &name);
+		tun(boost::asio::io_service &io_service, const std::string &&name);
 
 		template <typename MutableBufferSequence, typename ReadHandler>
 		BOOST_ASIO_INITFN_RESULT_TYPE(ReadHandler,
