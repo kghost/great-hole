@@ -1,3 +1,6 @@
+#include <cassert>
+#include <boost/log/trivial.hpp>
+
 #include "endpoint-udp.hpp"
 
 void udp::read(boost::asio::ip::udp::endpoint peer, std::function<read_handler> handler) {
@@ -10,31 +13,31 @@ void udp::schedule_read() {
 	if (read_pending) return;
 	read_pending = true;
 
-	packet p;
+	std::shared_ptr<packet> pp(new packet);
+	auto me = shared_from_this();
 	socket.async_receive_from(
-		boost::asio::buffer(p.data.get(), p.sz), read_peer,
-		[this, p](const boost::system::error_code& ec, std::size_t bytes_transferred) {
-			read_pending = false;
+		boost::asio::buffer(pp->data.get(), pp->sz), read_peer,
+		[me, pp](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+			me->read_pending = false;
 			if (!ec) {
-				packet r(p);
-				r.sz = bytes_transferred;
-				auto h = reading_channel.find(read_peer);
-				if(h != reading_channel.end()) {
+				pp->sz = bytes_transferred;
+				auto h = me->reading_channel.find(me->read_peer);
+				if(h != me->reading_channel.end()) {
 					auto handler = h->second;
-					reading_channel.erase(h);
-					handler(ec, r);
+					me->reading_channel.erase(h);
+					handler(ec, *pp);
 				} else {
-					BOOST_LOG_TRIVIAL(info) << "udp packet from unknown peer: " << read_peer;
+					BOOST_LOG_TRIVIAL(info) << "udp packet from unknown peer: " << me->read_peer;
 				}
 			} else {
 				BOOST_LOG_TRIVIAL(info) << "udp read error: " << ec.category().name() << ':' << ec.value();
 			}
-			schedule_read();
+			me->schedule_read();
 		});
 }
 
 void udp::write(const boost::asio::ip::udp::endpoint &peer, packet &p, std::function<write_handler> &handler) {
-	write_queue.push(std::make_tuple(peer, p, handler));
+	write_queue.push(std::make_tuple(peer, std::move(p), handler));
 	schedule_write();
 }
 
@@ -42,17 +45,17 @@ void udp::schedule_write() {
 	if (write_pending) return;
 	write_pending = true;
 
-	auto next = write_queue.front();
-	auto p = std::get<1>(next);
+	auto &next = write_queue.front();
+	std::shared_ptr<packet> pp(new packet(std::move(std::get<1>(next))));
 	auto handler = std::get<2>(next);
 	write_queue.pop();
+	auto me = shared_from_this();
 	socket.async_send_to(
-		boost::asio::buffer(p.data.get(), p.sz), std::get<0>(next),
-		[this, handler, p](const boost::system::error_code& ec, std::size_t bytes_transferred) {
-			write_pending = false;
-			packet r(p);
-			r.sz = bytes_transferred;
-			handler(ec, r);
-			if (!write_queue.empty()) schedule_read();
+		boost::asio::buffer(pp->data.get(), pp->sz), std::get<0>(next),
+		[me, handler, pp](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+			me->write_pending = false;
+			pp->sz = bytes_transferred;
+			handler(ec, *pp);
+			if (!me->write_queue.empty()) me->schedule_read();
 		});
 }

@@ -3,6 +3,8 @@
 
 #include <boost/asio.hpp>
 
+#include "endpoint.hpp"
+
 class tun_service : public boost::asio::detail::service_base<tun_service> {
 	private:
 		typedef boost::asio::detail::reactive_descriptor_service service_impl_type;
@@ -140,27 +142,12 @@ class tun_service : public boost::asio::detail::service_base<tun_service> {
 		service_impl_type service_impl_;
 };
 
-class tun : public boost::asio::posix::basic_descriptor<tun_service> {
+class tun : public boost::asio::posix::basic_descriptor<tun_service>, public endpoint {
 	public:
-		tun(boost::asio::io_service &io_service, const std::string &&name);
+		tun(boost::asio::io_service &io_service, std::string const &name);
 
-		template <typename MutableBufferSequence, typename ReadHandler>
-		BOOST_ASIO_INITFN_RESULT_TYPE(ReadHandler,
-			void (boost::system::error_code, std::size_t))
-		async_receive(const MutableBufferSequence& buffers,
-			BOOST_ASIO_MOVE_ARG(ReadHandler) handler)
-		{
-			return get_service().async_read_some(get_implementation(), buffers, BOOST_ASIO_MOVE_CAST(ReadHandler)(handler));
-		}
-
-		template <typename ConstBufferSequence, typename WriteHandler>
-		BOOST_ASIO_INITFN_RESULT_TYPE(WriteHandler,
-			void (boost::system::error_code, std::size_t))
-		async_send(const ConstBufferSequence& buffers,
-			BOOST_ASIO_MOVE_ARG(WriteHandler) handler)
-		{
-			return get_service().async_write_some(get_implementation(), buffers, BOOST_ASIO_MOVE_CAST(WriteHandler)(handler));
-		}
+		virtual void async_read(std::function<read_handler> handler);
+		virtual void async_write(packet &p, std::function<read_handler> handler);
 };
 
 #endif /* end of include guard: ENDPOINT_TUN_H */

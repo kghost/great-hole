@@ -1,12 +1,12 @@
 #ifndef FILTER_ZIP_H
 #define FILTER_ZIP_H
 
-#include "pipeline.hpp"
+#include "filter.hpp"
 
 namespace filter_zip {
 	class compress : public filter {
 		public:
-			virtual packet pipe(packet &p) {
+			virtual packet pipe(packet const &p) {
 				if (compressBound(p.sz) > MAX_PACKET_SIZE) {
 				} else {
 					packet n;
@@ -18,7 +18,7 @@ namespace filter_zip {
 
 	class uncompress : public filter {
 		public:
-			virtual packet pipe(packet &p) {
+			virtual packet pipe(packet const &p) {
 				packet n;
 				// XXX: fuck, zlib doesn't check output size, potential overflow attack
 				uncompress(n.data, &n.sz, p.data, p.sz);

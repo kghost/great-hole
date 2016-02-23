@@ -1,12 +1,11 @@
 #ifndef ENDPOINT_UDP_H
 #define ENDPOINT_UDP_H
 
-#include <cassert>
+#include <queue>
 
-#include <boost/log/trivial.hpp>
 #include <boost/asio.hpp>
 
-#include "pipeline.hpp"
+#include "endpoint.hpp"
 
 class udp : public std::enable_shared_from_this<udp> {
 	public:
@@ -42,7 +41,7 @@ class udp : public std::enable_shared_from_this<udp> {
 			socket.bind(bind);
 		}
 
-		std::shared_ptr<udp_channel> create_channel(boost::asio::ip::udp::endpoint &&peer) {
+		std::shared_ptr<udp_channel> create_channel(boost::asio::ip::udp::endpoint const &peer) {
 			return std::shared_ptr<udp_channel>(new udp_channel(shared_from_this(), peer));
 		}
 

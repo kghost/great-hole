@@ -2,13 +2,13 @@
 
 #include <linux/if_tun.h>
 
-tun::tun(boost::asio::io_service &io_service, const std::string &&name) :
+tun::tun(boost::asio::io_service &io_service, std::string const &name) :
 	boost::asio::posix::basic_descriptor<tun_service>(io_service)
 {
 	int fd = ::open("/dev/net/tun", O_RDWR);
 	if (fd < 0) {
 		boost::system::error_code ec;
-		ec.assign(fd, boost::system::system_category());
+		ec.assign(errno, boost::system::system_category());
 		boost::asio::detail::throw_error(ec, "open");
 	}
 
@@ -20,7 +20,7 @@ tun::tun(boost::asio::io_service &io_service, const std::string &&name) :
 		int err;
 		if ((err = ::ioctl(fd, TUNSETIFF, (void *) &ifr)) < 0) {
 			boost::system::error_code ec;
-			ec.assign(err, boost::system::system_category());
+			ec.assign(errno, boost::system::system_category());
 			boost::asio::detail::throw_error(ec, "tunsetiff");
 		}
 
@@ -41,4 +41,26 @@ tun::tun(boost::asio::io_service &io_service, const std::string &&name) :
 		close();
 		throw;
 	}
+}
+
+void tun::async_read(std::function<read_handler> handler) {
+	std::shared_ptr<packet> pp(new packet);
+	get_service().async_read_some(
+		get_implementation(),
+		boost::asio::buffer(pp->data.get(), pp->sz),
+		[handler, pp](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+			pp->sz = bytes_transferred;
+			handler(ec, *pp);
+		});
+}
+
+void tun::async_write(packet &p, std::function<read_handler> handler) {
+	std::shared_ptr<packet> pp(new packet(std::move(p)));
+	get_service().async_write_some(
+		get_implementation(),
+		boost::asio::buffer(pp->data.get(), pp->sz),
+		[handler, pp](const boost::system::error_code& ec, std::size_t bytes_transferred) {
+			pp->sz = bytes_transferred;
+			handler(ec, *pp);
+		});
 }
