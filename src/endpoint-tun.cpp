@@ -17,8 +17,7 @@ tun::tun(boost::asio::io_service &io_service, std::string const &name) :
 		memset(&ifr, 0, sizeof(ifr));
 		strncpy(ifr.ifr_name, name.c_str(), IFNAMSIZ);
 		ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
-		int err;
-		if ((err = ::ioctl(fd, TUNSETIFF, (void *) &ifr)) < 0) {
+		if (::ioctl(fd, TUNSETIFF, (void *) &ifr) < 0) {
 			boost::system::error_code ec;
 			ec.assign(errno, boost::system::system_category());
 			boost::asio::detail::throw_error(ec, "tunsetiff");
