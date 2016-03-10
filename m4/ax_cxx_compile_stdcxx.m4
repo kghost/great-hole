@@ -445,7 +445,7 @@ m4_define([_AX_CXX_COMPILE_STDCXX_testbody_new_in_14], [[
 
 #error "This is not a C++ compiler"
 
-#elif __cplusplus < 201402L
+#elif __cplusplus < 201300L
 
 #error "This is not a C++14 compiler"
 
@@ -480,6 +480,7 @@ namespace cxx14
 
   }
 
+#if 0
   namespace test_generalized_constexpr
   {
 
@@ -499,6 +500,7 @@ namespace cxx14
     static_assert(strlen_c("another\0test") == 7UL, "");
 
   }
+#endif
 
   namespace test_lambda_init_capture
   {
@@ -553,6 +555,6 @@ namespace cxx14
 
 }  // namespace cxx14
 
-#endif  // __cplusplus >= 201402L
+#endif  // __cplusplus >= 201300L
 
 ]])

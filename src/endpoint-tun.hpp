@@ -142,12 +142,18 @@ class tun_service : public boost::asio::detail::service_base<tun_service> {
 		service_impl_type service_impl_;
 };
 
-class tun : public boost::asio::posix::basic_descriptor<tun_service>, public endpoint {
+class exec;
+class tun : public std::enable_shared_from_this<tun>, public boost::asio::posix::basic_descriptor<tun_service>, public endpoint {
 	public:
 		tun(boost::asio::io_service &io_service, std::string const &name);
+		tun(boost::asio::io_service &io_service, std::string const &name, std::shared_ptr<exec> e);
 
-		virtual void async_read(std::function<read_handler> handler);
-		virtual void async_write(packet &p, std::function<read_handler> handler);
+		virtual void async_start(std::function<event> &&);
+		virtual void async_read(std::function<read_handler> &&);
+		virtual void async_write(boost::asio::const_buffers_1 const &, std::function<write_handler> &&);
+	private:
+		const std::string name;
+		std::shared_ptr<exec> e;
 };
 
 #endif /* end of include guard: ENDPOINT_TUN_H */

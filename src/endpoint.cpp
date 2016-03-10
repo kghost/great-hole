@@ -1,3 +1,6 @@
+#include "config.h"
+
 #include "endpoint.hpp"
 
-endpoint::~endpoint() {}
+endpoint_input::~endpoint_input() {}
+endpoint_output::~endpoint_output() {}

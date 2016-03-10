@@ -4,59 +4,37 @@
 #include <memory>
 #include <queue>
 
-#include <boost/system/error_code.hpp>
-
+#include "packet.hpp"
 #include "flowcontrol.hpp"
 
-class packet;
 class filter;
+class endpoint_input;
+class endpoint_output;
 class endpoint;
-class pipeline {
+class pipeline : public std::enable_shared_from_this<pipeline> {
 	public:
-		pipeline(std::shared_ptr<endpoint> in, std::vector<std::shared_ptr<filter>> const &filters, std::shared_ptr<endpoint> out) :
-			fc(this), in(in), filters(filters), out(out),
-			started(false), paused(false), read_pending(false), write_pending(false) {}
+		pipeline(std::shared_ptr<endpoint_input> in, std::vector<std::shared_ptr<filter>> const &filters, std::shared_ptr<endpoint_output> out);
+		~pipeline() { stop(); }
 
-	public:
-		void start() {
-			if (started) return;
-			started = true;
-			schedule_read();
-		}
-
-		void stop() {
-			if (!started) return;
-			started = false;
-		}
-
-		void pause() {
-			if (paused) return;
-			paused = true;
-		}
-
-		void resume() {
-			if (!paused) return;
-			paused = false;
-			schedule_read();
-		}
+		void start();
+		void stop();
+		void pause();
+		void resume();
 
 		int size() { return buffer.size(); }
 
 	private:
-		void process(packet &p);
+		void process(packet &&p);
 
 		void schedule_read();
-		void read_callback(boost::system::error_code ec, packet &p);
-		void schedule_write(packet &p);
-		void write_callback(boost::system::error_code ec, packet &p);
+		void schedule_write(packet &&p);
 
-		bool started;
-		bool paused;
-		bool read_pending;
-		bool write_pending;
+		enum { none, starting, running, paused, stopped, error } state = none;
+		bool read_pending = false;
+		bool write_pending = false;
 
-		std::shared_ptr<endpoint> in;
-		std::shared_ptr<endpoint> out;
+		std::shared_ptr<endpoint_input> in;
+		std::shared_ptr<endpoint_output> out;
 		std::vector<std::shared_ptr<filter>> filters;
 		std::queue<packet> buffer;
 		flow_control<pipeline> fc;

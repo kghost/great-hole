@@ -1,19 +1,16 @@
 #ifndef PACKET_H
 #define PACKET_H
 
-#include <memory>
+#include <boost/any.hpp>
 
-class packet {
-	public:
-		static const std::size_t MAX_PACKET_SIZE = 2048;
-		packet() : data(new std::array<char, MAX_PACKET_SIZE>), sz(MAX_PACKET_SIZE) {}
+namespace boost {
+	namespace asio {
+		class mutable_buffers_1;
+		class const_buffers_1;
+	}
+}
 
-		packet(packet &&p) : data(std::move(p.data)), sz(std::move(p.sz)) {}
-		packet& operator=(const packet &&o) { data = std::move(o.data); sz = std::move(o.sz); }
-
-	public:
-		std::shared_ptr<std::array<char, MAX_PACKET_SIZE>> data;
-		std::size_t sz;
-};
+// packet.second stores a object which holds the owner of buffer
+typedef std::pair<boost::asio::mutable_buffers_1, boost::any> packet;
 
 #endif /* end of include guard: PACKET_H */

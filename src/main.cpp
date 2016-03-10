@@ -1,17 +1,20 @@
 #include "config.h"
 
 #include <memory>
-
+#include <iostream>
 #include <boost/asio.hpp>
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
-
-
-#include "lua-lib.hpp"
+#include <boost/log/core/core.hpp>
 
 #include "libs/lua-5.3.2/lua.h"
 #include "libs/lua-5.3.2/lauxlib.h"
 #include "libs/lua-5.3.2/lualib.h"
+
+#include "error-code.hpp"
+#include "logging.hpp"
+#include "util-console.hpp"
+#include "lua-lib.hpp"
 
 extern const char _binary_init_lua_start[];
 extern const char _binary_init_lua_end[];
@@ -58,6 +61,9 @@ int main (int ac, char **av) {
 
 	boost::asio::io_service io_service;
 
+	auto cerr = get_cerr(io_service);
+	init_log(cerr);
+
 	std::unique_ptr<lua_State, void (*)(lua_State *L)> L(luaL_newstate(), [](lua_State *L) { lua_close(L); });
 	luaL_openlibs(L.get());
 	luaopen_hole(L.get(), io_service);
@@ -74,7 +80,17 @@ int main (int ac, char **av) {
 		return 1;
 	}
 
+	boost::asio::signal_set signals(io_service, SIGINT, SIGTERM);
+	signals.async_wait([&io_service](const gh::error_code& ec, int signal_number) {
+		if (!ec)
+			io_service.stop();
+	});
+
 	io_service.run();
+
+	boost::log::core::get()->remove_all_sinks();
 
 	return 0;
 }
+
+

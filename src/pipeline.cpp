@@ -1,47 +1,115 @@
+#include "config.h"
+
 #include "pipeline.hpp"
 
-#include "packet.hpp"
+#include <memory>
+#include <boost/asio/buffer.hpp>
+#include <boost/log/trivial.hpp>
+
 #include "filter.hpp"
 #include "endpoint.hpp"
 
-void pipeline::process(packet &p) {
-	packet t(std::move(p));
-	for (auto i : filters) {
-		t = std::move(i->pipe(t));
+pipeline::pipeline(std::shared_ptr<endpoint_input> in, std::vector<std::shared_ptr<filter>> const &filters, std::shared_ptr<endpoint_output> out) :
+	fc(this), in(in), filters(filters), out(out) {}
+
+void pipeline::start() {
+	if (state != none) {
+		BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") already started: " << state;
+		return;
 	}
-	schedule_write(p);
+	BOOST_LOG_TRIVIAL(info) << "pipeline(" << this << ") starting";
+	state = starting;
+	std::shared_ptr<char> result(new char, [me = shared_from_this()] (char *r) {
+		std::unique_ptr<char> _u(r);
+		if (me->state == starting) {
+			BOOST_LOG_TRIVIAL(info) << "pipeline " << &*me << " started";
+			me->state = running;
+			me->schedule_read();
+		}
+	});
+	in->async_start([result, me = shared_from_this()] (const gh::error_code &ec) {
+		if (ec) {
+			BOOST_LOG_TRIVIAL(error) << "pipeline(" << &*me << ") input start error: " << ec.message();
+			me->state = error;
+		}
+	});
+	out->async_start([result, me = shared_from_this()] (const gh::error_code &ec) {
+		if (ec) {
+			BOOST_LOG_TRIVIAL(error) << "pipeline(" << &*me << ") output start error: " << ec.message();
+			me->state = error;
+		}
+	});
 }
 
-void pipeline::schedule_read() {
-	if (started && !paused && !read_pending) {
-		read_pending = true;
-		in->async_read([this](boost::system::error_code ec, packet &p) { this->read_callback(ec, p); });
+void pipeline::stop() {
+	if (state != running || state != paused) {
+		BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") is not running: " << state;
+		return;
 	}
+	state = stopped;
 }
 
-void pipeline::read_callback(boost::system::error_code ec, packet &p) {
-	read_pending = false;
-	fc.after_read();
-	if (!write_pending) {
-		process(p);
-	} else {
-		buffer.push(std::move(p));
+void pipeline::pause() {
+	if (state != running) {
+		BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") is not running: " << state;
+		return;
 	}
+	state = paused;
+}
+
+void pipeline::resume() {
+	if (state != paused) {
+		BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") is not paused: " << state;
+		return;
+	}
+	state = running;
 	schedule_read();
 }
 
-void pipeline::schedule_write(packet &p) {
-	assert(!write_pending);
-	write_pending = true;
-	out->async_write(p, [this](boost::system::error_code ec, packet &p) { this->write_callback(ec, p); });
+void pipeline::process(packet &&p) {
+	for (auto i : filters) {
+		p = i->pipe(std::move(p));
+	}
+	schedule_write(std::move(p));
 }
 
-void pipeline::write_callback(boost::system::error_code ec, packet &p) {
-	write_pending = false;
-	fc.after_write();
-	if (!buffer.empty()) {
-		packet next = std::move(buffer.front());
-		buffer.pop();
-		process(next);
+void pipeline::schedule_read() {
+	if (state == running && !read_pending) {
+		read_pending = true;
+		in->async_read([this, me = shared_from_this()](const gh::error_code &ec, packet &&p) {
+			read_pending = false;
+			fc.after_read();
+			if (!ec) {
+				if (!write_pending) {
+					process(std::move(p));
+				} else {
+					buffer.push(std::move(p));
+				}
+			} else {
+				BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") read error: " << ec.message();
+				stop();
+			}
+			schedule_read();
+		});
+	}
+}
+
+void pipeline::schedule_write(packet &&p) {
+	if (state == running || state == paused) {
+		assert(!write_pending);
+		write_pending = true;
+		out->async_write(boost::asio::const_buffers_1(p.first), [this, me = shared_from_this()](const gh::error_code &ec, std::size_t bytes_transferred) {
+			write_pending = false;
+			fc.after_write();
+			if (ec) {
+				BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") write error: " << ec.message();
+				stop();
+			}
+			if (!buffer.empty()) {
+				auto next = std::move(buffer.front());
+				buffer.pop();
+				process(std::move(next));
+			}
+		});
 	}
 }

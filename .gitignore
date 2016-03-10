@@ -1,3 +1,5 @@
+/.exrc
+
 *~
 *.swp
 *.o
@@ -7,8 +9,10 @@
 .libs/
 Makefile
 Makefile.in
+
 /aclocal.m4
 /autom4te.cache/
+/compile
 /config.guess
 /config.h
 /config.h.in
@@ -17,11 +21,11 @@ Makefile.in
 /config.sub
 /configure
 /depcomp
+/INSTALL
 /install-sh
-/missing
-/stamp-h1
-/compile
 /libtool
 /ltmain.sh
+/missing
+/stamp-h1
 
 /src/great-hole

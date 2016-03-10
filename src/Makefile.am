@@ -16,10 +16,10 @@ bin_PROGRAMS=great-hole
 	$(AM_V_at)echo "non_pic_object='$*.bin.o'" >>"$@"
 	$(AM_V_at)echo >>"$@"
 
-great_hole_SOURCES=main.cpp lua-lib.cpp pipeline.cpp endpoint.cpp endpoint-tun.cpp endpoint-udp.cpp filter.cpp
+great_hole_SOURCES=main.cpp lua-lib.cpp pipeline.cpp endpoint.cpp endpoint-tun.cpp endpoint-udp.cpp filter.cpp util-exec.cpp util-console.cpp logging.cpp
 
-great_hole_CPPFLAGS=-DBOOST_ALL_DYN_LINK $(PTHREAD_CFLAGS) $(BOOST_CPPFLAGS)
-great_hole_LDADD=init.lua.bin.lo ../libs/lua-5.3.2/liblua.la -lpthread $(PTHREAD_LIBS) $(BOOST_LDFLAGS) $(BOOST_ASIO_LIB) $(BOOST_LOG_LIB) $(BOOST_FILESYSTEM_LIB) $(BOOST_PROGRAM_OPTIONS_LIB)
+great_hole_CPPFLAGS=-I../libs -DBOOST_ALL_DYN_LINK $(PTHREAD_CFLAGS) $(BOOST_CPPFLAGS)
+great_hole_LDADD=init.lua.bin.lo ../libs/lua-5.3.2/liblua.la -lpthread $(PTHREAD_LIBS) $(BOOST_LDFLAGS) $(BOOST_ASIO_LIB) $(BOOST_LOG_LIB) $(BOOST_FILESYSTEM_LIB) $(BOOST_PROGRAM_OPTIONS_LIB) $(BOOST_IOSTREAMS_LIB) $(BOOST_THREAD_LIB)
 great_hole_LDFLAGS=-static
 
 CLEANFILES = *.bin.lo *.bin.o

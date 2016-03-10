@@ -1,3 +1,7 @@
+#include "config.h"
+
+#include "lua-lib.hpp"
+
 #include <memory>
 
 #include "pipeline.hpp"
@@ -5,15 +9,13 @@
 #include "endpoint-tun.hpp"
 #include "endpoint-udp.hpp"
 
-#include "lua-lib.hpp"
-
 #include "libs/lua-5.3.2/lua.h"
 #include "libs/lua-5.3.2/lauxlib.h"
 
 template<int f(lua_State *L)>
 static int safe_call(lua_State *L) {
 	try {
-		f(L);
+		return f(L);
 	} catch(std::exception const &e) {
 		luaL_error(L, e.what());
 		return 0;
@@ -36,7 +38,7 @@ template <typename T, T mf, const char N[]> struct proxy;
 template <typename T, void (T::*mf)(), const char N[]>
 struct proxy<void (T::*)(), mf, N> {
 	static int call(lua_State *L) {
-		std::bind(mf, *(std::shared_ptr<T>*)luaL_checkudata(L, 1, N))();
+		(*(*(std::shared_ptr<T>*)luaL_checkudata(L, 1, N)).*mf)();
 		return 0;
 	}
 };
@@ -82,7 +84,7 @@ static int pipeline_new(lua_State *L) {
 
 	auto &in = *(std::shared_ptr<endpoint>*)luaL_checkudata(L, 1, name_endpoint);
 	auto &out = *(std::shared_ptr<endpoint>*)luaL_checkudata(L, c, name_endpoint);
-	std::vector<std::shared_ptr<filter>> filters;
+	std::vector<std::shared_ptr<filter>> filters(c - 2);
 	for (auto i = 2; i < c; ++i) {
 		filters.push_back(*(std::shared_ptr<filter>*)luaL_checkudata(L, i, name_filter));
 	}
