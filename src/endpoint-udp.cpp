@@ -72,10 +72,11 @@ void udp::async_start(std::function<event> &&handler) {
 void udp::read(boost::asio::ip::udp::endpoint const &peer, std::function<read_handler> &&handler) {
 	if (state != running) return;
 	std::shared_ptr<tm> m;
-	if (m = reading_channel.lock()) {
+	if ((m = reading_channel.lock())) {
 		assert(m->find(peer) == m->end());
 	} else {
 		m.reset(new tm);
+		reading_channel = m;
 	}
 	m->insert(std::make_pair(peer, std::move(handler)));
 	schedule_read(m);

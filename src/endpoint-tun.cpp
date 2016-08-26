@@ -14,11 +14,18 @@ tun::tun(boost::asio::io_service &io_service, std::string const &name, std::shar
 	boost::asio::posix::basic_descriptor<tun_service>(io_service), name(name), e(e) {}
 
 void tun::async_start(std::function<event> &&handler) {
-	if (started) return;
-	started = true;
+	if (started == true) {
+		handler(started_ec);
+		return;
+	}
 
+	started = true;
 	int fd = ::open("/dev/net/tun", O_RDWR);
-	if (fd < 0) { handler(gh::error_code(errno, gh::system_category())); return; }
+	if (fd < 0) {
+		started_ec = gh::error_code(errno, gh::system_category());
+		handler(started_ec);
+		return;
+	}
 
 	struct ifreq ifr;
 	memset(&ifr, 0, sizeof(ifr));
@@ -26,20 +33,20 @@ void tun::async_start(std::function<event> &&handler) {
 	ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
 	if (::ioctl(fd, TUNSETIFF, (void *) &ifr) < 0) {
 		::close(fd);
-		handler(gh::error_code(errno, gh::system_category()));
+		started_ec = gh::error_code(errno, gh::system_category());
+		handler(started_ec);
 		return;
 	}
 
-	gh::error_code ec;
-	get_service().assign(get_implementation(), fd, ec);
-	if (ec) { ::close(fd); handler(ec); return; }
-	get_service().non_blocking(get_implementation(), true, ec);
-	if (ec) { close(); handler(ec); return; }
+	get_service().assign(get_implementation(), fd, started_ec);
+	if (started_ec) { ::close(fd); handler(started_ec); return; }
+	get_service().non_blocking(get_implementation(), true, started_ec);
+	if (started_ec) { close(); handler(started_ec); return; }
 	if (e) {
 		e->run([me = shared_from_this(), handler, e = e] (gh::error_code ec) { handler(ec); });
 		e.reset();
 	} else {
-		handler(ec);
+		handler(started_ec);
 	}
 }
 

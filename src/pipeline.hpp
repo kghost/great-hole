@@ -5,6 +5,7 @@
 #include <queue>
 
 #include "packet.hpp"
+#include "error-code.hpp"
 #include "flowcontrol.hpp"
 
 class filter;
@@ -24,6 +25,8 @@ class pipeline : public std::enable_shared_from_this<pipeline> {
 		int size() { return buffer.size(); }
 
 	private:
+		bool is_critical(const gh::error_code &ec);
+
 		void process(packet &&p);
 
 		void schedule_read();

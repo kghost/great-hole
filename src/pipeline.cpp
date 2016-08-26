@@ -98,12 +98,16 @@ void pipeline::schedule_write(packet &&p) {
 	if (state == running || state == paused) {
 		assert(!write_pending);
 		write_pending = true;
-		out->async_write(boost::asio::const_buffers_1(p.first), [this, me = shared_from_this()](const gh::error_code &ec, std::size_t bytes_transferred) {
+		out->async_write(boost::asio::const_buffers_1(p.first), [this, me = shared_from_this(), p](const gh::error_code &ec, std::size_t bytes_transferred) {
 			write_pending = false;
 			fc.after_write();
 			if (ec) {
-				BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") write error: " << ec.message();
-				stop();
+				if (is_critical(ec)) {
+					BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") write error: " << ec.message();
+					stop();
+				} else {
+					BOOST_LOG_TRIVIAL(warning) << "pipeline(" << this << ") write error: " << ec.message();
+				}
 			}
 			if (!buffer.empty()) {
 				auto next = std::move(buffer.front());
@@ -111,5 +115,14 @@ void pipeline::schedule_write(packet &&p) {
 				process(std::move(next));
 			}
 		});
+	}
+}
+
+bool pipeline::is_critical(const gh::error_code &ec) {
+	switch(ec.value()) {
+		case boost::system::errc::invalid_argument:
+			return false;
+		default: 
+			return true;
 	}
 }

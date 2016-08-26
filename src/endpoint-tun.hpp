@@ -156,6 +156,7 @@ class tun : public std::enable_shared_from_this<tun>, public boost::asio::posix:
 		std::shared_ptr<exec> e;
 
 		bool started = false;
+		gh::error_code started_ec;
 };
 
 #endif /* end of include guard: ENDPOINT_TUN_H */
