@@ -14,6 +14,9 @@ tun::tun(boost::asio::io_service &io_service, std::string const &name, std::shar
 	boost::asio::posix::basic_descriptor<tun_service>(io_service), name(name), e(e) {}
 
 void tun::async_start(std::function<event> &&handler) {
+	if (started) return;
+	started = true;
+
 	int fd = ::open("/dev/net/tun", O_RDWR);
 	if (fd < 0) { handler(gh::error_code(errno, gh::system_category())); return; }
 

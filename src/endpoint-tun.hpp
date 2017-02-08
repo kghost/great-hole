@@ -154,6 +154,8 @@ class tun : public std::enable_shared_from_this<tun>, public boost::asio::posix:
 	private:
 		const std::string name;
 		std::shared_ptr<exec> e;
+
+		bool started = false;
 };
 
 #endif /* end of include guard: ENDPOINT_TUN_H */

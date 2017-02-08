@@ -33,6 +33,8 @@ class udp : public std::enable_shared_from_this<udp> {
 		void write(boost::asio::ip::udp::endpoint const &peer, boost::asio::const_buffers_1 const &b, std::function<write_handler> &&handler);
 		void schedule_read(std::shared_ptr<tm> m);
 		void schedule_write();
+
+		bool started = false;
 };
 
 #endif /* end of include guard: ENDPOINT_UDP_H */

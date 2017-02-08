@@ -86,7 +86,7 @@ static int pipeline_new(lua_State *L) {
 	auto &out = *(std::shared_ptr<endpoint>*)luaL_checkudata(L, c, name_endpoint);
 	std::vector<std::shared_ptr<filter>> filters(c - 2);
 	for (auto i = 2; i < c; ++i) {
-		filters.push_back(*(std::shared_ptr<filter>*)luaL_checkudata(L, i, name_filter));
+		filters[i - 2] = *(std::shared_ptr<filter>*)luaL_checkudata(L, i, name_filter);
 	}
 
 	new (lua_newuserdata(L, sizeof(std::shared_ptr<pipeline>))) std::shared_ptr<pipeline>(new pipeline(in, filters, out));
