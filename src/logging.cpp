@@ -61,6 +61,5 @@ class asio_log_backend :
 
 void init_log(std::shared_ptr<endpoint_output> out) {
 	typedef boost::log::sinks::synchronous_sink<asio_log_backend> text_sink;
-	auto sink = boost::make_shared<text_sink>(out);
-	boost::log::core::get()->add_sink(sink);
+	boost::log::core::get()->add_sink(boost::make_shared<text_sink>(boost::make_shared<asio_log_backend>(out)));
 }
