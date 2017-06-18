@@ -28,4 +28,11 @@ Makefile.in
 /missing
 /stamp-h1
 
+/debian/autoreconf.after
+/debian/autoreconf.before
+/debian/files
+/debian/great-hole.debhelper.log
+/debian/great-hole.substvars
+/debian/great-hole/
+
 /src/great-hole
