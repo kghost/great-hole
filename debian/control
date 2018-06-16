@@ -2,8 +2,9 @@ Source: great-hole
 Section: utils
 Priority: extra
 Maintainer: Zang MingJie <zealot0630@gmail.com>
-Build-Depends: debhelper (>= 9.0.0), dh-autoreconf,
- autoconf-archive
+Build-Depends: debhelper (>= 9.0.0), dh-autoreconf, autoconf-archive,
+ libboost-dev, libboost-system-dev, libboost-iostreams-dev,
+ libboost-program-options-dev, libboost-filesystem-dev, libboost-log-dev
 Standards-Version: 3.9.4
 Homepage: https://github.com/kghost/great-hole
 Vcs-Git: git://github.com/kghost/great-hole.git
