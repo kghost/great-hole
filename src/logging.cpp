@@ -28,27 +28,20 @@ class asio_log_backend :
 				explicit detail(std::shared_ptr<endpoint_output> const &out) : out(out) {}
 
 				void write(std::string const &log) {
-					if (write_pending) {
-						q.push(log);
-					} else {
-						schedule_write(log);
-					}
+					q.push(log + '\n');
+					schedule_write();
 				}
 			private:
-				void schedule_write(std::string const &s) {
-					assert(!write_pending);
-					write_pending = true;
-					auto o = s + '\n';
-					auto b = boost::asio::buffer(o);
-					out->async_write(b, [me = shared_from_this(), _s = std::move(o)](const gh::error_code &ec, std::size_t bytes_transferred) {
-						boost::asio::detail::throw_error(ec, "write log");
-						me->write_pending = false;
-						if (!me->q.empty()) {
-							auto s = std::move(me->q.front());
+				void schedule_write() {
+					if (!write_pending && !q.empty()) {
+						write_pending = true;
+						out->async_write(boost::asio::buffer(const_cast<const std::string &>(q.front())), [me = shared_from_this()](const gh::error_code &ec, std::size_t bytes_transferred) {
+							boost::asio::detail::throw_error(ec, "write log");
+							me->write_pending = false;
 							me->q.pop();
-							me->schedule_write(s);
-						}
-					});
+							me->schedule_write();
+						});
+					}
 				}
 
 				bool write_pending = false;

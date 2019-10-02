@@ -2,12 +2,7 @@
 #define UTIL_CONSOLE_H
 
 #include <memory>
-
-namespace boost {
-	namespace asio {
-		class io_service;
-	}
-}
+#include <boost/asio.hpp>
 
 class endpoint_input;
 class endpoint_output;

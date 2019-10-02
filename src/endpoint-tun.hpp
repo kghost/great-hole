@@ -2,6 +2,7 @@
 #define ENDPOINT_TUN_H
 
 #include <boost/asio.hpp>
+#include <boost/asio/posix/basic_descriptor.hpp>
 
 #include "endpoint.hpp"
 
@@ -102,11 +103,11 @@ class tun_service : public boost::asio::detail::service_base<tun_service> {
 			const ConstBufferSequence& buffers,
 			BOOST_ASIO_MOVE_ARG(WriteHandler) handler)
 		{
-			boost::asio::detail::async_result_init<
+			boost::asio::async_completion<
 			WriteHandler, void (boost::system::error_code, std::size_t)> init(
 				BOOST_ASIO_MOVE_CAST(WriteHandler)(handler));
 
-			service_impl_.async_write_some(impl, buffers, init.handler);
+			service_impl_.async_write_some(impl, buffers, init.completion_handler);
 
 			return init.result.get();
 		}
@@ -125,20 +126,15 @@ class tun_service : public boost::asio::detail::service_base<tun_service> {
 			const MutableBufferSequence& buffers,
 			BOOST_ASIO_MOVE_ARG(ReadHandler) handler)
 		{
-			boost::asio::detail::async_result_init<
-			ReadHandler, void (boost::system::error_code, std::size_t)> init(
-				BOOST_ASIO_MOVE_CAST(ReadHandler)(handler));
+			boost::asio::async_completion<
+			ReadHandler, void (boost::system::error_code, std::size_t)> init(handler);
 
-			service_impl_.async_read_some(impl, buffers, init.handler);
+			service_impl_.async_read_some(impl, buffers, init.completion_handler);
 
 			return init.result.get();
 		}
 
 	private:
-		void shutdown_service() {
-			service_impl_.shutdown_service();
-		}
-
 		service_impl_type service_impl_;
 };
 

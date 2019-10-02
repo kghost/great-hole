@@ -5,15 +5,10 @@
 #include <string>
 #include <vector>
 #include <map>
+#include <boost/asio.hpp>
 #include <boost/iostreams/device/file_descriptor.hpp>
 
 #include "endpoint.hpp"
-
-namespace boost {
-	namespace asio {
-		class io_service;
-	}
-}
 
 class exec {
 	public:
