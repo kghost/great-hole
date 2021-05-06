@@ -22,5 +22,5 @@ class udp_mux_client : public std::enable_shared_from_this<udp_mux_client>, publ
 
 		bool read_pending = false, write_pending = false;
 
-		enum { none, running, error } state = none;
+		enum { none, opening, running, error } state = none;
 };

@@ -12,6 +12,7 @@ udp_mux_client::udp_mux_client(boost::asio::io_service& io_service, uint8_t id, 
 void udp_mux_client::async_start(fu2::unique_function<event> &&handler) {
 	switch (state) {
 		case none:
+			state = opening;
 			try {
 				socket.open(boost::asio::ip::udp::v4());
 				socket.bind(local);
@@ -26,6 +27,10 @@ void udp_mux_client::async_start(fu2::unique_function<event> &&handler) {
 				if (!ec) me->state = running;
 				handler(gh::error_code());
 			});
+			break;
+		case opening:
+			BOOST_LOG_TRIVIAL(info) << "udp_mux_client(" << this << ") start opening";
+			handler(gh::error_code());
 			break;
 		case running:
 			handler(gh::error_code());

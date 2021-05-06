@@ -205,7 +205,7 @@ static int udp_mux_client_new(lua_State *L) {
 				auto peer_address = lua_tostring(L, 2);
 				auto peer_port = (int)lua_tonumber(L, 3);
 				auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::address_v4::from_string(peer_address), peer_port);
-				new (lua_newuserdata(L, sizeof(std::shared_ptr<udp_mux_client>))) std::shared_ptr<udp_mux_client>(new udp_mux_client(io_service, id, peer));
+				new (lua_newuserdata(L, sizeof(std::shared_ptr<endpoint>))) std::shared_ptr<endpoint>(new udp_mux_client(io_service, id, peer));
 			}
 			break;
 		case 5:
@@ -217,7 +217,7 @@ static int udp_mux_client_new(lua_State *L) {
 				auto local_address = lua_tostring(L, 4);
 				auto local_port = (int)lua_tonumber(L, 5);
 				auto local = boost::asio::ip::udp::endpoint(boost::asio::ip::address_v4::from_string(local_address), local_port);
-				new (lua_newuserdata(L, sizeof(std::shared_ptr<udp_mux_client>))) std::shared_ptr<udp_mux_client>(new udp_mux_client(io_service, id, peer, local));
+				new (lua_newuserdata(L, sizeof(std::shared_ptr<endpoint>))) std::shared_ptr<endpoint>(new udp_mux_client(io_service, id, peer, local));
 				break;
 			}
 		default:
@@ -225,7 +225,7 @@ static int udp_mux_client_new(lua_State *L) {
 			break;
 	}
 
-	luaL_getmetatable(L, name_udp_mux_server);
+	luaL_getmetatable(L, name_endpoint);
 	lua_setmetatable(L, -2);
 
 	return 1;

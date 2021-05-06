@@ -19,9 +19,10 @@ public:
 	scoped_flag(scoped_flag &) = delete;
 	scoped_flag operator=(scoped_flag &) = delete;
 	scoped_flag(scoped_flag && that) { flag.swap(that.flag); }
-	scoped_flag operator=(scoped_flag && that) {
+	scoped_flag& operator=(scoped_flag && that) {
 		if (flag) { assert(flag.value().get()); flag.value().get() = false; flag.reset(); }
 		flag.swap(that.flag);
+		return *this;
 	}
 private:
 	std::optional<std::reference_wrapper<bool>> flag;
