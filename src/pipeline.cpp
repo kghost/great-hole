@@ -130,6 +130,8 @@ bool pipeline::is_critical(const gh::error_code &ec) {
 	if (ec.category() == boost::system::system_category()) {
 		switch(ec.value()) {
 			case boost::system::errc::invalid_argument:
+			case boost::system::errc::io_error:
+			case boost::system::errc::connection_refused:
 				return false;
 			default: 
 				return true;
