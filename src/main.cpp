@@ -64,29 +64,31 @@ int main (int ac, char **av) {
 	auto cerr = get_cerr(io_service);
 	init_log(cerr);
 
-	std::unique_ptr<lua_State, void (*)(lua_State *L)> L(luaL_newstate(), [](lua_State *L) { lua_close(L); });
-	luaL_openlibs(L.get());
-	luaopen_hole(L.get(), io_service);
+	{
+		std::unique_ptr<lua_State, void (*)(lua_State *L)> L(luaL_newstate(), [](lua_State *L) { lua_close(L); });
+		luaL_openlibs(L.get());
+		luaopen_hole(L.get(), io_service);
 
-	if (luaL_loadbuffer(L.get(), _binary_init_lua_start, _binary_init_lua_end - _binary_init_lua_start, "internal-lua") || lua_pcall(L.get(), 0, 0, 0)) {
-		std::cout << lua_tostring(L.get(), -1) << std::endl;
-		lua_pop(L.get(), 1);  /* pop error message from the stack */
-		return 1;
+		if (luaL_loadbuffer(L.get(), _binary_init_lua_start, _binary_init_lua_end - _binary_init_lua_start, "internal-lua") || lua_pcall(L.get(), 0, 0, 0)) {
+			std::cout << lua_tostring(L.get(), -1) << std::endl;
+			lua_pop(L.get(), 1);  /* pop error message from the stack */
+			return 1;
+		}
+
+		if (luaL_dofile(L.get(), start.c_str())) {
+			std::cout << lua_tostring(L.get(), -1) << std::endl;
+			lua_pop(L.get(), 1);  /* pop error message from the stack */
+			return 1;
+		}
+
+		boost::asio::signal_set signals(io_service, SIGINT, SIGTERM);
+		signals.async_wait([&io_service](const gh::error_code& ec, int signal_number) {
+			if (!ec)
+				io_service.stop();
+		});
+
+		io_service.run();
 	}
-
-	if (luaL_dofile(L.get(), start.c_str())) {
-		std::cout << lua_tostring(L.get(), -1) << std::endl;
-		lua_pop(L.get(), 1);  /* pop error message from the stack */
-		return 1;
-	}
-
-	boost::asio::signal_set signals(io_service, SIGINT, SIGTERM);
-	signals.async_wait([&io_service](const gh::error_code& ec, int signal_number) {
-		if (!ec)
-			io_service.stop();
-	});
-
-	io_service.run();
 
 	boost::log::core::get()->remove_all_sinks();
 

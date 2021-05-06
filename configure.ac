@@ -19,9 +19,11 @@ AC_PROG_INSTALL
 AC_PROG_CC(clang gcc)
 AC_PROG_CPP(clang++ g++)
 AC_PROG_CXX(clang++ g++)
-AX_CXX_COMPILE_STDCXX_14
+AX_CXX_COMPILE_STDCXX_17
 
 AC_CHECK_TOOL([OBJCOPY], [objcopy])
+
+AC_DEFINE([BOOST_ASIO_HAS_MOVE], [1], [Enable asio move handler])
 
 dnl Checks for libraries.
 

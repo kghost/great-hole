@@ -35,7 +35,9 @@ class asio_log_backend :
 				void schedule_write() {
 					if (!write_pending && !q.empty()) {
 						write_pending = true;
-						out->async_write(boost::asio::buffer(const_cast<const std::string &>(q.front())), [me = shared_from_this()](const gh::error_code &ec, std::size_t bytes_transferred) {
+
+						auto p = packet{buffer(q.front()), nullptr};
+						out->async_write(std::move(p), [me = shared_from_this()](const gh::error_code &ec, std::size_t bytes_transferred) {
 							boost::asio::detail::throw_error(ec, "write log");
 							me->write_pending = false;
 							me->q.pop();

@@ -10,16 +10,16 @@ class udp::udp_channel : public endpoint {
 	public:
 		udp_channel(std::shared_ptr<udp> parent, const boost::asio::ip::udp::endpoint &peer) : parent(parent), peer(peer) {}
 
-		virtual void async_start(std::function<event> &&handler) {
+		void async_start(fu2::unique_function<event> &&handler) override {
 			parent->try_async_start(std::move(handler));
 		}
 
-		virtual void async_read(std::function<read_handler> &&handler) {
+		void async_read(fu2::unique_function<read_handler> &&handler) override {
 			parent->read(peer, std::move(handler));
 		}
 
-		virtual void async_write(boost::asio::const_buffers_1 const &b, std::function<write_handler> &&handler) {
-			parent->write(peer, b, std::move(handler));
+		void async_write(packet && p, fu2::unique_function<write_handler> &&handler) override {
+			parent->write(peer, std::move(p), std::move(handler));
 		}
 
 	private:
@@ -34,14 +34,7 @@ std::shared_ptr<endpoint> udp::create_channel(boost::asio::ip::udp::endpoint con
 udp::udp(boost::asio::io_service& io_service) : socket(io_service), local(boost::asio::ip::udp::v4(), 0) {}
 udp::udp(boost::asio::io_service& io_service, boost::asio::ip::udp::endpoint bind) : socket(io_service), local(bind) {}
 
-class state_error : public gh::error_category {
-	public:
-		virtual const char * name() const noexcept { return "state error"; }
-		virtual std::string message(int ev) const { return "udp state " + std::to_string(ev); }
-} state_error;
-
-
-void udp::try_async_start(std::function<event> &&handler) {
+void udp::try_async_start(fu2::unique_function<event> &&handler) {
 	switch (state) {
 		case none:
 			async_start(std::move(handler));
@@ -50,12 +43,12 @@ void udp::try_async_start(std::function<event> &&handler) {
 			handler(gh::error_code());
 			break;
 		default:
-			handler(gh::error_code(state, state_error));
+			handler(gh::error_code{app_error_category::incorrect_state, app_error});
 			break;
 	}
 }
 
-void udp::async_start(std::function<event> &&handler) {
+void udp::async_start(fu2::unique_function<event> &&handler) {
 	try {
 		socket.open(boost::asio::ip::udp::v4());
 		socket.bind(local);
@@ -69,7 +62,7 @@ void udp::async_start(std::function<event> &&handler) {
 	}
 }
 
-void udp::read(boost::asio::ip::udp::endpoint const &peer, std::function<read_handler> &&handler) {
+void udp::read(boost::asio::ip::udp::endpoint const &peer, fu2::unique_function<read_handler> &&handler) {
 	if (state != running) return;
 	std::shared_ptr<tm> m;
 	if ((m = reading_channel.lock())) {
@@ -78,7 +71,7 @@ void udp::read(boost::asio::ip::udp::endpoint const &peer, std::function<read_ha
 		m.reset(new tm);
 		reading_channel = m;
 	}
-	m->insert(std::make_pair(peer, std::move(handler)));
+	m->emplace(peer, std::move(handler));
 	schedule_read(m);
 }
 
@@ -86,19 +79,23 @@ void udp::schedule_read(std::shared_ptr<tm> m) {
 	if (state != running || read_pending) return;
 	read_pending = true;
 
-	auto a = std::make_shared<std::array<char, 2048>>();
-	auto p = packet{{a.get(), a->size()}, a};
+	auto a = std::make_shared<std::array<uint8_t, 2048>>();
+	auto p = packet{buffer(*a), a};
+	auto buffer = boost::asio::mutable_buffer{p.first};
 	auto peer = std::make_shared<boost::asio::ip::udp::endpoint>();
 	socket.async_receive_from(
-		p.first, *peer,
-		[me = shared_from_this(), p, m, peer](const gh::error_code& ec, std::size_t bytes_transferred) {
+		buffer, *peer,
+		[me = shared_from_this(), p{std::move(p)}, m, peer](const gh::error_code& ec, std::size_t bytes_transferred) mutable {
 			me->read_pending = false;
 			if (!ec) {
+				assert(bytes_transferred <= p.first.capacity - p.first.offset);
+				p.first.length = bytes_transferred;
+
 				auto h = m->find(*peer);
 				if(h != m->end()) {
 					auto handler = std::move(h->second);
 					m->erase(h);
-					handler(ec, packet{boost::asio::buffer(p.first, bytes_transferred), p.second});
+					handler(ec, std::move(p));
 				} else {
 					BOOST_LOG_TRIVIAL(info) << "udp(" << &*me << ") packet from unknown peer: " << *peer;
 				}
@@ -109,9 +106,9 @@ void udp::schedule_read(std::shared_ptr<tm> m) {
 		});
 }
 
-void udp::write(boost::asio::ip::udp::endpoint const &peer, boost::asio::const_buffers_1 const &b, std::function<write_handler> &&handler) {
+void udp::write(boost::asio::ip::udp::endpoint const &peer, packet && p, fu2::unique_function<write_handler> &&handler) {
 	if (state != running) return;
-	write_queue.push(std::make_tuple(peer, b, handler));
+	write_queue.push(std::make_tuple(peer, std::move(p), std::move(handler)));
 	schedule_write();
 }
 
@@ -121,10 +118,10 @@ void udp::schedule_write() {
 
 	auto &next = write_queue.front();
 	auto peer = std::get<0>(next);
-	auto b = std::get<1>(next);
+	auto p = std::move(std::get<1>(next));
 	auto handler = std::move(std::get<2>(next));
 	write_queue.pop();
-	socket.async_send_to(b, peer, [me = shared_from_this(), handler](const gh::error_code& ec, std::size_t bytes_transferred) {
+	socket.async_send_to(boost::asio::const_buffer{p.first}, peer, [me = shared_from_this(), handler{std::move(handler)}](const gh::error_code& ec, std::size_t bytes_transferred) mutable {
 		me->write_pending = false;
 		handler(ec, bytes_transferred);
 		if (!me->write_queue.empty()) me->schedule_write();

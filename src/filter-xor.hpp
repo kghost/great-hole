@@ -10,13 +10,13 @@ class filter_xor : public filter_symmetric<filter_xor> {
 			filter_xor(std::vector<char> const &key) : key(key) {}
 			
 			virtual packet pipe(packet &&p) {
-				auto sz = boost::asio::buffer_size(p.first);
-				auto s = boost::asio::buffer_cast<unsigned char*>(p.first);
+				auto & buffer = p.first;
+				auto data = buffer.data;
 
-				for (int i = 0; i < sz; ++i) {
-					s[i] = s[i] ^ key[i % key.size()];
+				for (auto i = 0; i < buffer.length; ++i) {
+					data[buffer.offset + i] = data[buffer.offset + i] ^ key[i % key.size()];
 				}
-				return p;
+				return std::move(p);
 			}
 
 		private:

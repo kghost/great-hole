@@ -16,21 +16,6 @@
 #include <boost/process/mitigate.hpp>
 #include <boost/iostreams/device/file_descriptor.hpp>
 
-class exec_error_category : public gh::error_category {
-	public:
-		virtual const char * name() const noexcept { return "exec start error"; }
-		virtual std::string message(int ev) const { return errs[ev]; }
-
-		enum codes {already_started, fork_exec_error};
-	private:
-		static const std::string errs[];
-} exec_error;
-
-const std::string exec_error_category::errs[] {
-	"already_started",
-	"fork_exec_error",
-};
-
 class exit_error_category : public gh::error_category {
 	public:
 		virtual const char * name() const noexcept { return "exit error"; }
@@ -57,7 +42,7 @@ class exec::signal {
 
 class exec::proc : public std::enable_shared_from_this<proc> {
 	public:
-		proc(std::function<event> &&handler, pid_t pid) : handler(handler), pid(pid) {}
+		proc(fu2::unique_function<event> &&handler, pid_t pid) : handler(std::move(handler)), pid(pid) {}
 
 		void notify(int code) {
 			if (code != 0) {
@@ -68,7 +53,7 @@ class exec::proc : public std::enable_shared_from_this<proc> {
 		}
 		void kill(int signum) { ::kill(pid, signum); }
 	private:
-		std::function<event> handler;
+		fu2::unique_function<event> handler;
 		pid_t pid;
 		friend class signal;
 };
@@ -122,8 +107,8 @@ class exec::input : public endpoint_skip_start<endpoint_output> {
 	public:
 		input(boost::asio::io_service &io_service, decltype(boost::process::pipe::sink) sink) : pipe(io_service, sink) {}
 
-		virtual void async_write(boost::asio::const_buffers_1 const &b, std::function<write_handler> &&handler) {
-			boost::asio::async_write(pipe, b, handler);
+		void async_write(packet && p, fu2::unique_function<write_handler> && handler) override {
+			boost::asio::async_write(pipe, boost::asio::const_buffer{p.first}, std::move(handler));
 		}
 	private:
 		boost::process::pipe_end pipe;
@@ -133,11 +118,16 @@ class exec::output : public endpoint_skip_start<endpoint_input> {
 	public:
 		output(boost::asio::io_service &io_service, decltype(boost::process::pipe::source) source) : pipe(io_service, source) {}
 
-		virtual void async_read(std::function<read_handler> &&handler) {
-			auto a = std::make_shared<std::array<char, 2048>>();
-			auto p = packet{{a.get(), a->size()}, a};
-			pipe.async_read_some(p.first, [p, handler = std::move(handler)](const gh::error_code& ec, std::size_t bytes_transferred) {
-				handler(ec, packet{boost::asio::buffer(p.first, bytes_transferred), p.second});
+		virtual void async_read(fu2::unique_function<read_handler> &&handler) {
+			auto a = std::make_shared<std::array<uint8_t, 2048>>();
+			auto p = packet{buffer(*a), a};
+			auto buffer = boost::asio::mutable_buffer{p.first};
+			pipe.async_read_some(buffer, [p{std::move(p)}, handler = std::move(handler)](const gh::error_code& ec, std::size_t bytes_transferred) mutable {
+				if (!ec) {
+					assert(bytes_transferred <= p.first.capacity - p.first.offset);
+					p.first.length = bytes_transferred;
+				}
+				handler(ec, std::move(p));
 			});
 		}
 	private:
@@ -174,10 +164,10 @@ std::shared_ptr<endpoint_input> exec::get_err() {
 	return err;
 }
 
-void exec::run(std::function<event> &&handler) {
+void exec::run(fu2::unique_function<event> &&handler) {
 	if (p.lock()) {
 		BOOST_LOG_TRIVIAL(error) << "proc " << this << " already running.";
-		handler(gh::error_code(exec_error_category::already_started, exec_error));
+		handler(gh::error_code(app_error_category::already_started, app_error));
 	} else {
 		using namespace boost::process;
 		using namespace boost::process::initializers;
@@ -203,7 +193,7 @@ void exec::run(std::function<event> &&handler) {
 			p = i;
 		} else {
 			BOOST_LOG_TRIVIAL(error) << "proc " << this << " execute failed.";
-			handler(gh::error_code(exec_error_category::fork_exec_error, exec_error));
+			handler(gh::error_code{app_error_category::fork_exec_error, app_error});
 		}
 	}
 }

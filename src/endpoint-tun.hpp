@@ -101,11 +101,9 @@ class tun_service : public boost::asio::detail::service_base<tun_service> {
 			void (boost::system::error_code, std::size_t))
 		async_write_some(implementation_type& impl,
 			const ConstBufferSequence& buffers,
-			BOOST_ASIO_MOVE_ARG(WriteHandler) handler)
+			WriteHandler&& handler)
 		{
-			boost::asio::async_completion<
-			WriteHandler, void (boost::system::error_code, std::size_t)> init(
-				BOOST_ASIO_MOVE_CAST(WriteHandler)(handler));
+			boost::asio::async_completion<WriteHandler, void (boost::system::error_code, std::size_t)> init(handler);
 
 			service_impl_.async_write_some(impl, buffers, init.completion_handler);
 
@@ -144,9 +142,9 @@ class tun : public std::enable_shared_from_this<tun>, public boost::asio::posix:
 		tun(boost::asio::io_service &io_service, std::string const &name);
 		tun(boost::asio::io_service &io_service, std::string const &name, std::shared_ptr<exec> e);
 
-		virtual void async_start(std::function<event> &&);
-		virtual void async_read(std::function<read_handler> &&);
-		virtual void async_write(boost::asio::const_buffers_1 const &, std::function<write_handler> &&);
+		void async_start(fu2::unique_function<event> &&) override;
+		void async_read(fu2::unique_function<read_handler> &&) override;
+		void async_write(packet &&, fu2::unique_function<write_handler> &&) override;
 	private:
 		const std::string name;
 		std::shared_ptr<exec> e;
