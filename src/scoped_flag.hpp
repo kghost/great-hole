@@ -1,6 +1,6 @@
 #pragma once
 
-#include <optional>
+#include <boost/optional.hpp>
 #include <functional>
 
 class scoped_flag {
@@ -25,5 +25,5 @@ public:
 		return *this;
 	}
 private:
-	std::optional<std::reference_wrapper<bool>> flag;
+	boost::optional<std::reference_wrapper<bool>> flag;
 };
