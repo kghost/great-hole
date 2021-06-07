@@ -1,3 +1,9 @@
+great-hole (0.1.3) UNRELEASED; urgency=medium
+
+  * use boost::any and boost::optional to make it compatible with C++14
+
+ -- Laurence Von <unkstar@gmail.com>  Mon, 07 Jun 2021 17:06:03 +0800
+
 great-hole (0.1.2) buster; urgency=medium
 
   * Add udp-mux
