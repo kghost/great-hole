@@ -6,6 +6,12 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/core/noncopyable.hpp>
 
+
+#if BOOST_VERSION  < 106600
+#define mutable_buffer mutable_buffers_1
+#define const_buffer  const_buffers_1
+#endif //BOOST_VERSION  < 106600
+
 class buffer {
 public:
 	static constexpr const std::size_t reserved_front = 2;
