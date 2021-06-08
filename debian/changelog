@@ -1,4 +1,10 @@
-great-hole (0.1.3) UNRELEASED; urgency=medium
+great-hole (0.1.4) buster; urgency=medium
+
+  * make it work on stretch
+
+ -- Laurence Von <unkstar@gmail.com>   Tue, 08 Jun 2021 21:16:08 +0800
+
+great-hole (0.1.3) buster; urgency=medium
 
   * use boost::any and boost::optional to make it compatible with C++14
 
