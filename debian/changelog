@@ -1,3 +1,21 @@
+great-hole (0.1.5) buster; urgency=medium
+
+  * make cross compile on stretch work
+
+ -- unkstar <unkstar@gmail.com>  Thu, 17 Jun 2021 16:32:10 +0800
+
+great-hole (0.1.4) buster; urgency=medium
+
+  * Make it work on stretch
+
+ -- Laurence Von <unkstar@gmail.com>  Tue, 08 Jun 2021 21:16:08 +0800
+
+great-hole (0.1.3) buster; urgency=medium
+
+  * Use boost::any and boost::optional to make it compatible with C++14
+
+ -- Laurence Von <unkstar@gmail.com>  Mon, 07 Jun 2021 17:06:03 +0800
+
 great-hole (0.1.2) buster; urgency=medium
 
   * Add udp-mux

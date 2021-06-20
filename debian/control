@@ -13,4 +13,4 @@ Package: great-hole
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
 Description: great-hole
- great-hole
+ make great firewall great again!

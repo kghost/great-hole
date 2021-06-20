@@ -19,11 +19,12 @@ AC_PROG_INSTALL
 AC_PROG_CC(clang gcc)
 AC_PROG_CPP(clang++ g++)
 AC_PROG_CXX(clang++ g++)
-AX_CXX_COMPILE_STDCXX_17
+AX_CXX_COMPILE_STDCXX_14
 
 AC_CHECK_TOOL([OBJCOPY], [objcopy])
 
 AC_DEFINE([BOOST_ASIO_HAS_MOVE], [1], [Enable asio move handler])
+AC_DEFINE([BOOST_ASIO_DISABLE_HANDLER_TYPE_REQUIREMENTS], [1], [disable handler check, move only type captured lambda failed on boost 1.62])
 
 dnl Checks for libraries.
 

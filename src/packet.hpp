@@ -1,10 +1,16 @@
 #ifndef PACKET_H
 #define PACKET_H
 
-#include <any>
+#include <boost/any.hpp>
 
 #include <boost/asio/buffer.hpp>
 #include <boost/core/noncopyable.hpp>
+
+
+#if BOOST_VERSION  < 106600
+#define mutable_buffer mutable_buffers_1
+#define const_buffer  const_buffers_1
+#endif //BOOST_VERSION  < 106600
 
 class buffer {
 public:
@@ -18,7 +24,7 @@ public:
 	}
 
 	buffer(std::string & s) {
-		data = reinterpret_cast<uint8_t*>(s.data());
+		data = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(s.data()));
 		capacity = s.size();
 		offset = 0;
 		length = s.size();
@@ -51,6 +57,6 @@ public:
 };
 
 // packet.second stores a object which holds the owner of buffer
-typedef std::pair<buffer, std::any> packet;
+typedef std::pair<buffer, boost::any> packet;
 
 #endif /* end of include guard: PACKET_H */
