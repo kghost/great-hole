@@ -31,7 +31,7 @@ std::shared_ptr<endpoint> udp::create_channel(boost::asio::ip::udp::endpoint con
 	return std::shared_ptr<endpoint>(new udp_channel(shared_from_this(), peer));
 }
 
-udp::udp(boost::asio::io_service& io_service) : socket(io_service), local(boost::asio::ip::udp::v4(), 0) {}
+udp::udp(boost::asio::io_service& io_service) : socket(io_service), local(boost::asio::ip::udp::v6(), 0) {}
 udp::udp(boost::asio::io_service& io_service, boost::asio::ip::udp::endpoint bind) : socket(io_service), local(bind) {}
 
 void udp::try_async_start(fu2::unique_function<event> &&handler) {
@@ -50,7 +50,8 @@ void udp::try_async_start(fu2::unique_function<event> &&handler) {
 
 void udp::async_start(fu2::unique_function<event> &&handler) {
 	try {
-		socket.open(boost::asio::ip::udp::v4());
+		socket.open(boost::asio::ip::udp::v6());
+		socket.set_option(boost::asio::ip::v6_only(false));
 		socket.bind(local);
 		BOOST_LOG_TRIVIAL(info) << "udp(" << this << ") bound at " << socket.local_endpoint();
 		state = running;

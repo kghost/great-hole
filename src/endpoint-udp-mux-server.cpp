@@ -33,7 +33,7 @@ std::shared_ptr<endpoint> udp_mux_server::create_channel(uint8_t id) {
 	return std::shared_ptr<endpoint>(new channel(shared_from_this(), id));
 }
 
-udp_mux_server::udp_mux_server(boost::asio::io_service& io_service) : socket(io_service), local(boost::asio::ip::udp::v4(), 0) {}
+udp_mux_server::udp_mux_server(boost::asio::io_service& io_service) : socket(io_service), local(boost::asio::ip::udp::v6(), 0) {}
 udp_mux_server::udp_mux_server(boost::asio::io_service& io_service, boost::asio::ip::udp::endpoint bind) : socket(io_service), local(bind) {}
 
 void udp_mux_server::try_async_start(fu2::unique_function<event> &&handler) {
@@ -52,7 +52,8 @@ void udp_mux_server::try_async_start(fu2::unique_function<event> &&handler) {
 
 void udp_mux_server::async_start(fu2::unique_function<event> &&handler) {
 	try {
-		socket.open(boost::asio::ip::udp::v4());
+		socket.open(boost::asio::ip::udp::v6());
+		socket.set_option(boost::asio::ip::v6_only(false));
 		socket.bind(local);
 		BOOST_LOG_TRIVIAL(info) << "udp_mux_server(" << this << ") bound at " << socket.local_endpoint();
 		state = running;

@@ -3,6 +3,7 @@
 #include "lua-lib.hpp"
 
 #include <memory>
+#include <boost/asio/ip/address_v6.hpp>
 
 #include "pipeline.hpp"
 #include "filter-xor.hpp"
@@ -13,6 +14,17 @@
 
 #include "libs/lua-5.3.2/lua.h"
 #include "libs/lua-5.3.2/lauxlib.h"
+
+
+static boost::asio::ip::address_v6 get_address(const char * str)
+{
+	auto address = boost::asio::ip::make_address(str);
+	if (address.is_v4()) {
+		return boost::asio::ip::make_address_v6(boost::asio::ip::v4_mapped_t(), address.to_v4());
+	} else {
+		return address.to_v6();
+	}
+}
 
 template<int f(lua_State *L)>
 static int safe_call(lua_State *L) {
@@ -111,7 +123,7 @@ static int udp_create_channel (lua_State *L) {
 
 	auto address = lua_tostring(L, 2);
 	auto port = (int)lua_tonumber(L, 3);
-	auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::address_v4::from_string(address), port);
+	auto peer = boost::asio::ip::udp::endpoint(get_address(address), port);
 
 	auto &u = *(std::shared_ptr<udp>*)luaL_checkudata(L, 1, name_udp);
 
@@ -135,7 +147,7 @@ static int udp_new(lua_State *L) {
 			break;
 		case 1:
 			{
-				auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), (int)lua_tonumber(L, 1));
+				auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
 				new (lua_newuserdata(L, sizeof(std::shared_ptr<udp>))) std::shared_ptr<udp>(new udp(io_service, peer));
 				break;
 			}
@@ -179,7 +191,7 @@ static int udp_mux_server_new(lua_State *L) {
 			break;
 		case 1:
 			{
-				auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), (int)lua_tonumber(L, 1));
+				auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
 				new (lua_newuserdata(L, sizeof(std::shared_ptr<udp_mux_server>))) std::shared_ptr<udp_mux_server>(new udp_mux_server(io_service, peer));
 				break;
 			}
@@ -204,7 +216,7 @@ static int udp_mux_client_new(lua_State *L) {
 				auto id = (int)lua_tonumber(L, 1);
 				auto peer_address = lua_tostring(L, 2);
 				auto peer_port = (int)lua_tonumber(L, 3);
-				auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::address_v4::from_string(peer_address), peer_port);
+				auto peer = boost::asio::ip::udp::endpoint(get_address(peer_address), peer_port);
 				new (lua_newuserdata(L, sizeof(std::shared_ptr<endpoint>))) std::shared_ptr<endpoint>(new udp_mux_client(io_service, id, peer));
 			}
 			break;
@@ -213,10 +225,10 @@ static int udp_mux_client_new(lua_State *L) {
 				auto id = (int)lua_tonumber(L, 1);
 				auto peer_address = lua_tostring(L, 2);
 				auto peer_port = (int)lua_tonumber(L, 3);
-				auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::address_v4::from_string(peer_address), peer_port);
+				auto peer = boost::asio::ip::udp::endpoint(get_address(peer_address), peer_port);
 				auto local_address = lua_tostring(L, 4);
 				auto local_port = (int)lua_tonumber(L, 5);
-				auto local = boost::asio::ip::udp::endpoint(boost::asio::ip::address_v4::from_string(local_address), local_port);
+				auto local = boost::asio::ip::udp::endpoint(get_address(local_address), local_port);
 				new (lua_newuserdata(L, sizeof(std::shared_ptr<endpoint>))) std::shared_ptr<endpoint>(new udp_mux_client(io_service, id, peer, local));
 				break;
 			}

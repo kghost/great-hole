@@ -6,7 +6,7 @@
 #include <boost/log/trivial.hpp>
 #include <boost/asio/buffer.hpp>
 
-udp_mux_client::udp_mux_client(boost::asio::io_service& io_service, uint8_t id, boost::asio::ip::udp::endpoint peer) : socket(io_service), id(id), peer(peer), local(boost::asio::ip::udp::v4(), 0) {}
+udp_mux_client::udp_mux_client(boost::asio::io_service& io_service, uint8_t id, boost::asio::ip::udp::endpoint peer) : socket(io_service), id(id), peer(peer), local(boost::asio::ip::udp::v6(), 0) {}
 udp_mux_client::udp_mux_client(boost::asio::io_service& io_service, uint8_t id, boost::asio::ip::udp::endpoint peer, boost::asio::ip::udp::endpoint local) : socket(io_service), id(id), peer(peer), local(local) {}
 
 void udp_mux_client::async_start(fu2::unique_function<event> &&handler) {
@@ -14,7 +14,8 @@ void udp_mux_client::async_start(fu2::unique_function<event> &&handler) {
 		case none:
 			state = opening;
 			try {
-				socket.open(boost::asio::ip::udp::v4());
+				socket.open(boost::asio::ip::udp::v6());
+				socket.set_option(boost::asio::ip::v6_only(false));
 				socket.bind(local);
 				BOOST_LOG_TRIVIAL(info) << "udp_mux_client(" << this << ") bound at " << socket.local_endpoint();
 			} catch (const gh::system_error &e) {
