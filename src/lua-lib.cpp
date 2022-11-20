@@ -5,15 +5,15 @@
 #include <memory>
 #include <boost/asio/ip/address_v6.hpp>
 
+#include <lua.h>
+#include <lauxlib.h>
+
 #include "pipeline.hpp"
 #include "filter-xor.hpp"
 #include "endpoint-tun.hpp"
 #include "endpoint-udp.hpp"
 #include "endpoint-udp-mux-server.hpp"
 #include "endpoint-udp-mux-client.hpp"
-
-#include "libs/lua-5.3.2/lua.h"
-#include "libs/lua-5.3.2/lauxlib.h"
 
 
 static boost::asio::ip::address_v6 get_address(const char * str)

@@ -7,9 +7,9 @@
 #include <boost/filesystem.hpp>
 #include <boost/log/core/core.hpp>
 
-#include "libs/lua-5.3.2/lua.h"
-#include "libs/lua-5.3.2/lauxlib.h"
-#include "libs/lua-5.3.2/lualib.h"
+#include <lua.h>
+#include <lauxlib.h>
+#include <lualib.h>
 
 #include "error-code.hpp"
 #include "logging.hpp"

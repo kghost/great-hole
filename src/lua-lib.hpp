@@ -3,7 +3,7 @@
 
 #include <boost/asio.hpp>
 
-#include "libs/lua-5.3.2/lua.h"
+#include <lua.h>
 
 void luaopen_hole(lua_State *L, boost::asio::io_service &io_service);
 

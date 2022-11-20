@@ -20,6 +20,7 @@ AC_PROG_CC(clang gcc)
 AC_PROG_CPP(clang++ g++)
 AC_PROG_CXX(clang++ g++)
 AX_CXX_COMPILE_STDCXX_14
+AX_PROG_LUA
 
 AC_CHECK_TOOL([OBJCOPY], [objcopy])
 
@@ -49,10 +50,13 @@ AX_BOOST_ASIO
 AX_BOOST_FILESYSTEM
 AX_BOOST_THREAD
 
+AX_LUA_HEADERS
+AX_LUA_LIBS
+
 AC_CHECK_LIB(zlib, zlib)
 
 dnl Checks for typedefs, structures, and compiler characteristics.
 
 dnl Checks for library functions.
 
-AC_OUTPUT([Makefile src/Makefile libs/Makefile libs/lua-5.3.2/Makefile])
+AC_OUTPUT([Makefile src/Makefile libs/Makefile])
