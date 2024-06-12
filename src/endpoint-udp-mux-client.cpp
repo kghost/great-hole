@@ -79,6 +79,7 @@ void udp_mux_client::async_write(packet && p, fu2::unique_function<write_handler
 	auto & buffer = p.first;
 	if (buffer.offset < 1) {
 		handler(gh::error_code{app_error_category::invalid_packet_reserved, app_error}, 0);
+		write_pending = false;
 		return;
 	}
 

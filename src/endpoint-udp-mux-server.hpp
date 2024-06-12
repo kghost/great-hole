@@ -5,6 +5,7 @@
 #include <boost/asio.hpp>
 
 #include "endpoint.hpp"
+#include "scoped_flag.hpp"
 
 class udp_mux_server : public std::enable_shared_from_this<udp_mux_server> {
 	public:
@@ -32,7 +33,7 @@ class udp_mux_server : public std::enable_shared_from_this<udp_mux_server> {
 		void read(uint8_t id, fu2::unique_function<read_handler> &&handler);
 		void write(uint8_t id, packet && b, fu2::unique_function<write_handler> &&handler);
 		void schedule_read(std::shared_ptr<tm> m);
-		void schedule_write();
+		void schedule_write(scoped_flag && write);
 
 		bool started = false;
 };

@@ -120,13 +120,11 @@ void udp_mux_server::schedule_read(std::shared_ptr<tm> m) {
 void udp_mux_server::write(uint8_t id, packet && p, fu2::unique_function<write_handler> &&handler) {
 	if (state != running) return;
 	write_queue.push(std::make_tuple(id, std::move(p), std::move(handler)));
-	schedule_write();
+	if (state != running || write_pending) return;
+	schedule_write(scoped_flag(write_pending));
 }
 
-void udp_mux_server::schedule_write() {
-	if (state != running || write_pending) return;
-
-	scoped_flag write(write_pending);
+void udp_mux_server::schedule_write(scoped_flag && write) {
 	auto &next = write_queue.front();
 	auto id = std::get<0>(next);
 	auto p = std::move(std::get<1>(next));
@@ -151,6 +149,6 @@ void udp_mux_server::schedule_write() {
 
 	socket.async_send_to(boost::asio::const_buffer{p.first}, peer_iter->second, [me = shared_from_this(), handler{std::move(handler)}, write{std::move(write)}](const gh::error_code& ec, std::size_t bytes_transferred) mutable {
 		handler(ec, bytes_transferred);
-		if (!me->write_queue.empty()) me->schedule_write();
+		if (!me->write_queue.empty()) me->schedule_write(std::move(write));
 	});
 }
