@@ -91,7 +91,7 @@ void pipeline::schedule_read() {
 void pipeline::schedule_read(scoped_flag && read) {
 	if (state == running) {
 		in->async_read([this, me = shared_from_this(), read{std::move(read)}](const gh::error_code &ec, packet &&p) mutable {
-			fc.after_read();
+			//fc.after_read();
 			if (!ec) {
 				if (!write_pending) {
 					process(scoped_flag(write_pending), std::move(p));
@@ -112,7 +112,7 @@ void pipeline::schedule_write(scoped_flag && write, packet &&p) {
 		auto buffer = boost::asio::const_buffer(p.first);
 		auto storage = p.second;
 		out->async_write(std::move(p), [me = shared_from_this(), storage, write{std::move(write)}](const gh::error_code &ec, std::size_t bytes_transferred) mutable {
-			me->fc.after_write();
+			//me->fc.after_write();
 			if (ec) {
 				if (me->is_critical(ec)) {
 					BOOST_LOG_TRIVIAL(error) << "pipeline(" << &*me << ") write error: " << ec.message();
