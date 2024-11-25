@@ -1,3 +1,9 @@
+great-hole (0.1.9) bookworm; urgency=medium
+
+  * Network/host unreachable is not fatal.
+
+ -- Zealot <zealot0630@gmail.com>  Mon, 25 Nov 2024 14:46:23 +0800
+
 great-hole (0.1.8) bookworm; urgency=medium
 
   * Fix udp mux deadlock.

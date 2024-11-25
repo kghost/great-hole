@@ -1,9 +1,9 @@
 #ifndef LUA_CONSOLE_H
 #define LUA_CONSOLE_H
 
-#include "libs/lua-5.3.2/lua.h"
-#include "libs/lua-5.3.2/lauxlib.h"
-#include "libs/lua-5.3.2/lualib.h"
+#include "lua5.4/lua.h"
+#include "lua5.4/lauxlib.h"
+#include "lua5.4/lualib.h"
 
 class lua_console : public boost::enable_shared_from_this<lua_console> {
 	public:

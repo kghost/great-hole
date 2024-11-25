@@ -132,6 +132,8 @@ bool pipeline::is_critical(const gh::error_code &ec) {
 			case boost::system::errc::invalid_argument:
 			case boost::system::errc::io_error:
 			case boost::system::errc::connection_refused:
+			case boost::system::errc::network_unreachable:
+			case boost::system::errc::host_unreachable:
 				return false;
 			default: 
 				return true;
