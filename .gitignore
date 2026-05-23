@@ -36,3 +36,4 @@ Makefile.in
 /debian/great-hole/
 
 /src/great-hole
+build/
