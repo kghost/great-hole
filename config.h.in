@@ -1,7 +1,0 @@
-/* config.h.in for CMake */
-
-/* disable handler check, move only type captured lambda failed on boost 1.62 */
-#cmakedefine BOOST_ASIO_DISABLE_HANDLER_TYPE_REQUIREMENTS 1
-
-/* Enable asio move handler */
-#cmakedefine BOOST_ASIO_HAS_MOVE 1

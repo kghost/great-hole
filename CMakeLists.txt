@@ -13,10 +13,7 @@ find_package(Boost REQUIRED COMPONENTS log iostreams program_options filesystem 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LUA REQUIRED IMPORTED_TARGET lua-5.4)
 
-set(BOOST_ASIO_DISABLE_HANDLER_TYPE_REQUIREMENTS 1)
-set(BOOST_ASIO_HAS_MOVE 1)
 
-configure_file(config.h.in config.h)
 
 # src/init.lua custom command
 set(INIT_LUA_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/init.lua)
@@ -56,6 +53,8 @@ target_include_directories(great-hole PRIVATE
 target_compile_definitions(great-hole PRIVATE
     BOOST_ALL_DYN_LINK
     BOOST_ASIO_ENABLE_OLD_SERVICES
+    BOOST_ASIO_DISABLE_HANDLER_TYPE_REQUIREMENTS
+    BOOST_ASIO_HAS_MOVE
 )
 
 target_link_libraries(great-hole PRIVATE

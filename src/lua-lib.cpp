@@ -1,4 +1,4 @@
-#include "config.h"
+
 
 #include "lua-lib.hpp"
 #include <lua.hpp>
