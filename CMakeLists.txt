@@ -5,15 +5,16 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
+
 # Dependencies
 find_package(Threads REQUIRED)
 find_package(ZLIB REQUIRED)
 find_package(Boost REQUIRED COMPONENTS log iostreams program_options filesystem thread)
-
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LUA REQUIRED IMPORTED_TARGET lua-5.4)
-
-
 
 # src/init.lua custom command
 set(INIT_LUA_SRC ${CMAKE_CURRENT_SOURCE_DIR}/src/init.lua)
