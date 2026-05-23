@@ -36,13 +36,13 @@ void tun::async_start(std::move_only_function<event>&& handler) {
     return;
   }
 
-  s.assign(fd, started_ec);
+  started_ec = s.assign(fd, started_ec);
   if (started_ec) {
     ::close(fd);
     handler(started_ec);
     return;
   }
-  s.non_blocking(true, started_ec);
+  started_ec = s.non_blocking(true, started_ec);
   if (started_ec) {
     s.close();
     handler(started_ec);
