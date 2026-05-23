@@ -10,15 +10,15 @@ class udp::udp_channel : public endpoint {
 	public:
 		udp_channel(std::shared_ptr<udp> parent, const boost::asio::ip::udp::endpoint &peer) : parent(parent), peer(peer) {}
 
-		void async_start(fu2::unique_function<event> &&handler) override {
+		void async_start(std::move_only_function<event> &&handler) override {
 			parent->try_async_start(std::move(handler));
 		}
 
-		void async_read(fu2::unique_function<read_handler> &&handler) override {
+		void async_read(std::move_only_function<read_handler> &&handler) override {
 			parent->read(peer, std::move(handler));
 		}
 
-		void async_write(packet && p, fu2::unique_function<write_handler> &&handler) override {
+		void async_write(packet && p, std::move_only_function<write_handler> &&handler) override {
 			parent->write(peer, std::move(p), std::move(handler));
 		}
 
@@ -34,7 +34,7 @@ std::shared_ptr<endpoint> udp::create_channel(boost::asio::ip::udp::endpoint con
 udp::udp(boost::asio::io_context& io_context) : socket(io_context), local(boost::asio::ip::udp::v6(), 0) {}
 udp::udp(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint bind) : socket(io_context), local(bind) {}
 
-void udp::try_async_start(fu2::unique_function<event> &&handler) {
+void udp::try_async_start(std::move_only_function<event> &&handler) {
 	switch (state) {
 		case none:
 			async_start(std::move(handler));
@@ -48,7 +48,7 @@ void udp::try_async_start(fu2::unique_function<event> &&handler) {
 	}
 }
 
-void udp::async_start(fu2::unique_function<event> &&handler) {
+void udp::async_start(std::move_only_function<event> &&handler) {
 	try {
 		socket.open(boost::asio::ip::udp::v6());
 		socket.set_option(boost::asio::ip::v6_only(false));
@@ -63,7 +63,7 @@ void udp::async_start(fu2::unique_function<event> &&handler) {
 	}
 }
 
-void udp::read(boost::asio::ip::udp::endpoint const &peer, fu2::unique_function<read_handler> &&handler) {
+void udp::read(boost::asio::ip::udp::endpoint const &peer, std::move_only_function<read_handler> &&handler) {
 	if (state != running) return;
 	std::shared_ptr<tm> m;
 	if ((m = reading_channel.lock())) {
@@ -107,7 +107,7 @@ void udp::schedule_read(std::shared_ptr<tm> m) {
 		});
 }
 
-void udp::write(boost::asio::ip::udp::endpoint const &peer, packet && p, fu2::unique_function<write_handler> &&handler) {
+void udp::write(boost::asio::ip::udp::endpoint const &peer, packet && p, std::move_only_function<write_handler> &&handler) {
 	if (state != running) return;
 	write_queue.push(std::make_tuple(peer, std::move(p), std::move(handler)));
 	schedule_write();

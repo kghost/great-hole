@@ -42,7 +42,7 @@ private:
 
 class exec::proc : public std::enable_shared_from_this<proc> {
 public:
-  proc(fu2::unique_function<event> &&handler, pid_t pid)
+  proc(std::move_only_function<event> &&handler, pid_t pid)
       : handler(std::move(handler)), pid(pid) {}
 
   void notify(int code) {
@@ -55,7 +55,7 @@ public:
   void kill(int signum) { ::kill(pid, signum); }
 
 private:
-  fu2::unique_function<event> handler;
+  std::move_only_function<event> handler;
   pid_t pid;
   friend class signal;
 };
@@ -122,7 +122,7 @@ public:
       : pipe(io_context, sink) {}
 
   void async_write(packet &&p,
-                   fu2::unique_function<write_handler> &&handler) override {
+                   std::move_only_function<write_handler> &&handler) override {
     boost::asio::async_write(pipe, boost::asio::const_buffer{p.first},
                              std::move(handler));
   }
@@ -137,7 +137,7 @@ public:
          decltype(boost::process::pipe::source) source)
       : pipe(io_context, source) {}
 
-  virtual void async_read(fu2::unique_function<read_handler> &&handler) {
+  virtual void async_read(std::move_only_function<read_handler> &&handler) {
     auto a = std::make_shared<std::array<uint8_t, 2048>>();
     auto p = packet{buffer(*a), a};
     auto buffer = boost::asio::mutable_buffer{p.first};
@@ -192,7 +192,7 @@ std::shared_ptr<endpoint_input> exec::get_err() {
   return err;
 }
 
-void exec::run(fu2::unique_function<event> &&handler) {
+void exec::run(std::move_only_function<event> &&handler) {
   if (p.lock()) {
     BOOST_LOG_TRIVIAL(error) << "proc " << this << " already running.";
     handler(gh::error_code(app_error_category::already_started, app_error));

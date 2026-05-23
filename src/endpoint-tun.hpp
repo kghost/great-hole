@@ -12,9 +12,9 @@ class tun : public std::enable_shared_from_this<tun>, public endpoint {
 		tun(boost::asio::io_context &io_context, std::string const &name);
 		tun(boost::asio::io_context &io_context, std::string const &name, std::shared_ptr<exec> e);
 
-		void async_start(fu2::unique_function<event> &&) override;
-		void async_read(fu2::unique_function<read_handler> &&) override;
-		void async_write(packet &&, fu2::unique_function<write_handler> &&) override;
+		void async_start(std::move_only_function<event> &&) override;
+		void async_read(std::move_only_function<read_handler> &&) override;
+		void async_write(packet &&, std::move_only_function<write_handler> &&) override;
 	private:
 		boost::asio::posix::stream_descriptor s;
 

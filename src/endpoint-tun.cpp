@@ -12,7 +12,7 @@
 tun::tun(boost::asio::io_context &io_context, std::string const &name) : s(io_context), name(name) {}
 tun::tun(boost::asio::io_context &io_context, std::string const &name, std::shared_ptr<exec> e) : s(io_context), name(name), e(e) {}
 
-void tun::async_start(fu2::unique_function<event> &&handler) {
+void tun::async_start(std::move_only_function<event> &&handler) {
 	if (started == true) {
 		handler(started_ec);
 		return;
@@ -49,7 +49,7 @@ void tun::async_start(fu2::unique_function<event> &&handler) {
 	}
 }
 
-void tun::async_read(fu2::unique_function<read_handler> &&handler) {
+void tun::async_read(std::move_only_function<read_handler> &&handler) {
 	auto a = std::make_shared<std::array<uint8_t, 2048>>();
 	auto p = packet{buffer(*a), a};
 	auto buffer = boost::asio::mutable_buffer{p.first};
@@ -62,6 +62,6 @@ void tun::async_read(fu2::unique_function<read_handler> &&handler) {
 		});
 }
 
-void tun::async_write(packet && p, fu2::unique_function<write_handler> &&handler) {
+void tun::async_write(packet && p, std::move_only_function<write_handler> &&handler) {
 	s.async_write_some(boost::asio::const_buffer{p.first}, std::move(handler));
 }

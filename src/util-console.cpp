@@ -10,7 +10,7 @@ class input : public endpoint_skip_start<endpoint_input> {
 	public:
 		explicit input(boost::asio::io_context &io_context, decltype(STDERR_FILENO) f) : s(io_context, f) {}
 
-		virtual void async_read(fu2::unique_function<read_handler> &&handler) {
+		virtual void async_read(std::move_only_function<read_handler> &&handler) {
 			auto a = std::make_shared<std::array<uint8_t, 2048>>();
 			auto p = packet{buffer(*a), a};
 			auto buffer = boost::asio::mutable_buffer{p.first};
@@ -31,7 +31,7 @@ class output : public endpoint_skip_start<endpoint_output> {
 	public:
 		explicit output(boost::asio::io_context &io_context, decltype(STDERR_FILENO) f) : s(io_context, f) {}
 
-		void async_write(packet && p, fu2::unique_function<write_handler> && handler) override {
+		void async_write(packet && p, std::move_only_function<write_handler> && handler) override {
 			boost::asio::async_write(s, boost::asio::const_buffer{p.first}, std::move(handler));
 		}
 

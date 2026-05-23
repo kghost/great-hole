@@ -1,5 +1,3 @@
-/.exrc
-
 /debian/autoreconf.after
 /debian/autoreconf.before
 /debian/files

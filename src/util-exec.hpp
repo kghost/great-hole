@@ -19,7 +19,7 @@ class exec {
 			std::map<std::string, std::string> const &env = {}) : io_context(io_context), prog(prog), args(args), env(env) {}
 		~exec();
 
-		void run(fu2::unique_function<event> &&handler);
+		void run(std::move_only_function<event> &&handler);
 		void kill();
 
 		std::shared_ptr<endpoint_output> get_in();

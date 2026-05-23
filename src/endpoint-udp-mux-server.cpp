@@ -12,15 +12,15 @@ class udp_mux_server::channel : public endpoint {
 	public:
 		channel(std::shared_ptr<udp_mux_server> parent, uint8_t id) : parent(parent), id(id) {}
 
-		void async_start(fu2::unique_function<event> &&handler) override {
+		void async_start(std::move_only_function<event> &&handler) override {
 			parent->try_async_start(std::move(handler));
 		}
 
-		void async_read(fu2::unique_function<read_handler> &&handler) override {
+		void async_read(std::move_only_function<read_handler> &&handler) override {
 			parent->read(id, std::move(handler));
 		}
 
-		void async_write(packet && p, fu2::unique_function<write_handler> &&handler) override {
+		void async_write(packet && p, std::move_only_function<write_handler> &&handler) override {
 			parent->write(id, std::move(p), std::move(handler));
 		}
 
@@ -36,7 +36,7 @@ std::shared_ptr<endpoint> udp_mux_server::create_channel(uint8_t id) {
 udp_mux_server::udp_mux_server(boost::asio::io_context& io_context) : socket(io_context), local(boost::asio::ip::udp::v6(), 0) {}
 udp_mux_server::udp_mux_server(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint bind) : socket(io_context), local(bind) {}
 
-void udp_mux_server::try_async_start(fu2::unique_function<event> &&handler) {
+void udp_mux_server::try_async_start(std::move_only_function<event> &&handler) {
 	switch (state) {
 		case none:
 			async_start(std::move(handler));
@@ -50,7 +50,7 @@ void udp_mux_server::try_async_start(fu2::unique_function<event> &&handler) {
 	}
 }
 
-void udp_mux_server::async_start(fu2::unique_function<event> &&handler) {
+void udp_mux_server::async_start(std::move_only_function<event> &&handler) {
 	try {
 		socket.open(boost::asio::ip::udp::v6());
 		socket.set_option(boost::asio::ip::v6_only(false));
@@ -65,7 +65,7 @@ void udp_mux_server::async_start(fu2::unique_function<event> &&handler) {
 	}
 }
 
-void udp_mux_server::read(uint8_t id, fu2::unique_function<read_handler> &&handler) {
+void udp_mux_server::read(uint8_t id, std::move_only_function<read_handler> &&handler) {
 	if (state != running) return;
 	std::shared_ptr<tm> m;
 	if ((m = reading_channel.lock())) {
@@ -117,7 +117,7 @@ void udp_mux_server::schedule_read(std::shared_ptr<tm> m) {
 		});
 }
 
-void udp_mux_server::write(uint8_t id, packet && p, fu2::unique_function<write_handler> &&handler) {
+void udp_mux_server::write(uint8_t id, packet && p, std::move_only_function<write_handler> &&handler) {
 	if (state != running) return;
 	write_queue.push(std::make_tuple(id, std::move(p), std::move(handler)));
 	if (state != running || write_pending) return;

@@ -9,7 +9,7 @@
 udp_mux_client::udp_mux_client(boost::asio::io_context& io_context, uint8_t id, boost::asio::ip::udp::endpoint peer) : socket(io_context), id(id), peer(peer), local(boost::asio::ip::udp::v6(), 0) {}
 udp_mux_client::udp_mux_client(boost::asio::io_context& io_context, uint8_t id, boost::asio::ip::udp::endpoint peer, boost::asio::ip::udp::endpoint local) : socket(io_context), id(id), peer(peer), local(local) {}
 
-void udp_mux_client::async_start(fu2::unique_function<event> &&handler) {
+void udp_mux_client::async_start(std::move_only_function<event> &&handler) {
 	switch (state) {
 		case none:
 			state = opening;
@@ -42,7 +42,7 @@ void udp_mux_client::async_start(fu2::unique_function<event> &&handler) {
 	}
 }
 
-void udp_mux_client::async_read(fu2::unique_function<read_handler> &&handler) {
+void udp_mux_client::async_read(std::move_only_function<read_handler> &&handler) {
 	auto a = std::make_shared<std::array<uint8_t, 2048>>();
 	auto p = packet{buffer(*a), a};
 	auto buffer = boost::asio::mutable_buffer{p.first};
@@ -71,7 +71,7 @@ void udp_mux_client::async_read(fu2::unique_function<read_handler> &&handler) {
 	});
 }
 
-void udp_mux_client::async_write(packet && p, fu2::unique_function<write_handler> && handler) {
+void udp_mux_client::async_write(packet && p, std::move_only_function<write_handler> && handler) {
 	if (state != running) return;
 	assert(!write_pending);
 	write_pending = true;
