@@ -1,5 +1,3 @@
-
-
 #include "endpoint.hpp"
 
 endpoint_input::~endpoint_input() {}

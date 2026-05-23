@@ -1,5 +1,3 @@
-
-
 #include "endpoint-tun.hpp"
 
 #include <linux/if_tun.h>
@@ -9,59 +7,71 @@
 
 #include "util-exec.hpp"
 
-tun::tun(boost::asio::io_context &io_context, std::string const &name) : s(io_context), name(name) {}
-tun::tun(boost::asio::io_context &io_context, std::string const &name, std::shared_ptr<exec> e) : s(io_context), name(name), e(e) {}
+tun::tun(boost::asio::io_context& io_context, std::string const& name) : s(io_context), name(name) {}
+tun::tun(boost::asio::io_context& io_context, std::string const& name, std::shared_ptr<exec> e)
+    : s(io_context), name(name), e(e) {}
 
-void tun::async_start(std::move_only_function<event> &&handler) {
-	if (started == true) {
-		handler(started_ec);
-		return;
-	}
+void tun::async_start(std::move_only_function<event>&& handler) {
+  if (started == true) {
+    handler(started_ec);
+    return;
+  }
 
-	started = true;
-	int fd = ::open("/dev/net/tun", O_RDWR);
-	if (fd < 0) {
-		started_ec = gh::error_code(errno, gh::system_category());
-		handler(started_ec);
-		return;
-	}
+  started = true;
+  int fd = ::open("/dev/net/tun", O_RDWR);
+  if (fd < 0) {
+    started_ec = gh::error_code(errno, gh::system_category());
+    handler(started_ec);
+    return;
+  }
 
-	struct ifreq ifr;
-	memset(&ifr, 0, sizeof(ifr));
-	strncpy(ifr.ifr_name, name.c_str(), IFNAMSIZ);
-	ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
-	if (::ioctl(fd, TUNSETIFF, (void *) &ifr) < 0) {
-		::close(fd);
-		started_ec = gh::error_code(errno, gh::system_category());
-		handler(started_ec);
-		return;
-	}
+  struct ifreq ifr;
+  memset(&ifr, 0, sizeof(ifr));
+  strncpy(ifr.ifr_name, name.c_str(), IFNAMSIZ);
+  ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
+  if (::ioctl(fd, TUNSETIFF, (void*)&ifr) < 0) {
+    ::close(fd);
+    started_ec = gh::error_code(errno, gh::system_category());
+    handler(started_ec);
+    return;
+  }
 
-	s.assign(fd, started_ec);
-	if (started_ec) { ::close(fd); handler(started_ec); return; }
-	s.non_blocking(true, started_ec);
-	if (started_ec) { s.close(); handler(started_ec); return; }
-	if (e) {
-		e->run([me = shared_from_this(), handler{std::move(handler)}, e = e] (boost::system::error_code ec) mutable { handler(ec); });
-		e.reset();
-	} else {
-		handler(started_ec);
-	}
+  s.assign(fd, started_ec);
+  if (started_ec) {
+    ::close(fd);
+    handler(started_ec);
+    return;
+  }
+  s.non_blocking(true, started_ec);
+  if (started_ec) {
+    s.close();
+    handler(started_ec);
+    return;
+  }
+  if (e) {
+    e->run([me = shared_from_this(), handler{std::move(handler)}, e = e](boost::system::error_code ec) mutable {
+      handler(ec);
+    });
+    e.reset();
+  } else {
+    handler(started_ec);
+  }
 }
 
-void tun::async_read(std::move_only_function<read_handler> &&handler) {
-	auto a = std::make_shared<std::array<uint8_t, 2048>>();
-	auto p = packet{buffer(*a), a};
-	auto buffer = boost::asio::mutable_buffer{p.first};
-	s.async_read_some(buffer, [me = shared_from_this(), p{std::move(p)}, handler{std::move(handler)}](const gh::error_code& ec, std::size_t bytes_transferred) mutable {
-			if (!ec) {
-				assert(bytes_transferred <= p.first.capacity - p.first.offset);
-				p.first.length = bytes_transferred;
-			}
-			handler(ec, std::move(p));
-		});
+void tun::async_read(std::move_only_function<read_handler>&& handler) {
+  auto a = std::make_shared<std::array<uint8_t, 2048>>();
+  auto p = packet{buffer(*a), a};
+  auto buffer = boost::asio::mutable_buffer{p.first};
+  s.async_read_some(buffer, [me = shared_from_this(), p{std::move(p)}, handler{std::move(handler)}](
+                                const gh::error_code& ec, std::size_t bytes_transferred) mutable {
+    if (!ec) {
+      assert(bytes_transferred <= p.first.capacity - p.first.offset);
+      p.first.length = bytes_transferred;
+    }
+    handler(ec, std::move(p));
+  });
 }
 
-void tun::async_write(packet && p, std::move_only_function<write_handler> &&handler) {
-	s.async_write_some(boost::asio::const_buffer{p.first}, std::move(handler));
+void tun::async_write(packet&& p, std::move_only_function<write_handler>&& handler) {
+  s.async_write_some(boost::asio::const_buffer{p.first}, std::move(handler));
 }

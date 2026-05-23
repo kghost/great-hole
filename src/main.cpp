@@ -1,5 +1,3 @@
-
-
 #include <boost/asio.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/log/core/core.hpp>
@@ -18,10 +16,9 @@ extern const char _binary_init_lua_end[];
 namespace po = boost::program_options;
 namespace fs = boost::filesystem;
 
-int main(int ac, char **av) {
+int main(int ac, char** av) {
   po::options_description desc("Options");
-  desc.add_options()("help", "print this message")(
-      "startlua", po::value<std::string>(), "the lua script run at start");
+  desc.add_options()("help", "print this message")("startlua", po::value<std::string>(), "the lua script run at start");
   ;
 
   po::positional_options_description pd;
@@ -29,10 +26,9 @@ int main(int ac, char **av) {
 
   po::variables_map vm;
   try {
-    po::store(
-        po::command_line_parser(ac, av).options(desc).positional(pd).run(), vm);
+    po::store(po::command_line_parser(ac, av).options(desc).positional(pd).run(), vm);
     po::notify(vm);
-  } catch (const po::error &ex) {
+  } catch (const po::error& ex) {
     std::cout << ex.what() << std::endl;
     return 1;
   }
@@ -50,7 +46,7 @@ int main(int ac, char **av) {
       std::cout << "can't load startlua: " << start << std::endl;
       return 1;
     }
-  } catch (const fs::filesystem_error &ex) {
+  } catch (const fs::filesystem_error& ex) {
     std::cout << ex.what() << std::endl;
     return 1;
   }
@@ -61,13 +57,11 @@ int main(int ac, char **av) {
   init_log(cerr);
 
   {
-    std::unique_ptr<lua_State, void (*)(lua_State *L)> L(
-        luaL_newstate(), [](lua_State *L) { lua_close(L); });
+    std::unique_ptr<lua_State, void (*)(lua_State* L)> L(luaL_newstate(), [](lua_State* L) { lua_close(L); });
     luaL_openlibs(L.get());
     luaopen_hole(L.get(), io_context);
 
-    if (luaL_loadbuffer(L.get(), _binary_init_lua_start,
-                        _binary_init_lua_end - _binary_init_lua_start,
+    if (luaL_loadbuffer(L.get(), _binary_init_lua_start, _binary_init_lua_end - _binary_init_lua_start,
                         "internal-lua") ||
         lua_pcall(L.get(), 0, 0, 0)) {
       std::cout << lua_tostring(L.get(), -1) << std::endl;
@@ -82,11 +76,11 @@ int main(int ac, char **av) {
     }
 
     boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
-    signals.async_wait(
-        [&io_context](const gh::error_code &ec, int signal_number) {
-          if (!ec)
-            io_context.stop();
-        });
+    signals.async_wait([&io_context](const gh::error_code& ec, int signal_number) {
+      if (!ec) {
+        io_context.stop();
+      }
+    });
 
     io_context.run();
   }

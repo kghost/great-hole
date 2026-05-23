@@ -1,8 +1,8 @@
 #ifndef LOGGING_H
 #define LOGGING_H
 
-#include <memory>
 #include <boost/asio.hpp>
+#include <memory>
 
 class endpoint_output;
 
