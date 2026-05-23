@@ -28,8 +28,7 @@ add_custom_command(
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-add_executable(great-hole
-    src/main.cpp
+add_library(great-hole-core STATIC
     src/lua-lib.cpp
     src/pipeline.cpp
     src/endpoint.cpp
@@ -45,20 +44,24 @@ add_executable(great-hole
     ${INIT_LUA_OBJ}
 )
 
-target_include_directories(great-hole PRIVATE
+add_executable(great-hole
+    src/main.cpp
+)
+
+target_include_directories(great-hole-core PUBLIC
     ${CMAKE_CURRENT_BINARY_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/libs
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_compile_definitions(great-hole PRIVATE
+target_compile_definitions(great-hole-core PUBLIC
     BOOST_ALL_DYN_LINK
     BOOST_ASIO_ENABLE_OLD_SERVICES
     BOOST_ASIO_DISABLE_HANDLER_TYPE_REQUIREMENTS
     BOOST_ASIO_HAS_MOVE
 )
 
-target_link_libraries(great-hole PRIVATE
+target_link_libraries(great-hole-core PUBLIC
     Threads::Threads
     ZLIB::ZLIB
     Boost::log
@@ -68,3 +71,18 @@ target_link_libraries(great-hole PRIVATE
     Boost::thread
     PkgConfig::LUA
 )
+
+target_link_libraries(great-hole PRIVATE
+    great-hole-core
+)
+
+enable_testing()
+
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  URL https://github.com/google/googletest/archive/03597a01ee50ed33e9dfd640b249b4be3799d395.zip
+)
+FetchContent_MakeAvailable(googletest)
+
+add_subdirectory(tests)

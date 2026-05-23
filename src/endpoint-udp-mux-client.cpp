@@ -66,7 +66,8 @@ void udp_mux_client::async_read(std::move_only_function<read_handler>&& handler)
 
       uint8_t channel_id = buffer.data[buffer.offset];
       if (channel_id != me->id) {
-        BOOST_LOG_TRIVIAL(info) << "udp_mux_client(" << &*me << ") ignored packet for unknown channel: " << (int)channel_id;
+        BOOST_LOG_TRIVIAL(info) << "udp_mux_client(" << &*me
+                                << ") ignored packet for unknown channel: " << (int)channel_id;
         me->async_read(std::move(handler));
         return;
       }

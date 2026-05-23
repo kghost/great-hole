@@ -17,6 +17,8 @@ public:
 
   std::shared_ptr<endpoint> create_channel(uint8_t id);
 
+  boost::asio::ip::udp::endpoint local_endpoint() const { return socket.local_endpoint(); }
+
 private:
   typedef std::map<uint8_t, std::move_only_function<read_handler>> tm;
   // read_handler is holding the whole world, where we should break ref chain here

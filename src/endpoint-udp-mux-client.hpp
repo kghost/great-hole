@@ -14,6 +14,8 @@ public:
   void async_read(std::move_only_function<read_handler>&&) override;
   void async_write(packet&&, std::move_only_function<write_handler>&&) override;
 
+  boost::asio::ip::udp::endpoint local_endpoint() const { return socket.local_endpoint(); }
+
 private:
   boost::asio::ip::udp::socket socket;
   const uint8_t id;
