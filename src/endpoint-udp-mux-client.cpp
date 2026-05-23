@@ -59,13 +59,15 @@ void udp_mux_client::async_read(std::move_only_function<read_handler>&& handler)
       buffer.length = bytes_transferred;
 
       if (bytes_transferred < 1) {
-        handler(gh::error_code{app_error_category::invalid_packet_size, app_error}, std::move(p));
+        BOOST_LOG_TRIVIAL(info) << "udp_mux_client(" << &*me << ") ignored empty packet";
+        me->async_read(std::move(handler));
         return;
       }
 
       uint8_t channel_id = buffer.data[buffer.offset];
       if (channel_id != me->id) {
-        handler(gh::error_code{app_error_category::invalid_packet_session, app_error}, std::move(p));
+        BOOST_LOG_TRIVIAL(info) << "udp_mux_client(" << &*me << ") ignored packet for unknown channel: " << (int)channel_id;
+        me->async_read(std::move(handler));
         return;
       }
 

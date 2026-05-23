@@ -99,8 +99,12 @@ void pipeline::schedule_read(scoped_flag&& read) {
               buffers.push(std::move(p));
             }
           } else {
-            BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") read error: " << ec.message();
-            stop();
+            if (me->is_critical(ec)) {
+              BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") read error: " << ec.message();
+              stop();
+            } else {
+              BOOST_LOG_TRIVIAL(warning) << "pipeline(" << this << ") read error (non-critical): " << ec.message();
+            }
           }
           schedule_read(std::move(read));
         });

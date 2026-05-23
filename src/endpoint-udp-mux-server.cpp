@@ -96,22 +96,21 @@ void udp_mux_server::schedule_read(std::shared_ptr<tm> m) {
                                 assert(bytes_transferred <= buffer.capacity - buffer.offset);
                                 buffer.length = bytes_transferred;
 
-                                if (bytes_transferred < 1) {
-                                  return;
-                                }
-                                uint8_t id = buffer.data[buffer.offset];
-                                buffer.offset += 1;
-                                buffer.length -= 1;
-                                me->peers[id] = *peer_address; // learn peer address
+                                if (bytes_transferred >= 1) {
+                                  uint8_t id = buffer.data[buffer.offset];
+                                  buffer.offset += 1;
+                                  buffer.length -= 1;
+                                  me->peers[id] = *peer_address; // learn peer address
 
-                                auto h = m->find(id);
-                                if (h != m->end()) {
-                                  auto handler = std::move(h->second);
-                                  m->erase(h);
-                                  handler(ec, std::move(p));
-                                } else {
-                                  BOOST_LOG_TRIVIAL(info)
-                                      << "udp_mux_server(" << &*me << ") packet from unknown peer: " << id;
+                                  auto h = m->find(id);
+                                  if (h != m->end()) {
+                                    auto handler = std::move(h->second);
+                                    m->erase(h);
+                                    handler(ec, std::move(p));
+                                  } else {
+                                    BOOST_LOG_TRIVIAL(info)
+                                        << "udp_mux_server(" << &*me << ") packet from unknown peer: " << id;
+                                  }
                                 }
                               } else {
                                 BOOST_LOG_TRIVIAL(error)
@@ -145,12 +144,18 @@ void udp_mux_server::schedule_write(scoped_flag&& write) {
   auto peer_iter = peers.find(id);
   if (peer_iter == peers.end()) {
     handler(gh::error_code{app_error_category::invalid_packet_session, app_error}, 0);
+    if (!write_queue.empty()) {
+      schedule_write(std::move(write));
+    }
     return;
   }
 
   auto& buffer = p.first;
   if (buffer.offset < 1) {
     handler(gh::error_code{app_error_category::invalid_packet_reserved, app_error}, 0);
+    if (!write_queue.empty()) {
+      schedule_write(std::move(write));
+    }
     return;
   }
 
