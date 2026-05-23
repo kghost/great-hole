@@ -9,8 +9,8 @@
 
 #include "util-exec.hpp"
 
-tun::tun(boost::asio::io_service &io_service, std::string const &name) : s(io_service), name(name) {}
-tun::tun(boost::asio::io_service &io_service, std::string const &name, std::shared_ptr<exec> e) : s(io_service), name(name), e(e) {}
+tun::tun(boost::asio::io_context &io_context, std::string const &name) : s(io_context), name(name) {}
+tun::tun(boost::asio::io_context &io_context, std::string const &name, std::shared_ptr<exec> e) : s(io_context), name(name), e(e) {}
 
 void tun::async_start(fu2::unique_function<event> &&handler) {
 	if (started == true) {

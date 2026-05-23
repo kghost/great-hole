@@ -9,8 +9,8 @@
 class exec;
 class tun : public std::enable_shared_from_this<tun>, public endpoint {
 	public:
-		tun(boost::asio::io_service &io_service, std::string const &name);
-		tun(boost::asio::io_service &io_service, std::string const &name, std::shared_ptr<exec> e);
+		tun(boost::asio::io_context &io_context, std::string const &name);
+		tun(boost::asio::io_context &io_context, std::string const &name, std::shared_ptr<exec> e);
 
 		void async_start(fu2::unique_function<event> &&) override;
 		void async_read(fu2::unique_function<read_handler> &&) override;

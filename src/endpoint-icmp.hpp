@@ -11,8 +11,8 @@ class icmp : public std::enable_shared_from_this<icmp> {
 	public:
 		class icmp_channel;
 
-		icmp(boost::asio::io_service& io_service);
-		icmp(boost::asio::io_service& io_service, boost::asio::ip::icmp::endpoint bind);
+		icmp(boost::asio::io_context& io_context);
+		icmp(boost::asio::io_context& io_context, boost::asio::ip::icmp::endpoint bind);
 
 		std::shared_ptr<endpoint> create_channel(boost::asio::ip::icmp::endpoint const &peer);
 

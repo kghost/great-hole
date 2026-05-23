@@ -1,6 +1,7 @@
 #pragma once
 
 #include <queue>
+#include <map>
 
 #include <boost/asio.hpp>
 
@@ -11,8 +12,8 @@ class udp_mux_server : public std::enable_shared_from_this<udp_mux_server> {
 	public:
 		class channel;
 
-		udp_mux_server(boost::asio::io_service& io_service);
-		udp_mux_server(boost::asio::io_service& io_service, boost::asio::ip::udp::endpoint bind);
+		udp_mux_server(boost::asio::io_context& io_context);
+		udp_mux_server(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint bind);
 
 		std::shared_ptr<endpoint> create_channel(uint8_t id);
 

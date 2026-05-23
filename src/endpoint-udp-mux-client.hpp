@@ -8,8 +8,8 @@
 
 class udp_mux_client : public std::enable_shared_from_this<udp_mux_client>, public endpoint {
 	public:
-		udp_mux_client(boost::asio::io_service& io_service, uint8_t id, boost::asio::ip::udp::endpoint peer);
-		udp_mux_client(boost::asio::io_service& io_service, uint8_t id, boost::asio::ip::udp::endpoint peer, boost::asio::ip::udp::endpoint local);
+		udp_mux_client(boost::asio::io_context& io_context, uint8_t id, boost::asio::ip::udp::endpoint peer);
+		udp_mux_client(boost::asio::io_context& io_context, uint8_t id, boost::asio::ip::udp::endpoint peer, boost::asio::ip::udp::endpoint local);
 
 		void async_start(fu2::unique_function<event> &&) override;
 		void async_read(fu2::unique_function<read_handler> &&) override;

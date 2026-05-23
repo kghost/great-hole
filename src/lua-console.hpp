@@ -7,7 +7,7 @@
 
 class lua_console : public boost::enable_shared_from_this<lua_console> {
 	public:
-		explicit lua_console(boost::asio::io_service& io_service) : input_(io_service) {
+		explicit lua_console(boost::asio::io_context& io_context) : input_(io_context) {
 			input_.assign(STDIN_FILENO);
 		}
 

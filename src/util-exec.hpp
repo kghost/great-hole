@@ -13,10 +13,10 @@
 class exec {
 	public:
 		exec(
-			boost::asio::io_service &io_service,
+			boost::asio::io_context &io_context,
 			std::string const &prog,
 			std::vector<std::string> const &args = {},
-			std::map<std::string, std::string> const &env = {}) : io_service(io_service), prog(prog), args(args), env(env) {}
+			std::map<std::string, std::string> const &env = {}) : io_context(io_context), prog(prog), args(args), env(env) {}
 		~exec();
 
 		void run(fu2::unique_function<event> &&handler);
@@ -41,7 +41,7 @@ class exec {
 		class output;
 		class proc; friend class proc;
 
-		boost::asio::io_service &io_service;
+		boost::asio::io_context &io_context;
 
 		boost::iostreams::file_descriptor_source child_in = null_stream_source;
 		boost::iostreams::file_descriptor_sink child_out = null_stream_sink;
