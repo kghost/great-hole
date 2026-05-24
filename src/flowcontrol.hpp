@@ -1,32 +1,33 @@
-#ifndef FLOWCONTROL_H
-#define FLOWCONTROL_H
+#pragma once
 
-template <typename flow_op> class flow_control {
+namespace gh {
+
+template <typename FlowOp> class FlowControl {
 public:
-  flow_control(flow_op* o) : op(o), congesting(false), low_water_mark(100), high_water_mark(500) {}
+  explicit FlowControl(FlowOp* o) : _Op(o), _Congesting(false), LowWaterMark(100), HighWaterMark(500) {}
 
   // XXX: implement red(random early detection)
 
-  void after_read() {
-    if (!congesting && op->size() > high_water_mark) {
-      congesting = true;
-      op->pause();
+  void AfterRead() {
+    if (!_Congesting && _Op->Size() > HighWaterMark) {
+      _Congesting = true;
+      _Op->Pause();
     }
   }
 
-  void after_write() {
-    if (congesting && op->size() < low_water_mark) {
-      congesting = false;
-      op->resume();
+  void AfterWrite() {
+    if (_Congesting && _Op->Size() < LowWaterMark) {
+      _Congesting = false;
+      _Op->Resume();
     }
   }
 
-  int low_water_mark;
-  int high_water_mark;
+  int LowWaterMark;
+  int HighWaterMark;
 
 private:
-  bool congesting;
-  flow_op* op;
+  bool _Congesting;
+  FlowOp* _Op;
 };
 
-#endif /* end of include guard: FLOWCONTROL_H */
+} // namespace gh

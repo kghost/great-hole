@@ -1,8 +1,10 @@
 #include "error-code.hpp"
 
-app_error_category app_error;
+namespace gh {
 
-const std::string app_error_category::errs[]{
+AppErrorCategory kAppError;
+
+const std::string AppErrorCategory::_Errs[]{
     "",
     "incorrect state",
     "already_started",
@@ -11,3 +13,5 @@ const std::string app_error_category::errs[]{
     "invalid_packet_session",
     "invalid_packet_reserved",
 };
+
+} // namespace gh

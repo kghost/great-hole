@@ -1,28 +1,29 @@
-#ifndef FILTER_H
-#define FILTER_H
+#pragma once
 
 #include <memory>
 
 #include "packet.hpp"
 
-class filter {
+namespace gh {
+
+class Filter {
 public:
-  virtual ~filter() = 0;
-  virtual packet pipe(packet&& p) = 0;
+  virtual ~Filter() = 0;
+  virtual Packet Pipe(Packet&& p) = 0;
 };
 
-class filter_bidirection {
+class FilterBidirection {
 public:
-  virtual ~filter_bidirection() = 0;
-  virtual std::shared_ptr<filter> forward() = 0;
-  virtual std::shared_ptr<filter> backward() = 0;
+  virtual ~FilterBidirection() = 0;
+  virtual std::shared_ptr<Filter> Forward() = 0;
+  virtual std::shared_ptr<Filter> Backward() = 0;
 };
 
-template <typename base>
-class filter_symmetric : public filter, public filter_bidirection, public std::enable_shared_from_this<base> {
+template <typename Base>
+class FilterSymmetric : public Filter, public FilterBidirection, public std::enable_shared_from_this<Base> {
 public:
-  virtual std::shared_ptr<filter> forward() { return std::enable_shared_from_this<base>::shared_from_this(); }
-  virtual std::shared_ptr<filter> backward() { return std::enable_shared_from_this<base>::shared_from_this(); }
+  std::shared_ptr<Filter> Forward() override { return std::enable_shared_from_this<Base>::shared_from_this(); }
+  std::shared_ptr<Filter> Backward() override { return std::enable_shared_from_this<Base>::shared_from_this(); }
 };
 
-#endif /* end of include guard: FILTER_H */
+} // namespace gh

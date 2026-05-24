@@ -8,53 +8,57 @@
 
 #include "endpoint.hpp"
 
-class udp_dyn_mux_client : public std::enable_shared_from_this<udp_dyn_mux_client>, public endpoint {
+namespace gh {
+
+class UdpDynMuxClient : public std::enable_shared_from_this<UdpDynMuxClient>, public Endpoint {
 public:
-  udp_dyn_mux_client(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint peer);
-  udp_dyn_mux_client(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint peer,
-                     boost::asio::ip::udp::endpoint local);
+  UdpDynMuxClient(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint peer);
+  UdpDynMuxClient(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint peer,
+                  boost::asio::ip::udp::endpoint local);
 
-  void async_start(std::move_only_function<event>&&) override;
-  void async_read(std::move_only_function<read_handler>&&) override;
-  void async_write(packet&&, std::move_only_function<write_handler>&&) override;
+  void AsyncStart(std::move_only_function<Event>&&) override;
+  void AsyncRead(std::move_only_function<ReadHandler>&&) override;
+  void AsyncWrite(Packet&&, std::move_only_function<WriteHandler>&&) override;
 
-  boost::asio::ip::udp::endpoint local_endpoint() const { return socket.local_endpoint(); }
+  boost::asio::ip::udp::endpoint LocalEndpoint() const { return _Socket.local_endpoint(); }
 
 private:
-  boost::asio::ip::udp::socket socket;
-  const boost::asio::ip::udp::endpoint local;
-  const boost::asio::ip::udp::endpoint peer;
+  boost::asio::ip::udp::socket _Socket;
+  const boost::asio::ip::udp::endpoint _Local;
+  const boost::asio::ip::udp::endpoint _Peer;
 
-  bool write_pending = false;
+  bool _WritePending = false;
 
-  enum state_t { none, negotiating, running, migrating, error } state = none;
+  enum State { kNone, kNegotiating, kRunning, kMigrating, kError } _State = kNone;
 
-  uint16_t assigned_id = 0;
-  uint32_t current_cookie = 0;
+  uint16_t _AssignedId = 0;
+  uint32_t _CurrentCookie = 0;
 
   // Packet queues
-  std::queue<std::pair<packet, std::move_only_function<write_handler>>> write_queue;
-  std::queue<packet> incoming_data_queue;
+  std::queue<std::pair<Packet, std::move_only_function<WriteHandler>>> _WriteQueue;
+  std::queue<Packet> _IncomingDataQueue;
 
   // Timers
-  boost::asio::steady_timer negotiate_timer;
-  boost::asio::steady_timer migrate_timer;
-  boost::asio::steady_timer keepalive_check_timer;
-  std::chrono::steady_clock::time_point last_keepalive_received;
+  boost::asio::steady_timer _NegotiateTimer;
+  boost::asio::steady_timer _MigrateTimer;
+  boost::asio::steady_timer _KeepaliveCheckTimer;
+  std::chrono::steady_clock::time_point _LastKeepaliveReceived;
 
   // Handler callbacks
-  std::move_only_function<event> start_handler;
-  std::move_only_function<read_handler> read_handler_cb;
+  std::move_only_function<Event> _StartHandler;
+  std::move_only_function<ReadHandler> _ReadHandlerCb;
 
   // PRNG
-  std::mt19937 prng;
+  std::mt19937 _Prng;
 
-  void start_negotiation();
-  void send_negotiate_request();
-  void start_migration();
-  void send_migration_request();
-  void check_keepalive_timeout();
-  void schedule_socket_read();
-  void handle_control_packet(const uint8_t* data, std::size_t length);
-  void flush_write_queue();
+  void StartNegotiation();
+  void SendNegotiateRequest();
+  void StartMigration();
+  void SendMigrationRequest();
+  void CheckKeepaliveTimeout();
+  void ScheduleSocketRead();
+  void HandleControlPacket(const uint8_t* data, std::size_t length);
+  void FlushWriteQueue();
 };
+
+} // namespace gh

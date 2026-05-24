@@ -7,39 +7,39 @@
 #include <span>
 #include <utility>
 
-namespace udp_dyn_mux {
+namespace gh::UdpDynMux {
 
 // Message Types
-enum class msg_type : uint8_t {
-  client_req_id = 0x01,
-  server_assign_id = 0x02,
-  server_keepalive = 0x03,
-  client_keepalive_ack = 0x04,
-  server_id_closed = 0x05,
-  server_addr_mismatch = 0x06,
-  client_addr_migrate = 0x07,
-  server_migrate_ack = 0x08,
-  server_invalid_id = 0x09,
-  server_cookie_mismatch = 0x0A
+enum class MsgType : uint8_t {
+  kClientReqId = 0x01,
+  kServerAssignId = 0x02,
+  kServerKeepalive = 0x03,
+  kClientKeepaliveAck = 0x04,
+  kServerIdClosed = 0x05,
+  kServerAddrMismatch = 0x06,
+  kClientAddrMigrate = 0x07,
+  kServerMigrateAck = 0x08,
+  kServerInvalidId = 0x09,
+  kServerCookieMismatch = 0x0A
 };
 
-inline bool operator==(uint8_t a, msg_type b) { return a == std::to_underlying(b); }
-inline bool operator==(msg_type a, uint8_t b) { return std::to_underlying(a) == b; }
+inline bool operator==(uint8_t a, MsgType b) { return a == std::to_underlying(b); }
+inline bool operator==(MsgType a, uint8_t b) { return std::to_underlying(a) == b; }
 
 // Helper for endian conversions
-inline uint16_t read_uint16_be(const uint8_t* data) { return (static_cast<uint16_t>(data[0]) << 8) | data[1]; }
+inline uint16_t ReadUint16Be(const uint8_t* data) { return (static_cast<uint16_t>(data[0]) << 8) | data[1]; }
 
-inline void write_uint16_be(uint8_t* data, uint16_t val) {
+inline void WriteUint16Be(uint8_t* data, uint16_t val) {
   data[0] = (val >> 8) & 0xFF;
   data[1] = val & 0xFF;
 }
 
-inline uint32_t read_uint32_be(const uint8_t* data) {
+inline uint32_t ReadUint32Be(const uint8_t* data) {
   return (static_cast<uint32_t>(data[0]) << 24) | (static_cast<uint32_t>(data[1]) << 16) |
          (static_cast<uint32_t>(data[2]) << 8) | data[3];
 }
 
-inline void write_uint32_be(uint8_t* data, uint32_t val) {
+inline void WriteUint32Be(uint8_t* data, uint32_t val) {
   data[0] = (val >> 24) & 0xFF;
   data[1] = (val >> 16) & 0xFF;
   data[2] = (val >> 8) & 0xFF;
@@ -48,101 +48,101 @@ inline void write_uint32_be(uint8_t* data, uint32_t val) {
 
 // Structures representing each control message type
 
-struct client_req_id {
-  static constexpr msg_type type = msg_type::client_req_id;
-  static constexpr size_t size = 7;
+struct ClientReqId {
+  static constexpr MsgType kType = MsgType::kClientReqId;
+  static constexpr size_t kSize = 7;
 
-  uint32_t cookie;
+  uint32_t Cookie;
 
-  static std::optional<client_req_id> deserialize(const uint8_t* data, size_t len) {
-    if (len < size || read_uint16_be(data) != 0 || data[2] != static_cast<uint8_t>(type)) {
+  static std::optional<ClientReqId> Deserialize(const uint8_t* data, size_t len) {
+    if (len < kSize || ReadUint16Be(data) != 0 || data[2] != static_cast<uint8_t>(kType)) {
       return std::nullopt;
     }
-    return client_req_id{read_uint32_be(data + 3)};
+    return ClientReqId{ReadUint32Be(data + 3)};
   }
 
-  void serialize(std::span<uint8_t> out) const {
-    assert(out.size() >= size);
-    write_uint16_be(out.data(), 0);
-    out[2] = static_cast<uint8_t>(type);
-    write_uint32_be(out.data() + 3, cookie);
+  void Serialize(std::span<uint8_t> out) const {
+    assert(out.size() >= kSize);
+    WriteUint16Be(out.data(), 0);
+    out[2] = static_cast<uint8_t>(kType);
+    WriteUint32Be(out.data() + 3, Cookie);
   }
 };
 
-struct server_assign_id {
-  static constexpr msg_type type = msg_type::server_assign_id;
-  static constexpr size_t size = 9;
+struct ServerAssignId {
+  static constexpr MsgType kType = MsgType::kServerAssignId;
+  static constexpr size_t kSize = 9;
 
-  uint32_t cookie;
-  uint16_t assigned_id;
+  uint32_t Cookie;
+  uint16_t AssignedId;
 
-  static std::optional<server_assign_id> deserialize(const uint8_t* data, size_t len) {
-    if (len < size || read_uint16_be(data) != 0 || data[2] != static_cast<uint8_t>(type)) {
+  static std::optional<ServerAssignId> Deserialize(const uint8_t* data, size_t len) {
+    if (len < kSize || ReadUint16Be(data) != 0 || data[2] != static_cast<uint8_t>(kType)) {
       return std::nullopt;
     }
-    return server_assign_id{read_uint32_be(data + 3), read_uint16_be(data + 7)};
+    return ServerAssignId{ReadUint32Be(data + 3), ReadUint16Be(data + 7)};
   }
 
-  void serialize(std::span<uint8_t> out) const {
-    assert(out.size() >= size);
-    write_uint16_be(out.data(), 0);
-    out[2] = static_cast<uint8_t>(type);
-    write_uint32_be(out.data() + 3, cookie);
-    write_uint16_be(out.data() + 7, assigned_id);
+  void Serialize(std::span<uint8_t> out) const {
+    assert(out.size() >= kSize);
+    WriteUint16Be(out.data(), 0);
+    out[2] = static_cast<uint8_t>(kType);
+    WriteUint32Be(out.data() + 3, Cookie);
+    WriteUint16Be(out.data() + 7, AssignedId);
   }
 };
 
 // Common layout for 5-byte packets containing message type and a 16-bit ID
-template <msg_type T> struct control_id_packet {
-  static constexpr msg_type type = T;
-  static constexpr size_t size = 5;
+template <MsgType T> struct ControlIdPacket {
+  static constexpr MsgType kType = T;
+  static constexpr size_t kSize = 5;
 
-  uint16_t id;
+  uint16_t Id;
 
-  static std::optional<control_id_packet> deserialize(const uint8_t* data, size_t len) {
-    if (len < size || read_uint16_be(data) != 0 || data[2] != static_cast<uint8_t>(type)) {
+  static std::optional<ControlIdPacket> Deserialize(const uint8_t* data, size_t len) {
+    if (len < kSize || ReadUint16Be(data) != 0 || data[2] != static_cast<uint8_t>(kType)) {
       return std::nullopt;
     }
-    return control_id_packet{read_uint16_be(data + 3)};
+    return ControlIdPacket{ReadUint16Be(data + 3)};
   }
 
-  void serialize(std::span<uint8_t> out) const {
-    assert(out.size() >= size);
-    write_uint16_be(out.data(), 0);
-    out[2] = static_cast<uint8_t>(type);
-    write_uint16_be(out.data() + 3, id);
+  void Serialize(std::span<uint8_t> out) const {
+    assert(out.size() >= kSize);
+    WriteUint16Be(out.data(), 0);
+    out[2] = static_cast<uint8_t>(kType);
+    WriteUint16Be(out.data() + 3, Id);
   }
 };
 
-using server_keepalive = control_id_packet<msg_type::server_keepalive>;
-using client_keepalive_ack = control_id_packet<msg_type::client_keepalive_ack>;
-using server_id_closed = control_id_packet<msg_type::server_id_closed>;
-using server_addr_mismatch = control_id_packet<msg_type::server_addr_mismatch>;
-using server_migrate_ack = control_id_packet<msg_type::server_migrate_ack>;
-using server_invalid_id = control_id_packet<msg_type::server_invalid_id>;
-using server_cookie_mismatch = control_id_packet<msg_type::server_cookie_mismatch>;
+using ServerKeepalive = ControlIdPacket<MsgType::kServerKeepalive>;
+using ClientKeepaliveAck = ControlIdPacket<MsgType::kClientKeepaliveAck>;
+using ServerIdClosed = ControlIdPacket<MsgType::kServerIdClosed>;
+using ServerAddrMismatch = ControlIdPacket<MsgType::kServerAddrMismatch>;
+using ServerMigrateAck = ControlIdPacket<MsgType::kServerMigrateAck>;
+using ServerInvalidId = ControlIdPacket<MsgType::kServerInvalidId>;
+using ServerCookieMismatch = ControlIdPacket<MsgType::kServerCookieMismatch>;
 
-struct client_addr_migrate {
-  static constexpr msg_type type = msg_type::client_addr_migrate;
-  static constexpr size_t size = 9;
+struct ClientAddrMigrate {
+  static constexpr MsgType kType = MsgType::kClientAddrMigrate;
+  static constexpr size_t kSize = 9;
 
-  uint16_t id;
-  uint32_t cookie;
+  uint16_t Id;
+  uint32_t Cookie;
 
-  static std::optional<client_addr_migrate> deserialize(const uint8_t* data, size_t len) {
-    if (len < size || read_uint16_be(data) != 0 || data[2] != static_cast<uint8_t>(type)) {
+  static std::optional<ClientAddrMigrate> Deserialize(const uint8_t* data, size_t len) {
+    if (len < kSize || ReadUint16Be(data) != 0 || data[2] != static_cast<uint8_t>(kType)) {
       return std::nullopt;
     }
-    return client_addr_migrate{read_uint16_be(data + 3), read_uint32_be(data + 5)};
+    return ClientAddrMigrate{ReadUint16Be(data + 3), ReadUint32Be(data + 5)};
   }
 
-  void serialize(std::span<uint8_t> out) const {
-    assert(out.size() >= size);
-    write_uint16_be(out.data(), 0);
-    out[2] = static_cast<uint8_t>(type);
-    write_uint16_be(out.data() + 3, id);
-    write_uint32_be(out.data() + 5, cookie);
+  void Serialize(std::span<uint8_t> out) const {
+    assert(out.size() >= kSize);
+    WriteUint16Be(out.data(), 0);
+    out[2] = static_cast<uint8_t>(kType);
+    WriteUint16Be(out.data() + 3, Id);
+    WriteUint32Be(out.data() + 5, Cookie);
   }
 };
 
-} // namespace udp_dyn_mux
+} // namespace gh::UdpDynMux

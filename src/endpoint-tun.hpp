@@ -1,29 +1,31 @@
-#ifndef ENDPOINT_TUN_H
-#define ENDPOINT_TUN_H
+#pragma once
 
 #include <boost/asio.hpp>
 #include <boost/asio/posix/basic_descriptor.hpp>
 
 #include "endpoint.hpp"
 
-class exec;
-class tun : public std::enable_shared_from_this<tun>, public endpoint {
-public:
-  tun(boost::asio::io_context& io_context, std::string const& name);
-  tun(boost::asio::io_context& io_context, std::string const& name, std::shared_ptr<exec> e);
+namespace gh {
 
-  void async_start(std::move_only_function<event>&&) override;
-  void async_read(std::move_only_function<read_handler>&&) override;
-  void async_write(packet&&, std::move_only_function<write_handler>&&) override;
+class Exec;
+
+class Tun : public std::enable_shared_from_this<Tun>, public Endpoint {
+public:
+  Tun(boost::asio::io_context& io_context, std::string const& name);
+  Tun(boost::asio::io_context& io_context, std::string const& name, std::shared_ptr<Exec> e);
+
+  void AsyncStart(std::move_only_function<Event>&&) override;
+  void AsyncRead(std::move_only_function<ReadHandler>&&) override;
+  void AsyncWrite(Packet&&, std::move_only_function<WriteHandler>&&) override;
 
 private:
-  boost::asio::posix::stream_descriptor s;
+  boost::asio::posix::stream_descriptor _S;
 
-  const std::string name;
-  std::shared_ptr<exec> e;
+  const std::string _Name;
+  std::shared_ptr<Exec> _E;
 
-  bool started = false;
-  gh::error_code started_ec;
+  bool _Started = false;
+  ErrorCode _StartedEc;
 };
 
-#endif /* end of include guard: ENDPOINT_TUN_H */
+} // namespace gh

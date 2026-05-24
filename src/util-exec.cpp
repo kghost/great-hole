@@ -11,148 +11,152 @@
 
 namespace bp2 = boost::process::v2;
 
-class exit_error_category : public gh::error_category {
-public:
-  virtual const char* name() const noexcept { return "exit error"; }
-  virtual std::string message(int ev) const { return ""; }
-} exit_error;
+namespace gh {
 
-class exec::proc : public std::enable_shared_from_this<proc> {
+class ExitErrorCategory : public ErrorCategory {
 public:
-  proc(std::move_only_function<event>&& handler, bp2::process&& p) : handler(std::move(handler)), p(std::move(p)) {}
+  const char* name() const noexcept override { return "exit error"; }
+  std::string message(int ev) const override { return ""; }
+} kExitError;
 
-  void start_wait() {
+class Exec::Proc : public std::enable_shared_from_this<Proc> {
+public:
+  Proc(std::move_only_function<Event>&& handler, bp2::process&& p) : _Handler(std::move(handler)), _P(std::move(p)) {}
+
+  void StartWait() {
     auto self = shared_from_this();
-    p.async_wait([self](const gh::error_code& ec, int exit_code) {
+    _P.async_wait([self](const ErrorCode& ec, int exit_code) {
       if (!ec) {
         BOOST_LOG_TRIVIAL(info) << "process exited: " << exit_code;
         if (exit_code == 0) {
-          self->handler(gh::error_code());
+          self->_Handler(ErrorCode());
         } else {
-          self->handler(gh::error_code(exit_code, exit_error));
+          self->_Handler(ErrorCode(exit_code, kExitError));
         }
       } else if (ec != boost::asio::error::operation_aborted) {
         BOOST_LOG_TRIVIAL(error) << "process wait error: " << ec;
-        self->handler(ec);
+        self->_Handler(ec);
       }
     });
   }
 
-  void kill(int signum) { ::kill(p.id(), signum); }
+  void Kill(int signum) { ::kill(_P.id(), signum); }
 
 private:
-  std::move_only_function<event> handler;
-  bp2::process p;
+  std::move_only_function<Event> _Handler;
+  bp2::process _P;
 };
 
-class exec::input : public endpoint_skip_start<endpoint_output> {
+class Exec::Input : public EndpointSkipStart<EndpointOutput> {
 public:
-  input(boost::asio::io_context& io_context, boost::asio::writable_pipe pipe) : pipe(std::move(pipe)) {}
+  Input(boost::asio::io_context& io_context, boost::asio::writable_pipe pipe) : _Pipe(std::move(pipe)) {}
 
-  void async_write(packet&& p, std::move_only_function<write_handler>&& handler) override {
-    boost::asio::async_write(pipe, boost::asio::const_buffer{p.first}, std::move(handler));
+  void AsyncWrite(Packet&& p, std::move_only_function<WriteHandler>&& handler) override {
+    boost::asio::async_write(_Pipe, boost::asio::const_buffer{p.first}, std::move(handler));
   }
 
 private:
-  boost::asio::writable_pipe pipe;
+  boost::asio::writable_pipe _Pipe;
 };
 
-class exec::output : public endpoint_skip_start<endpoint_input> {
+class Exec::Output : public EndpointSkipStart<EndpointInput> {
 public:
-  output(boost::asio::io_context& io_context, boost::asio::readable_pipe pipe) : pipe(std::move(pipe)) {}
+  Output(boost::asio::io_context& io_context, boost::asio::readable_pipe pipe) : _Pipe(std::move(pipe)) {}
 
-  virtual void async_read(std::move_only_function<read_handler>&& handler) {
+  void AsyncRead(std::move_only_function<ReadHandler>&& handler) override {
     auto a = std::make_shared<std::array<uint8_t, 2048>>();
-    auto p = packet{buffer(*a), a};
+    auto p = Packet{Buffer(*a), a};
     auto buffer = boost::asio::mutable_buffer{p.first};
-    pipe.async_read_some(buffer, [p{std::move(p)}, handler = std::move(handler)](
-                                     const gh::error_code& ec, std::size_t bytes_transferred) mutable {
+    _Pipe.async_read_some(buffer, [p{std::move(p)}, handler = std::move(handler)](
+                                     const ErrorCode& ec, std::size_t bytes_transferred) mutable {
       if (!ec) {
-        assert(bytes_transferred <= p.first.capacity - p.first.offset);
-        p.first.length = bytes_transferred;
+        assert(bytes_transferred <= p.first.Capacity - p.first.Offset);
+        p.first.Length = bytes_transferred;
       }
       handler(ec, std::move(p));
     });
   }
 
 private:
-  boost::asio::readable_pipe pipe;
+  boost::asio::readable_pipe _Pipe;
 };
 
-exec::~exec() { kill(); }
+Exec::~Exec() { Kill(); }
 
-std::shared_ptr<endpoint_output> exec::get_in() {
-  if (!in) {
-    boost::asio::readable_pipe read_end(io_context);
-    boost::asio::writable_pipe write_end(io_context);
+std::shared_ptr<EndpointOutput> Exec::GetIn() {
+  if (!_In) {
+    boost::asio::readable_pipe read_end(_IoContext);
+    boost::asio::writable_pipe write_end(_IoContext);
     boost::asio::connect_pipe(read_end, write_end);
-    in.reset(new input(io_context, std::move(write_end)));
-    child_in = std::move(read_end);
+    _In.reset(new Input(_IoContext, std::move(write_end)));
+    _ChildIn = std::move(read_end);
   }
-  return in;
+  return _In;
 }
 
-std::shared_ptr<endpoint_input> exec::get_out() {
-  if (!out) {
-    boost::asio::readable_pipe read_end(io_context);
-    boost::asio::writable_pipe write_end(io_context);
+std::shared_ptr<EndpointInput> Exec::GetOut() {
+  if (!_Out) {
+    boost::asio::readable_pipe read_end(_IoContext);
+    boost::asio::writable_pipe write_end(_IoContext);
     boost::asio::connect_pipe(read_end, write_end);
-    out.reset(new output(io_context, std::move(read_end)));
-    child_out = std::move(write_end);
+    _Out.reset(new Output(_IoContext, std::move(read_end)));
+    _ChildOut = std::move(write_end);
   }
-  return out;
+  return _Out;
 }
 
-std::shared_ptr<endpoint_input> exec::get_err() {
-  if (!err) {
-    boost::asio::readable_pipe read_end(io_context);
-    boost::asio::writable_pipe write_end(io_context);
+std::shared_ptr<EndpointInput> Exec::GetErr() {
+  if (!_Err) {
+    boost::asio::readable_pipe read_end(_IoContext);
+    boost::asio::writable_pipe write_end(_IoContext);
     boost::asio::connect_pipe(read_end, write_end);
-    err.reset(new output(io_context, std::move(read_end)));
-    child_err = std::move(write_end);
+    _Err.reset(new Output(_IoContext, std::move(read_end)));
+    _ChildErr = std::move(write_end);
   }
-  return err;
+  return _Err;
 }
 
-void exec::run(std::move_only_function<event>&& handler) {
-  if (p.lock()) {
+void Exec::Run(std::move_only_function<Event>&& handler) {
+  if (_P.lock()) {
     BOOST_LOG_TRIVIAL(error) << "proc " << this << " already running.";
-    handler(gh::error_code(app_error_category::already_started, app_error));
+    handler(ErrorCode(AppErrorCategory::kAlreadyStarted, kAppError));
   } else {
     try {
       std::vector<std::string> e;
-      for (auto const& [k, v] : env) {
+      for (auto const& [k, v] : _Env) {
         e.push_back((boost::format("%1%=%2%") % k % v).str());
       }
 
       bp2::process_stdio stdio;
-      if (child_in) {
-        stdio.in = *child_in;
+      if (_ChildIn) {
+        stdio.in = *_ChildIn;
       }
-      if (child_out) {
-        stdio.out = *child_out;
+      if (_ChildOut) {
+        stdio.out = *_ChildOut;
       }
-      if (child_err) {
-        stdio.err = *child_err;
+      if (_ChildErr) {
+        stdio.err = *_ChildErr;
       }
 
-      auto i = std::make_shared<proc>(std::move(handler),
-                                      bp2::process(io_context, prog, args, stdio, bp2::process_environment{e}));
-      i->start_wait();
-      p = i;
+      auto i = std::make_shared<Proc>(std::move(handler),
+                                      bp2::process(_IoContext, _Prog, _Args, stdio, bp2::process_environment{e}));
+      i->StartWait();
+      _P = i;
 
-      child_in.reset();
-      child_out.reset();
-      child_err.reset();
+      _ChildIn.reset();
+      _ChildOut.reset();
+      _ChildErr.reset();
     } catch (const boost::system::system_error& e) {
       BOOST_LOG_TRIVIAL(error) << "proc " << this << " execute failed: " << e.what();
-      handler(gh::error_code{app_error_category::fork_exec_error, app_error});
+      handler(ErrorCode{AppErrorCategory::kForkExecError, kAppError});
     }
   }
 }
 
-void exec::kill() {
-  if (auto s = p.lock()) {
-    s->kill(SIGTERM);
+void Exec::Kill() {
+  if (auto s = _P.lock()) {
+    s->Kill(SIGTERM);
   }
 }
+
+} // namespace gh

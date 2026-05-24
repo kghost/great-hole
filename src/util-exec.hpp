@@ -1,51 +1,53 @@
-#ifndef UTIL_EXEC_H
-#define UTIL_EXEC_H
+#pragma once
 
-#include <boost/asio.hpp>
-#include <boost/process/v2/process.hpp>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include <boost/asio.hpp>
+#include <boost/process/v2/process.hpp>
+
 #include "endpoint.hpp"
 
-class exec {
+namespace gh {
+
+class Exec {
 public:
-  exec(boost::asio::io_context& io_context, std::string const& prog, std::vector<std::string> const& args = {},
-       std::map<std::string, std::string> const& env = {})
-      : io_context(io_context), prog(prog), args(args), env(env) {}
-  ~exec();
+  Exec(boost::asio::io_context& ioContext, const std::string& prog, const std::vector<std::string>& args = {},
+       const std::map<std::string, std::string>& env = {})
+      : _Prog(prog), _Args(args), _Env(env), _IoContext(ioContext) {}
+  ~Exec();
 
-  void run(std::move_only_function<event>&& handler);
-  void kill();
+  void Run(std::move_only_function<Event>&& handler);
+  void Kill();
 
-  std::shared_ptr<endpoint_output> get_in();
-  std::shared_ptr<endpoint_input> get_out();
-  std::shared_ptr<endpoint_input> get_err();
+  std::shared_ptr<EndpointOutput> GetIn();
+  std::shared_ptr<EndpointInput> GetOut();
+  std::shared_ptr<EndpointInput> GetErr();
 
 private:
-  std::string prog;
-  std::vector<std::string> args;
-  std::map<std::string, std::string> env;
+  std::string _Prog;
+  std::vector<std::string> _Args;
+  std::map<std::string, std::string> _Env;
 
-  class input;
-  class output;
-  class proc;
-  friend class proc;
+  class Input;
+  class Output;
+  class Proc;
+  friend class Proc;
 
-  boost::asio::io_context& io_context;
+  boost::asio::io_context& _IoContext;
 
-  std::shared_ptr<endpoint_output> in;
-  std::shared_ptr<endpoint_input> out;
-  std::shared_ptr<endpoint_input> err;
+  std::shared_ptr<EndpointOutput> _In;
+  std::shared_ptr<EndpointInput> _Out;
+  std::shared_ptr<EndpointInput> _Err;
 
-  std::optional<boost::asio::readable_pipe> child_in;
-  std::optional<boost::asio::writable_pipe> child_out;
-  std::optional<boost::asio::writable_pipe> child_err;
+  std::optional<boost::asio::readable_pipe> _ChildIn;
+  std::optional<boost::asio::writable_pipe> _ChildOut;
+  std::optional<boost::asio::writable_pipe> _ChildErr;
 
-  std::weak_ptr<proc> p;
+  std::weak_ptr<Proc> _P;
 };
 
-#endif /* end of include guard: UTIL_EXEC_H */
+} // namespace gh

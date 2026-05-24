@@ -1,34 +1,41 @@
 #pragma once
 
-#include <boost/optional.hpp>
+#include <cassert>
 #include <functional>
+#include <optional>
 
-class scoped_flag {
+namespace gh {
+
+class ScopedFlag {
 public:
-  scoped_flag(bool& flag) : flag(flag) {
-    assert(!this->flag.value().get());
-    this->flag.value().get() = true;
+  explicit ScopedFlag(bool& flag) : _Flag(flag) {
+    assert(!_Flag.value().get());
+    _Flag.value().get() = true;
   }
-  ~scoped_flag() {
-    if (flag) {
-      assert(flag.value().get());
-      flag.value().get() = false;
+  ~ScopedFlag() {
+    if (_Flag) {
+      assert(_Flag.value().get());
+      _Flag.value().get() = false;
     }
   }
 
-  scoped_flag(scoped_flag&) = delete;
-  scoped_flag operator=(scoped_flag&) = delete;
-  scoped_flag(scoped_flag&& that) { flag.swap(that.flag); }
-  scoped_flag& operator=(scoped_flag&& that) {
-    if (flag) {
-      assert(flag.value().get());
-      flag.value().get() = false;
-      flag.reset();
+  ScopedFlag(const ScopedFlag&) = delete;
+  ScopedFlag& operator=(const ScopedFlag&) = delete;
+
+  ScopedFlag(ScopedFlag&& other) noexcept { _Flag.swap(other._Flag); }
+
+  ScopedFlag& operator=(ScopedFlag&& other) noexcept {
+    if (_Flag) {
+      assert(_Flag.value().get());
+      _Flag.value().get() = false;
+      _Flag.reset();
     }
-    flag.swap(that.flag);
+    _Flag.swap(other._Flag);
     return *this;
   }
 
 private:
-  boost::optional<std::reference_wrapper<bool>> flag;
+  std::optional<std::reference_wrapper<bool>> _Flag;
 };
+
+} // namespace gh

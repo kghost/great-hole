@@ -1,5 +1,4 @@
-#ifndef ENDPOINT_ICMP_H
-#define ENDPOINT_ICMP_H
+#pragma once
 
 #include <boost/asio.hpp>
 #include <map>
@@ -7,35 +6,39 @@
 
 #include "endpoint.hpp"
 
-class icmp : public std::enable_shared_from_this<icmp> {
+namespace gh {
+
+class Icmp : public std::enable_shared_from_this<Icmp> {
 public:
-  class icmp_channel;
+  class IcmpChannel;
 
-  icmp(boost::asio::io_context& io_context);
-  icmp(boost::asio::io_context& io_context, boost::asio::ip::icmp::endpoint bind);
+  Icmp(boost::asio::io_context& io_context);
+  Icmp(boost::asio::io_context& io_context, boost::asio::ip::icmp::endpoint bind);
 
-  std::shared_ptr<endpoint> create_channel(boost::asio::ip::icmp::endpoint const& peer);
+  std::shared_ptr<Endpoint> CreateChannel(boost::asio::ip::icmp::endpoint const& peer);
 
 private:
-  using tm = std::map<boost::asio::ip::icmp::endpoint, std::move_only_function<read_handler>>;
-  // read_handler is holding the whole world, where we should break ref chain here
-  std::weak_ptr<tm> reading_channel;
-  boost::asio::ip::icmp::socket socket;
-  boost::asio::ip::icmp::endpoint local;
-  std::queue<std::tuple<boost::asio::ip::icmp::endpoint, boost::asio::const_buffer const,
-                        std::move_only_function<write_handler>>>
-      write_queue;
+  using ReadHandlerMap = std::map<boost::asio::ip::icmp::endpoint, std::move_only_function<ReadHandler>>;
 
-  bool read_pending = false, write_pending = false;
+  std::weak_ptr<ReadHandlerMap> _ReadingChannel;
+  boost::asio::ip::icmp::socket _Socket;
+  boost::asio::ip::icmp::endpoint _Local;
+  std::queue<std::tuple<boost::asio::ip::icmp::endpoint, const boost::asio::const_buffer,
+                        std::move_only_function<WriteHandler>>>
+      _WriteQueue;
 
-  enum { none, running, error } state = none;
-  void try_async_start(std::move_only_function<event>&&);
-  void async_start(std::move_only_function<event>&&);
-  void read(boost::asio::ip::icmp::endpoint const& peer, std::move_only_function<read_handler>&& handler);
-  void write(boost::asio::ip::icmp::endpoint const& peer, boost::asio::const_buffer const& b,
-             std::move_only_function<write_handler>&& handler);
-  void schedule_read(std::shared_ptr<tm> m);
-  void schedule_write();
+  bool _ReadPending = false;
+  bool _WritePending = false;
+
+  enum State { kNone, kRunning, kError } _State = kNone;
+
+  void TryAsyncStart(std::move_only_function<Event>&& handler);
+  void AsyncStart(std::move_only_function<Event>&& handler);
+  void Read(const boost::asio::ip::icmp::endpoint& peer, std::move_only_function<ReadHandler>&& handler);
+  void Write(const boost::asio::ip::icmp::endpoint& peer, const boost::asio::const_buffer& b,
+             std::move_only_function<WriteHandler>&& handler);
+  void ScheduleRead(std::shared_ptr<ReadHandlerMap> m);
+  void ScheduleWrite();
 };
 
-#endif /* end of include guard: ENDPOINT_ICMP_H */
+} // namespace gh

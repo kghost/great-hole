@@ -10,131 +10,128 @@
 #include "pipeline.hpp"
 
 using boost::asio::ip::udp;
+using namespace gh;
 
 TEST(UdpMuxServerTest, IgnoresEmptyPacket) {
-  boost::asio::io_context io_context;
+  boost::asio::io_context ioContext;
 
   // Start server on an ephemeral port
-  auto server = std::make_shared<udp_mux_server>(io_context, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  auto channel = server->create_channel(42);
+  auto server = std::make_shared<UdpMuxServer>(ioContext, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto channel = server->CreateChannel(42);
 
-  bool server_started = false;
-  std::static_pointer_cast<endpoint_input>(channel)->async_start([&](const gh::error_code& ec) {
+  bool serverStarted = false;
+  std::static_pointer_cast<EndpointInput>(channel)->AsyncStart([&](const ErrorCode& ec) {
     ASSERT_FALSE(ec);
-    server_started = true;
+    serverStarted = true;
   });
 
-  bool packet_received = false;
-  channel->async_read([&](const gh::error_code& ec, packet&& p) {
+  bool packetReceived = false;
+  channel->AsyncRead([&](const ErrorCode& ec, Packet&& p) {
     ASSERT_FALSE(ec);
-    packet_received = true;
-    ASSERT_EQ(p.first.length, 5); // 5 bytes payload
+    packetReceived = true;
+    ASSERT_EQ(p.first.Length, 5); // 5 bytes payload
   });
 
   // Create a plain UDP socket to send raw packets
-  udp::socket raw_socket(io_context, udp::v6());
+  udp::socket rawSocket(ioContext, udp::v6());
 
   // Send a 0-byte packet
-  raw_socket.send_to(boost::asio::buffer("", 0), server->local_endpoint());
+  rawSocket.send_to(boost::asio::buffer("", 0), server->LocalEndpoint());
 
   // Send a valid packet for channel 42
-  uint8_t valid_payload[] = {42, 'H', 'e', 'l', 'l', 'o'};
-  raw_socket.send_to(boost::asio::buffer(valid_payload), server->local_endpoint());
+  uint8_t validPayload[] = {42, 'H', 'e', 'l', 'l', 'o'};
+  rawSocket.send_to(boost::asio::buffer(validPayload), server->LocalEndpoint());
 
-  io_context.restart();
-  io_context.run_for(std::chrono::milliseconds(500));
+  ioContext.restart();
+  ioContext.run_for(std::chrono::milliseconds(500));
 
-  EXPECT_TRUE(packet_received);
+  EXPECT_TRUE(packetReceived);
 }
 
 TEST(UdpMuxClientTest, IgnoresStrayPackets) {
-  boost::asio::io_context io_context;
+  boost::asio::io_context ioContext;
 
   // Create a plain UDP socket to send raw packets
-  udp::socket raw_socket(io_context, udp::v6());
-  raw_socket.bind(udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  udp::endpoint peer_ep = raw_socket.local_endpoint();
+  udp::socket rawSocket(ioContext, udp::v6());
+  rawSocket.bind(udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  udp::endpoint peerEp = rawSocket.local_endpoint();
 
-  auto client = std::make_shared<udp_mux_client>(io_context, 42, peer_ep,
-                                                 udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  bool client_started = false;
-  client->async_start([&](const gh::error_code& ec) {
+  auto client =
+      std::make_shared<UdpMuxClient>(ioContext, 42, peerEp, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  bool clientStarted = false;
+  client->AsyncStart([&](const ErrorCode& ec) {
     ASSERT_FALSE(ec);
-    client_started = true;
+    clientStarted = true;
   });
 
-  io_context.run_one();
-  ASSERT_TRUE(client_started);
+  ioContext.run_one();
+  ASSERT_TRUE(clientStarted);
 
-  bool packet_received = false;
-  client->async_read([&](const gh::error_code& ec, packet&& p) {
+  bool packetReceived = false;
+  client->AsyncRead([&](const ErrorCode& ec, Packet&& p) {
     ASSERT_FALSE(ec);
-    packet_received = true;
-    ASSERT_EQ(p.first.length, 5); // 5 bytes payload
+    packetReceived = true;
+    ASSERT_EQ(p.first.Length, 5); // 5 bytes payload
   });
 
-  raw_socket.connect(client->local_endpoint());
+  rawSocket.connect(client->LocalEndpoint());
 
   // Send a 0-byte packet
-  // Send a 0-byte packet
-  raw_socket.send(boost::asio::buffer("", 0));
+  rawSocket.send(boost::asio::buffer("", 0));
 
   // Send a packet with wrong channel ID (99)
-  uint8_t wrong_channel_payload[] = {99, 'B', 'a', 'd'};
-  raw_socket.send(boost::asio::buffer(wrong_channel_payload));
+  uint8_t wrongChannelPayload[] = {99, 'B', 'a', 'd'};
+  rawSocket.send(boost::asio::buffer(wrongChannelPayload));
 
   // Send a valid packet for channel 42
-  uint8_t valid_payload[] = {42, 'H', 'e', 'l', 'l', 'o'};
-  raw_socket.send(boost::asio::buffer(valid_payload));
+  uint8_t validPayload[] = {42, 'H', 'e', 'l', 'l', 'o'};
+  rawSocket.send(boost::asio::buffer(validPayload));
 
-  io_context.restart();
-  io_context.run_for(std::chrono::milliseconds(500));
+  ioContext.restart();
+  ioContext.run_for(std::chrono::milliseconds(500));
 
-  EXPECT_TRUE(packet_received);
+  EXPECT_TRUE(packetReceived);
 }
 
 // Mock endpoint that fails reads with a non-critical error
-class MockErrorEndpoint : public endpoint_input,
-                          public endpoint_output,
+class MockErrorEndpoint : public EndpointInput,
+                          public EndpointOutput,
                           public std::enable_shared_from_this<MockErrorEndpoint> {
 public:
-  int error_count = 0;
-  int success_count = 0;
+  int ErrorCount = 0;
+  int SuccessCount = 0;
 
-  void async_start(std::move_only_function<event>&& handler) override { handler(gh::error_code()); }
+  void AsyncStart(std::move_only_function<Event>&& handler) override { handler(ErrorCode()); }
 
-  void async_read(std::move_only_function<read_handler>&& handler) override {
-    if (error_count == 0) {
-      error_count++;
+  void AsyncRead(std::move_only_function<ReadHandler>&& handler) override {
+    if (ErrorCount == 0) {
+      ++ErrorCount;
       // Simulate a non-critical error
       auto a = std::make_shared<std::array<uint8_t, 1>>();
-      auto p = packet{buffer(*a), a};
-      handler(gh::error_code{app_error_category::invalid_packet_session, app_error}, std::move(p));
-    } else if (success_count == 0) {
-      success_count++;
+      auto p = Packet{Buffer(*a), a};
+      handler(ErrorCode{AppErrorCategory::kInvalidPacketSession, kAppError}, std::move(p));
+    } else if (SuccessCount == 0) {
+      ++SuccessCount;
       // Simulate success
       auto a = std::make_shared<std::array<uint8_t, 2048>>();
-      auto p = packet{buffer(*a), a};
-      handler(gh::error_code(), std::move(p));
+      auto p = Packet{Buffer(*a), a};
+      handler(ErrorCode(), std::move(p));
     }
   }
 
-  void async_write(packet&& p, std::move_only_function<write_handler>&& handler) override {
-    handler(gh::error_code(), p.first.length);
+  void AsyncWrite(Packet&& p, std::move_only_function<WriteHandler>&& handler) override {
+    handler(ErrorCode(), p.first.Length);
   }
 };
 
 TEST(PipelineTest, RecoversFromNonCriticalReadError) {
-  auto mock_ep = std::make_shared<MockErrorEndpoint>();
+  auto mockEp = std::make_shared<MockErrorEndpoint>();
 
-  auto pipe = std::make_shared<pipeline>(mock_ep, std::vector<std::shared_ptr<filter>>{}, mock_ep);
-  pipe->start();
+  auto pipe = std::make_shared<Pipeline>(mockEp, std::vector<std::shared_ptr<Filter>>{}, mockEp);
+  pipe->Start();
 
   // When pipeline reads, it should first get an error, then a success, and continue.
   // If it doesn't stop on the error, success_count will become 1.
-  EXPECT_EQ(mock_ep->error_count, 1);
-  EXPECT_EQ(mock_ep->success_count, 1);
-
-  // We can also check that pipeline state is still running
-  // The pipeline state is public? No, we just know it called read twice.
+  EXPECT_EQ(mockEp->ErrorCount, 1);
+  EXPECT_EQ(mockEp->SuccessCount, 1);
 }

@@ -1,11 +1,11 @@
-#ifndef LOGGING_H
-#define LOGGING_H
+#pragma once
 
-#include <boost/asio.hpp>
 #include <memory>
 
-class endpoint_output;
+namespace gh {
 
-void init_log(std::shared_ptr<endpoint_output> out);
+class EndpointOutput;
 
-#endif /* end of include guard: LOGGING_H */
+void InitLog(std::shared_ptr<EndpointOutput> out);
+
+} // namespace gh

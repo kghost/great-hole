@@ -4,25 +4,30 @@
 
 #include "endpoint.hpp"
 
-class udp_mux_client : public std::enable_shared_from_this<udp_mux_client>, public endpoint {
+namespace gh {
+
+class UdpMuxClient : public std::enable_shared_from_this<UdpMuxClient>, public Endpoint {
 public:
-  udp_mux_client(boost::asio::io_context& io_context, uint8_t id, boost::asio::ip::udp::endpoint peer);
-  udp_mux_client(boost::asio::io_context& io_context, uint8_t id, boost::asio::ip::udp::endpoint peer,
-                 boost::asio::ip::udp::endpoint local);
+  UdpMuxClient(boost::asio::io_context& io_context, uint8_t id, boost::asio::ip::udp::endpoint peer);
+  UdpMuxClient(boost::asio::io_context& io_context, uint8_t id, boost::asio::ip::udp::endpoint peer,
+               boost::asio::ip::udp::endpoint local);
 
-  void async_start(std::move_only_function<event>&&) override;
-  void async_read(std::move_only_function<read_handler>&&) override;
-  void async_write(packet&&, std::move_only_function<write_handler>&&) override;
+  void AsyncStart(std::move_only_function<Event>&&) override;
+  void AsyncRead(std::move_only_function<ReadHandler>&&) override;
+  void AsyncWrite(Packet&&, std::move_only_function<WriteHandler>&&) override;
 
-  boost::asio::ip::udp::endpoint local_endpoint() const { return socket.local_endpoint(); }
+  boost::asio::ip::udp::endpoint LocalEndpoint() const { return _Socket.local_endpoint(); }
 
 private:
-  boost::asio::ip::udp::socket socket;
-  const uint8_t id;
-  const boost::asio::ip::udp::endpoint local;
-  const boost::asio::ip::udp::endpoint peer;
+  boost::asio::ip::udp::socket _Socket;
+  const uint8_t _Id;
+  const boost::asio::ip::udp::endpoint _Local;
+  const boost::asio::ip::udp::endpoint _Peer;
 
-  bool read_pending = false, write_pending = false;
+  bool _ReadPending = false;
+  bool _WritePending = false;
 
-  enum { none, opening, running, error } state = none;
+  enum State { kNone, kOpening, kRunning, kError } _State = kNone;
 };
+
+} // namespace gh

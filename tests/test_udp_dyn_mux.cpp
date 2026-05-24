@@ -10,204 +10,204 @@
 #include "error-code.hpp"
 
 using boost::asio::ip::udp;
+using namespace gh;
 
 TEST(UdpDynMuxTest, SuccessfulNegotiationAndDataTransfer) {
-  boost::asio::io_context io_context;
+  boost::asio::io_context ioContext;
 
   // Start raw UDP socket to act as the server
-  udp::socket server_socket(io_context, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  udp::endpoint server_ep = server_socket.local_endpoint();
+  udp::socket serverSocket(ioContext, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  udp::endpoint serverEp = serverSocket.local_endpoint();
 
   // Start client connecting to our mock server
-  auto client = std::make_shared<udp_dyn_mux_client>(io_context, server_ep,
-                                                     udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto client =
+      std::make_shared<UdpDynMuxClient>(ioContext, serverEp, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
 
-  bool client_started = false;
-  client->async_start([&](const gh::error_code& ec) {
+  bool clientStarted = false;
+  client->AsyncStart([&](const ErrorCode& ec) {
     ASSERT_FALSE(ec);
-    client_started = true;
+    clientStarted = true;
   });
 
   // Server: listen for negotiation request
-  uint8_t rx_buf[2048];
-  udp::endpoint client_ep;
-  bool negotiation_request_received = false;
-  uint32_t client_cookie = 0;
+  uint8_t rxBuf[2048];
+  udp::endpoint clientEp;
+  bool negotiationRequestReceived = false;
+  uint32_t clientCookie = 0;
 
-  server_socket.async_receive_from(boost::asio::buffer(rx_buf), client_ep,
-                                   [&](const boost::system::error_code& ec, std::size_t n) {
-                                     ASSERT_FALSE(ec);
-                                     auto req = udp_dyn_mux::client_req_id::deserialize(rx_buf, n);
-                                     ASSERT_TRUE(req.has_value());
-                                     client_cookie = req->cookie;
-                                     negotiation_request_received = true;
+  serverSocket.async_receive_from(boost::asio::buffer(rxBuf), clientEp,
+                                  [&](const boost::system::error_code& ec, std::size_t n) {
+                                    ASSERT_FALSE(ec);
+                                    auto req = UdpDynMux::ClientReqId::Deserialize(rxBuf, n);
+                                    ASSERT_TRUE(req.has_value());
+                                    clientCookie = req->Cookie;
+                                    negotiationRequestReceived = true;
 
-                                     // Send back assignment
-                                     uint8_t tx_buf[udp_dyn_mux::server_assign_id::size];
-                                     udp_dyn_mux::server_assign_id{client_cookie, 1}.serialize(tx_buf);
-                                     server_socket.send_to(boost::asio::buffer(tx_buf), client_ep);
-                                   });
+                                    // Send back assignment
+                                    uint8_t txBuf[UdpDynMux::ServerAssignId::kSize];
+                                    UdpDynMux::ServerAssignId{clientCookie, 1}.Serialize(txBuf);
+                                    serverSocket.send_to(boost::asio::buffer(txBuf), clientEp);
+                                  });
 
   // Run until negotiation is complete
-  io_context.restart();
-  io_context.run_for(std::chrono::milliseconds(200));
-  ASSERT_TRUE(client_started);
-  ASSERT_TRUE(negotiation_request_received);
+  ioContext.restart();
+  ioContext.run_for(std::chrono::milliseconds(200));
+  ASSERT_TRUE(clientStarted);
+  ASSERT_TRUE(negotiationRequestReceived);
 
   // Send packet client -> server
-  bool server_received = false;
-  server_socket.async_receive_from(boost::asio::buffer(rx_buf), client_ep,
-                                   [&](const boost::system::error_code& ec, std::size_t n) {
-                                     ASSERT_FALSE(ec);
-                                     ASSERT_GE(n, 2);
-                                     uint16_t id = udp_dyn_mux::read_uint16_be(rx_buf);
-                                     ASSERT_EQ(id, 1);
-                                     ASSERT_EQ(std::string((char*)rx_buf + 2, n - 2), "Hello");
-                                     server_received = true;
-                                   });
+  bool serverReceived = false;
+  serverSocket.async_receive_from(boost::asio::buffer(rxBuf), clientEp,
+                                  [&](const boost::system::error_code& ec, std::size_t n) {
+                                    ASSERT_FALSE(ec);
+                                    ASSERT_GE(n, 2);
+                                    uint16_t id = UdpDynMux::ReadUint16Be(rxBuf);
+                                    ASSERT_EQ(id, 1);
+                                    ASSERT_EQ(std::string((char*)rxBuf + 2, n - 2), "Hello");
+                                    serverReceived = true;
+                                  });
 
   auto a = std::make_shared<std::array<uint8_t, 2048>>();
-  auto p = packet{buffer(*a), a};
-  std::memcpy(p.first.data + p.first.offset, "Hello", 5);
-  p.first.length = 5;
+  auto p = Packet{Buffer(*a), a};
+  std::memcpy(p.first.Data + p.first.Offset, "Hello", 5);
+  p.first.Length = 5;
 
-  client->async_write(std::move(p), [&](const gh::error_code& ec, std::size_t n) {
+  client->AsyncWrite(std::move(p), [&](const ErrorCode& ec, std::size_t n) {
     ASSERT_FALSE(ec);
     ASSERT_EQ(n, 7); // 5 bytes payload + 2 bytes header
   });
 
-  io_context.restart();
-  io_context.run_for(std::chrono::milliseconds(200));
-  EXPECT_TRUE(server_received);
+  ioContext.restart();
+  ioContext.run_for(std::chrono::milliseconds(200));
+  EXPECT_TRUE(serverReceived);
 
   // Send packet server -> client
-  bool client_received = false;
-  client->async_read([&](const gh::error_code& ec, packet&& p) {
+  bool clientReceived = false;
+  client->AsyncRead([&](const ErrorCode& ec, Packet&& p) {
     ASSERT_FALSE(ec);
-    client_received = true;
-    ASSERT_EQ(p.first.length, 5);
-    ASSERT_EQ(std::string((char*)p.first.data + p.first.offset, p.first.length), "World");
+    clientReceived = true;
+    ASSERT_EQ(p.first.Length, 5);
+    ASSERT_EQ(std::string((char*)p.first.Data + p.first.Offset, p.first.Length), "World");
   });
 
-  uint8_t data_pkg[7];
-  udp_dyn_mux::write_uint16_be(data_pkg, 1);
-  std::memcpy(data_pkg + 2, "World", 5);
-  server_socket.send_to(boost::asio::buffer(data_pkg), client_ep);
+  uint8_t dataPkg[7];
+  UdpDynMux::WriteUint16Be(dataPkg, 1);
+  std::memcpy(dataPkg + 2, "World", 5);
+  serverSocket.send_to(boost::asio::buffer(dataPkg), clientEp);
 
-  io_context.restart();
-  io_context.run_for(std::chrono::milliseconds(200));
-  EXPECT_TRUE(client_received);
+  ioContext.restart();
+  ioContext.run_for(std::chrono::milliseconds(200));
+  EXPECT_TRUE(clientReceived);
 }
 
 TEST(UdpDynMuxTest, PacketQueueingDuringNegotiation) {
-  boost::asio::io_context io_context;
+  boost::asio::io_context ioContext;
 
-  udp::socket server_socket(io_context, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  udp::endpoint server_ep = server_socket.local_endpoint();
+  udp::socket serverSocket(ioContext, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  udp::endpoint serverEp = serverSocket.local_endpoint();
 
-  auto client = std::make_shared<udp_dyn_mux_client>(io_context, server_ep,
-                                                     udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto client =
+      std::make_shared<UdpDynMuxClient>(ioContext, serverEp, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
 
   // Write packet BEFORE client async_start (so it's queued)
   auto a = std::make_shared<std::array<uint8_t, 2048>>();
-  auto p = packet{buffer(*a), a};
-  std::memcpy(p.first.data + p.first.offset, "Queued", 6);
-  p.first.length = 6;
+  auto p = Packet{Buffer(*a), a};
+  std::memcpy(p.first.Data + p.first.Offset, "Queued", 6);
+  p.first.Length = 6;
 
-  bool write_completed = false;
-  client->async_write(std::move(p), [&](const gh::error_code& ec, std::size_t n) {
+  bool writeCompleted = false;
+  client->AsyncWrite(std::move(p), [&](const ErrorCode& ec, std::size_t n) {
     ASSERT_FALSE(ec);
-    write_completed = true;
+    writeCompleted = true;
   });
 
   // Start client to trigger negotiation
-  client->async_start([&](const gh::error_code&) {});
+  client->AsyncStart([&](const ErrorCode&) {});
 
   // Server handles negotiation and then receives the queued packet
-  uint8_t rx_buf[2048];
-  udp::endpoint client_ep;
-  bool negotiation_handled = false;
-  bool packet_received = false;
+  uint8_t rxBuf[2048];
+  udp::endpoint clientEp;
+  bool negotiationHandled = false;
+  bool packetReceived = false;
 
-  std::function<void()> handle_server = [&]() {
-    server_socket.async_receive_from(boost::asio::buffer(rx_buf), client_ep,
-                                     [&](const boost::system::error_code& ec, std::size_t n) {
-                                       ASSERT_FALSE(ec);
-                                       if (!negotiation_handled) {
-                                         auto req = udp_dyn_mux::client_req_id::deserialize(rx_buf, n);
-                                         ASSERT_TRUE(req.has_value());
-                                         uint8_t tx_buf[udp_dyn_mux::server_assign_id::size];
-                                         udp_dyn_mux::server_assign_id{req->cookie, 1}.serialize(tx_buf);
-                                         server_socket.send_to(boost::asio::buffer(tx_buf), client_ep);
-                                         negotiation_handled = true;
-                                         // Look for the queued data packet next
-                                         handle_server();
-                                       } else {
-                                         ASSERT_GE(n, 2);
-                                         uint16_t id = udp_dyn_mux::read_uint16_be(rx_buf);
-                                         ASSERT_EQ(id, 1);
-                                         ASSERT_EQ(std::string((char*)rx_buf + 2, n - 2), "Queued");
-                                         packet_received = true;
-                                       }
-                                     });
+  std::function<void()> handleServer = [&]() {
+    serverSocket.async_receive_from(boost::asio::buffer(rxBuf), clientEp,
+                                    [&](const boost::system::error_code& ec, std::size_t n) {
+                                      ASSERT_FALSE(ec);
+                                      if (!negotiationHandled) {
+                                        auto req = UdpDynMux::ClientReqId::Deserialize(rxBuf, n);
+                                        ASSERT_TRUE(req.has_value());
+                                        uint8_t txBuf[UdpDynMux::ServerAssignId::kSize];
+                                        UdpDynMux::ServerAssignId{req->Cookie, 1}.Serialize(txBuf);
+                                        serverSocket.send_to(boost::asio::buffer(txBuf), clientEp);
+                                        negotiationHandled = true;
+                                        // Look for the queued data packet next
+                                        handleServer();
+                                      } else {
+                                        ASSERT_GE(n, 2);
+                                        uint16_t id = UdpDynMux::ReadUint16Be(rxBuf);
+                                        ASSERT_EQ(id, 1);
+                                        ASSERT_EQ(std::string((char*)rxBuf + 2, n - 2), "Queued");
+                                        packetReceived = true;
+                                      }
+                                    });
   };
-  handle_server();
+  handleServer();
 
-  io_context.restart();
-  io_context.run_for(std::chrono::milliseconds(400));
+  ioContext.restart();
+  ioContext.run_for(std::chrono::milliseconds(400));
 
-  EXPECT_TRUE(write_completed);
-  EXPECT_TRUE(packet_received);
+  EXPECT_TRUE(writeCompleted);
+  EXPECT_TRUE(packetReceived);
 }
 
 TEST(UdpDynMuxTest, ServerHandlesMigration) {
-  boost::asio::io_context io_context;
+  boost::asio::io_context ioContext;
 
-  auto server =
-      std::make_shared<udp_dyn_mux_server>(io_context, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  bool server_started = false;
-  server->async_start([&](const gh::error_code& ec) {
+  auto server = std::make_shared<UdpDynMuxServer>(ioContext, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  bool serverStarted = false;
+  server->AsyncStart([&](const ErrorCode& ec) {
     ASSERT_FALSE(ec);
-    server_started = true;
+    serverStarted = true;
   });
 
-  io_context.restart();
-  io_context.run_for(std::chrono::milliseconds(100));
-  ASSERT_TRUE(server_started);
+  ioContext.restart();
+  ioContext.run_for(std::chrono::milliseconds(100));
+  ASSERT_TRUE(serverStarted);
 
-  udp::endpoint server_ep = server->local_endpoint();
+  udp::endpoint serverEp = server->LocalEndpoint();
 
   // Mock client socket 1
-  udp::socket client1(io_context, udp::endpoint(udp::v6(), 0));
+  udp::socket client1(ioContext, udp::endpoint(udp::v6(), 0));
   uint32_t cookie = 0x12345678;
 
-  uint8_t tx_buf[2048];
-  udp_dyn_mux::client_req_id{cookie}.serialize(tx_buf);
-  client1.send_to(boost::asio::buffer(tx_buf, udp_dyn_mux::client_req_id::size), server_ep);
+  uint8_t txBuf[2048];
+  UdpDynMux::ClientReqId{cookie}.Serialize(txBuf);
+  client1.send_to(boost::asio::buffer(txBuf, UdpDynMux::ClientReqId::kSize), serverEp);
 
-  io_context.restart();
-  io_context.run_for(std::chrono::milliseconds(100));
+  ioContext.restart();
+  ioContext.run_for(std::chrono::milliseconds(100));
 
   // Receive assignment
-  uint8_t rx_buf[2048];
-  udp::endpoint sender_ep;
-  size_t n = client1.receive_from(boost::asio::buffer(rx_buf), sender_ep);
-  auto assign = udp_dyn_mux::server_assign_id::deserialize(rx_buf, n);
+  uint8_t rxBuf[2048];
+  udp::endpoint senderEp;
+  size_t n = client1.receive_from(boost::asio::buffer(rxBuf), senderEp);
+  auto assign = UdpDynMux::ServerAssignId::Deserialize(rxBuf, n);
   ASSERT_TRUE(assign.has_value());
-  ASSERT_EQ(assign->cookie, cookie);
-  uint16_t id = assign->assigned_id;
+  ASSERT_EQ(assign->Cookie, cookie);
+  uint16_t id = assign->AssignedId;
 
   // Now "migrate" to client socket 2
-  udp::socket client2(io_context, udp::endpoint(udp::v6(), 0));
-  udp_dyn_mux::client_addr_migrate{id, cookie}.serialize(tx_buf);
-  client2.send_to(boost::asio::buffer(tx_buf, udp_dyn_mux::client_addr_migrate::size), server_ep);
+  udp::socket client2(ioContext, udp::endpoint(udp::v6(), 0));
+  UdpDynMux::ClientAddrMigrate{id, cookie}.Serialize(txBuf);
+  client2.send_to(boost::asio::buffer(txBuf, UdpDynMux::ClientAddrMigrate::kSize), serverEp);
 
-  io_context.restart();
-  io_context.run_for(std::chrono::milliseconds(100));
+  ioContext.restart();
+  ioContext.run_for(std::chrono::milliseconds(100));
 
   // Receive migration ACK on client 2
-  n = client2.receive_from(boost::asio::buffer(rx_buf), sender_ep);
-  auto migrate_ack = udp_dyn_mux::server_migrate_ack::deserialize(rx_buf, n);
-  ASSERT_TRUE(migrate_ack.has_value());
-  ASSERT_EQ(migrate_ack->id, id);
+  n = client2.receive_from(boost::asio::buffer(rxBuf), senderEp);
+  auto migrateAck = UdpDynMux::ServerMigrateAck::Deserialize(rxBuf, n);
+  ASSERT_TRUE(migrateAck.has_value());
+  ASSERT_EQ(migrateAck->Id, id);
 }

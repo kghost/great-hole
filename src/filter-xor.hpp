@@ -1,26 +1,28 @@
-#ifndef FILTER_XOR_H
-#define FILTER_XOR_H
+#pragma once
 
-#include <boost/asio/buffer.hpp>
+#include <vector>
 
 #include "filter.hpp"
+#include "packet.hpp"
 
-class filter_xor : public filter_symmetric<filter_xor> {
+namespace gh {
+
+class FilterXor : public FilterSymmetric<FilterXor> {
 public:
-  filter_xor(std::vector<char> const& key) : key(key) {}
+  explicit FilterXor(const std::vector<char>& key) : _Key(key) {}
 
-  virtual packet pipe(packet&& p) {
+  Packet Pipe(Packet&& p) override {
     auto& buffer = p.first;
-    auto data = buffer.data;
+    auto data = buffer.Data;
 
-    for (auto i = 0; i < buffer.length; ++i) {
-      data[buffer.offset + i] = data[buffer.offset + i] ^ key[i % key.size()];
+    for (std::size_t i = 0; i < buffer.Length; ++i) {
+      data[buffer.Offset + i] ^= _Key[i % _Key.size()];
     }
     return std::move(p);
   }
 
 private:
-  const std::vector<char> key;
+  std::vector<char> _Key;
 };
 
-#endif /* end of include guard: FILTER_XOR_H */
+} // namespace gh

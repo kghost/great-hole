@@ -8,50 +8,54 @@
 
 #include "endpoint.hpp"
 
-class udp_dyn_mux_server : public std::enable_shared_from_this<udp_dyn_mux_server> {
+namespace gh {
+
+class UdpDynMuxServer : public std::enable_shared_from_this<UdpDynMuxServer> {
 public:
-  udp_dyn_mux_server(boost::asio::io_context& io_context);
-  udp_dyn_mux_server(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint bind);
+  UdpDynMuxServer(boost::asio::io_context& io_context);
+  UdpDynMuxServer(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint bind);
 
-  boost::asio::ip::udp::endpoint local_endpoint() const { return socket.local_endpoint(); }
+  boost::asio::ip::udp::endpoint LocalEndpoint() const { return _Socket.local_endpoint(); }
 
-  void async_start(std::move_only_function<event>&& handler);
+  void AsyncStart(std::move_only_function<Event>&& handler);
 
 private:
-  struct client_session {
-    boost::asio::ip::udp::endpoint peer;
-    uint32_t cookie = 0;
-    std::chrono::steady_clock::time_point last_seen;
-    int missing_acks = 0;
+  struct ClientSession {
+    boost::asio::ip::udp::endpoint Peer;
+    uint32_t Cookie = 0;
+    std::chrono::steady_clock::time_point LastSeen;
+    int MissingAcks = 0;
   };
-  std::map<uint16_t, client_session> clients;
+  std::map<uint16_t, ClientSession> _Clients;
 
-  boost::asio::ip::udp::socket socket;
-  boost::asio::ip::udp::endpoint local;
+  boost::asio::ip::udp::socket _Socket;
+  boost::asio::ip::udp::endpoint _Local;
 
-  bool read_pending = false;
+  bool _ReadPending = false;
 
-  enum { none, running, error } state = none;
-  bool started = false;
+  enum State { kNone, kRunning, kError } _State = kNone;
+  bool _Started = false;
 
   // Timers
-  boost::asio::steady_timer keepalive_timer;
+  boost::asio::steady_timer _KeepaliveTimer;
 
   // Rate limiting timestamps based on peer address
-  std::map<boost::asio::ip::udp::endpoint, std::chrono::steady_clock::time_point> last_error_sent;
+  std::map<boost::asio::ip::udp::endpoint, std::chrono::steady_clock::time_point> _LastErrorSent;
 
-  bool check_rate_limit(const boost::asio::ip::udp::endpoint& peer);
+  bool CheckRateLimit(const boost::asio::ip::udp::endpoint& peer);
 
-  void schedule_read();
+  void ScheduleRead();
 
-  void start_keepalive_timer();
-  void handle_keepalive_tick();
+  void StartKeepaliveTimer();
+  void HandleKeepaliveTick();
 
-  void send_control_assign(const boost::asio::ip::udp::endpoint& peer, uint32_t cookie, uint16_t id);
-  void send_control_keepalive(const boost::asio::ip::udp::endpoint& peer, uint16_t id);
-  void send_control_id_closed(const boost::asio::ip::udp::endpoint& peer, uint16_t id);
-  void send_control_addr_mismatch(const boost::asio::ip::udp::endpoint& peer, uint16_t id);
-  void send_control_migrate_ack(const boost::asio::ip::udp::endpoint& peer, uint16_t id);
-  void send_control_invalid_id(const boost::asio::ip::udp::endpoint& peer, uint16_t id);
-  void send_control_cookie_mismatch(const boost::asio::ip::udp::endpoint& peer, uint16_t id);
+  void SendControlAssign(const boost::asio::ip::udp::endpoint& peer, uint32_t cookie, uint16_t id);
+  void SendControlKeepalive(const boost::asio::ip::udp::endpoint& peer, uint16_t id);
+  void SendControlIdClosed(const boost::asio::ip::udp::endpoint& peer, uint16_t id);
+  void SendControlAddrMismatch(const boost::asio::ip::udp::endpoint& peer, uint16_t id);
+  void SendControlMigrateAck(const boost::asio::ip::udp::endpoint& peer, uint16_t id);
+  void SendControlInvalidId(const boost::asio::ip::udp::endpoint& peer, uint16_t id);
+  void SendControlCookieMismatch(const boost::asio::ip::udp::endpoint& peer, uint16_t id);
 };
+
+} // namespace gh

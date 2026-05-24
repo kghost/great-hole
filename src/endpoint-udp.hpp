@@ -1,5 +1,4 @@
-#ifndef ENDPOINT_UDP_H
-#define ENDPOINT_UDP_H
+#pragma once
 
 #include <map>
 #include <queue>
@@ -8,34 +7,38 @@
 
 #include "endpoint.hpp"
 
-class udp : public std::enable_shared_from_this<udp> {
+namespace gh {
+
+class Udp : public std::enable_shared_from_this<Udp> {
 public:
-  class udp_channel;
+  class UdpChannel;
 
-  udp(boost::asio::io_context& io_context);
-  udp(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint bind);
+  Udp(boost::asio::io_context& io_context);
+  Udp(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint bind);
 
-  std::shared_ptr<endpoint> create_channel(boost::asio::ip::udp::endpoint const& peer);
+  std::shared_ptr<Endpoint> CreateChannel(boost::asio::ip::udp::endpoint const& peer);
 
 private:
-  typedef std::map<boost::asio::ip::udp::endpoint, std::move_only_function<read_handler>> tm;
-  // read_handler is holding the whole world, where we should break ref chain here
-  std::weak_ptr<tm> reading_channel;
-  boost::asio::ip::udp::socket socket;
-  boost::asio::ip::udp::endpoint local;
-  std::queue<std::tuple<boost::asio::ip::udp::endpoint, packet, std::move_only_function<write_handler>>> write_queue;
+  using ReadHandlerMap = std::map<boost::asio::ip::udp::endpoint, std::move_only_function<ReadHandler>>;
+  // ReadHandler is holding the whole world, where we should break ref chain here
+  std::weak_ptr<ReadHandlerMap> _ReadingChannel;
+  boost::asio::ip::udp::socket _Socket;
+  boost::asio::ip::udp::endpoint _Local;
+  std::queue<std::tuple<boost::asio::ip::udp::endpoint, Packet, std::move_only_function<WriteHandler>>> _WriteQueue;
 
-  bool read_pending = false, write_pending = false;
+  bool _ReadPending = false;
+  bool _WritePending = false;
 
-  enum { none, running, error } state = none;
-  void try_async_start(std::move_only_function<event>&&);
-  void async_start(std::move_only_function<event>&&);
-  void read(boost::asio::ip::udp::endpoint const& peer, std::move_only_function<read_handler>&& handler);
-  void write(boost::asio::ip::udp::endpoint const& peer, packet&& p, std::move_only_function<write_handler>&& handler);
-  void schedule_read(std::shared_ptr<tm> m);
-  void schedule_write();
+  enum State { kNone, kRunning, kError } _State = kNone;
 
-  bool started = false;
+  void TryAsyncStart(std::move_only_function<Event>&&);
+  void AsyncStart(std::move_only_function<Event>&&);
+  void Read(boost::asio::ip::udp::endpoint const& peer, std::move_only_function<ReadHandler>&& handler);
+  void Write(boost::asio::ip::udp::endpoint const& peer, Packet&& p, std::move_only_function<WriteHandler>&& handler);
+  void ScheduleRead(std::shared_ptr<ReadHandlerMap> m);
+  void ScheduleWrite();
+
+  bool _Started = false;
 };
 
-#endif /* end of include guard: ENDPOINT_UDP_H */
+} // namespace gh

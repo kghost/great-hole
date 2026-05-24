@@ -1,5 +1,4 @@
-#ifndef PACKET_H
-#define PACKET_H
+#pragma once
 
 #include <boost/any.hpp>
 
@@ -11,32 +10,34 @@
 #define const_buffer const_buffers_1
 #endif // BOOST_VERSION  < 106600
 
-class buffer {
+namespace gh {
+
+class Buffer {
 public:
-  static constexpr const std::size_t reserved_front = 2;
+  static constexpr const std::size_t kReservedFront = 2;
 
-  template <std::size_t N> buffer(std::array<uint8_t, N>& storage) {
-    data = storage.data();
-    capacity = storage.size();
-    offset = reserved_front;
-    length = 0;
+  template <std::size_t N> explicit Buffer(std::array<uint8_t, N>& storage) {
+    Data = storage.data();
+    Capacity = storage.size();
+    Offset = kReservedFront;
+    Length = 0;
   }
 
-  buffer(std::string& s) {
-    data = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(s.data()));
-    capacity = s.size();
-    offset = 0;
-    length = s.size();
+  explicit Buffer(std::string& s) {
+    Data = const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(s.data()));
+    Capacity = s.size();
+    Offset = 0;
+    Length = s.size();
   }
 
-  buffer(buffer&&) = default;
-  buffer& operator=(buffer&&) = default;
-  buffer(const buffer&) = delete;
-  buffer& operator=(const buffer&) = delete;
+  Buffer(Buffer&&) = default;
+  Buffer& operator=(Buffer&&) = default;
+  Buffer(const Buffer&) = delete;
+  Buffer& operator=(const Buffer&) = delete;
 
-  explicit operator boost::asio::const_buffer() { return {data + offset, length}; }
+  explicit operator boost::asio::const_buffer() { return {Data + Offset, Length}; }
 
-  explicit operator boost::asio::mutable_buffer() { return {data + offset, capacity - offset}; }
+  explicit operator boost::asio::mutable_buffer() { return {Data + Offset, Capacity - Offset}; }
 
   //  data
   //   | reserved_front |    data    | unused back |
@@ -45,13 +46,13 @@ public:
   //   |<-                 capacity              ->|
   //
   //
-  uint8_t* data;
-  std::size_t capacity;
-  std::size_t offset;
-  std::size_t length;
+  uint8_t* Data;
+  std::size_t Capacity;
+  std::size_t Offset;
+  std::size_t Length;
 };
 
-// packet.second stores a object which holds the owner of buffer
-typedef std::pair<buffer, boost::any> packet;
+// Packet.second stores a object which holds the owner of Buffer
+using Packet = std::pair<Buffer, boost::any>;
 
-#endif /* end of include guard: PACKET_H */
+} // namespace gh

@@ -6,169 +6,172 @@
 
 #include "scoped_flag.hpp"
 
-class udp_mux_server::channel : public endpoint {
+namespace gh {
+
+class UdpMuxServer::Channel : public Endpoint {
 public:
-  channel(std::shared_ptr<udp_mux_server> parent, uint8_t id) : parent(parent), id(id) {}
+  Channel(std::shared_ptr<UdpMuxServer> parent, uint8_t id) : _Parent(parent), _Id(id) {}
 
-  void async_start(std::move_only_function<event>&& handler) override { parent->try_async_start(std::move(handler)); }
+  void AsyncStart(std::move_only_function<Event>&& handler) override { _Parent->TryAsyncStart(std::move(handler)); }
 
-  void async_read(std::move_only_function<read_handler>&& handler) override { parent->read(id, std::move(handler)); }
+  void AsyncRead(std::move_only_function<ReadHandler>&& handler) override { _Parent->Read(_Id, std::move(handler)); }
 
-  void async_write(packet&& p, std::move_only_function<write_handler>&& handler) override {
-    parent->write(id, std::move(p), std::move(handler));
+  void AsyncWrite(Packet&& p, std::move_only_function<WriteHandler>&& handler) override {
+    _Parent->Write(_Id, std::move(p), std::move(handler));
   }
 
 private:
-  std::shared_ptr<udp_mux_server> parent;
-  uint8_t id;
+  std::shared_ptr<UdpMuxServer> _Parent;
+  uint8_t _Id;
 };
 
-std::shared_ptr<endpoint> udp_mux_server::create_channel(uint8_t id) {
-  return std::shared_ptr<endpoint>(new channel(shared_from_this(), id));
+std::shared_ptr<Endpoint> UdpMuxServer::CreateChannel(uint8_t id) {
+  return std::shared_ptr<Endpoint>(new Channel(shared_from_this(), id));
 }
 
-udp_mux_server::udp_mux_server(boost::asio::io_context& io_context)
-    : socket(io_context), local(boost::asio::ip::udp::v6(), 0) {}
-udp_mux_server::udp_mux_server(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint bind)
-    : socket(io_context), local(bind) {}
+UdpMuxServer::UdpMuxServer(boost::asio::io_context& io_context)
+    : _Socket(io_context), _Local(boost::asio::ip::udp::v6(), 0) {}
+UdpMuxServer::UdpMuxServer(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint bind)
+    : _Socket(io_context), _Local(bind) {}
 
-void udp_mux_server::try_async_start(std::move_only_function<event>&& handler) {
-  switch (state) {
-  case none:
-    async_start(std::move(handler));
+void UdpMuxServer::TryAsyncStart(std::move_only_function<Event>&& handler) {
+  switch (_State) {
+  case kNone:
+    AsyncStart(std::move(handler));
     break;
-  case running:
-    handler(gh::error_code());
+  case kRunning:
+    handler(ErrorCode());
     break;
   default:
-    handler(gh::error_code{app_error_category::incorrect_state, app_error});
+    handler(ErrorCode{AppErrorCategory::kIncorrectState, kAppError});
     break;
   }
 }
 
-void udp_mux_server::async_start(std::move_only_function<event>&& handler) {
+void UdpMuxServer::AsyncStart(std::move_only_function<Event>&& handler) {
   try {
-    socket.open(boost::asio::ip::udp::v6());
-    socket.set_option(boost::asio::ip::v6_only(false));
-    socket.bind(local);
-    BOOST_LOG_TRIVIAL(info) << "udp_mux_server(" << this << ") bound at " << socket.local_endpoint();
-    state = running;
-    handler(gh::error_code());
-  } catch (const gh::system_error& e) {
-    BOOST_LOG_TRIVIAL(info) << "udp_mux_server(" << this << ") start failed: " << e.what();
-    state = error;
+    _Socket.open(boost::asio::ip::udp::v6());
+    _Socket.set_option(boost::asio::ip::v6_only(false));
+    _Socket.bind(_Local);
+    BOOST_LOG_TRIVIAL(info) << "UdpMuxServer(" << this << ") bound at " << _Socket.local_endpoint();
+    _State = kRunning;
+    handler(ErrorCode());
+  } catch (const SystemError& e) {
+    BOOST_LOG_TRIVIAL(info) << "UdpMuxServer(" << this << ") start failed: " << e.what();
+    _State = kError;
     handler(e.code());
   }
 }
 
-void udp_mux_server::read(uint8_t id, std::move_only_function<read_handler>&& handler) {
-  if (state != running) {
+void UdpMuxServer::Read(uint8_t id, std::move_only_function<ReadHandler>&& handler) {
+  if (_State != kRunning) {
     return;
   }
-  std::shared_ptr<tm> m;
-  if ((m = reading_channel.lock())) {
+  std::shared_ptr<ReadHandlerMap> m;
+  if ((m = _ReadingChannel.lock())) {
     assert(m->find(id) == m->end());
   } else {
-    m.reset(new tm);
-    reading_channel = m;
+    m.reset(new ReadHandlerMap);
+    _ReadingChannel = m;
   }
   m->emplace(id, std::move(handler));
-  schedule_read(m);
+  ScheduleRead(m);
 }
 
-void udp_mux_server::schedule_read(std::shared_ptr<tm> m) {
-  if (state != running || read_pending) {
+void UdpMuxServer::ScheduleRead(std::shared_ptr<ReadHandlerMap> m) {
+  if (_State != kRunning || _ReadPending) {
     return;
   }
-  read_pending = true;
+  _ReadPending = true;
 
   auto a = std::make_shared<std::array<uint8_t, 2048>>();
-  auto p = packet{buffer(*a), a};
+  auto p = Packet{Buffer(*a), a};
   auto buffer = boost::asio::mutable_buffer{p.first};
   auto peer_address = std::make_shared<boost::asio::ip::udp::endpoint>();
-  socket.async_receive_from(buffer, *peer_address,
-                            [me = shared_from_this(), p{std::move(p)}, m,
-                             peer_address](const gh::error_code& ec, std::size_t bytes_transferred) mutable {
-                              me->read_pending = false;
-                              if (!ec) {
-                                auto& buffer = p.first;
+  _Socket.async_receive_from(buffer, *peer_address,
+                             [me = shared_from_this(), p{std::move(p)}, m,
+                              peer_address](const ErrorCode& ec, std::size_t bytes_transferred) mutable {
+                               me->_ReadPending = false;
+                               if (!ec) {
+                                 auto& buf = p.first;
 
-                                assert(bytes_transferred <= buffer.capacity - buffer.offset);
-                                buffer.length = bytes_transferred;
+                                 assert(bytes_transferred <= buf.Capacity - buf.Offset);
+                                 buf.Length = bytes_transferred;
 
-                                if (bytes_transferred >= 1) {
-                                  uint8_t id = buffer.data[buffer.offset];
-                                  buffer.offset += 1;
-                                  buffer.length -= 1;
-                                  me->peers[id] = *peer_address; // learn peer address
+                                 if (bytes_transferred >= 1) {
+                                   uint8_t id = buf.Data[buf.Offset];
+                                   buf.Offset += 1;
+                                   buf.Length -= 1;
+                                   me->_Peers[id] = *peer_address; // learn peer address
 
-                                  auto h = m->find(id);
-                                  if (h != m->end()) {
-                                    auto handler = std::move(h->second);
-                                    m->erase(h);
-                                    handler(ec, std::move(p));
-                                  } else {
-                                    BOOST_LOG_TRIVIAL(info)
-                                        << "udp_mux_server(" << &*me << ") packet from unknown peer: " << id;
-                                  }
-                                }
-                              } else {
-                                BOOST_LOG_TRIVIAL(error)
-                                    << "udp_mux_server(" << &*me << ") read error: " << ec.category().name() << ':'
-                                    << ec.value();
-                              }
-                              if (!m->empty()) {
-                                me->schedule_read(m);
-                              }
-                            });
+                                   auto h = m->find(id);
+                                   if (h != m->end()) {
+                                     auto handler = std::move(h->second);
+                                     m->erase(h);
+                                     handler(ec, std::move(p));
+                                   } else {
+                                     BOOST_LOG_TRIVIAL(info)
+                                         << "UdpMuxServer(" << &*me << ") packet from unknown peer: " << (int)id;
+                                   }
+                                 }
+                               } else if (ec != boost::asio::error::operation_aborted) {
+                                 BOOST_LOG_TRIVIAL(error)
+                                     << "UdpMuxServer(" << &*me << ") read error: " << ec.message();
+                               }
+                               if (!m->empty()) {
+                                 me->ScheduleRead(m);
+                               }
+                             });
 }
 
-void udp_mux_server::write(uint8_t id, packet&& p, std::move_only_function<write_handler>&& handler) {
-  if (state != running) {
+void UdpMuxServer::Write(uint8_t id, Packet&& p, std::move_only_function<WriteHandler>&& handler) {
+  if (_State != kRunning) {
     return;
   }
-  write_queue.push(std::make_tuple(id, std::move(p), std::move(handler)));
-  if (state != running || write_pending) {
+  _WriteQueue.push(std::make_tuple(id, std::move(p), std::move(handler)));
+  if (_State != kRunning || _WritePending) {
     return;
   }
-  schedule_write(scoped_flag(write_pending));
+  ScheduleWrite(ScopedFlag(_WritePending));
 }
 
-void udp_mux_server::schedule_write(scoped_flag&& write) {
-  auto& next = write_queue.front();
+void UdpMuxServer::ScheduleWrite(ScopedFlag&& write) {
+  auto& next = _WriteQueue.front();
   auto id = std::get<0>(next);
   auto p = std::move(std::get<1>(next));
   auto handler = std::move(std::get<2>(next));
-  write_queue.pop();
+  _WriteQueue.pop();
 
-  auto peer_iter = peers.find(id);
-  if (peer_iter == peers.end()) {
-    handler(gh::error_code{app_error_category::invalid_packet_session, app_error}, 0);
-    if (!write_queue.empty()) {
-      schedule_write(std::move(write));
+  auto peer_iter = _Peers.find(id);
+  if (peer_iter == _Peers.end()) {
+    handler(ErrorCode{AppErrorCategory::kInvalidPacketSession, kAppError}, 0);
+    if (!_WriteQueue.empty()) {
+      ScheduleWrite(std::move(write));
     }
     return;
   }
 
-  auto& buffer = p.first;
-  if (buffer.offset < 1) {
-    handler(gh::error_code{app_error_category::invalid_packet_reserved, app_error}, 0);
-    if (!write_queue.empty()) {
-      schedule_write(std::move(write));
+  auto& buf = p.first;
+  if (buf.Offset < 1) {
+    handler(ErrorCode{AppErrorCategory::kInvalidPacketReserved, kAppError}, 0);
+    if (!_WriteQueue.empty()) {
+      ScheduleWrite(std::move(write));
     }
     return;
   }
 
-  buffer.offset -= 1;
-  buffer.length += 1;
-  buffer.data[buffer.offset] = id;
+  buf.Offset -= 1;
+  buf.Length += 1;
+  buf.Data[buf.Offset] = id;
 
-  socket.async_send_to(boost::asio::const_buffer{p.first}, peer_iter->second,
-                       [me = shared_from_this(), handler{std::move(handler)},
-                        write{std::move(write)}](const gh::error_code& ec, std::size_t bytes_transferred) mutable {
-                         handler(ec, bytes_transferred);
-                         if (!me->write_queue.empty()) {
-                           me->schedule_write(std::move(write));
-                         }
-                       });
+  _Socket.async_send_to(boost::asio::const_buffer{buf}, peer_iter->second,
+                        [me = shared_from_this(), handler = std::move(handler),
+                         write = std::move(write)](const ErrorCode& ec, std::size_t bytes_transferred) mutable {
+                          handler(ec, bytes_transferred);
+                          if (!me->_WriteQueue.empty()) {
+                            me->ScheduleWrite(std::move(write));
+                          }
+                        });
 }
+
+} // namespace gh

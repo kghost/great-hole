@@ -1,34 +1,35 @@
-#ifndef ENDPOINT_H
-#define ENDPOINT_H
+#pragma once
 
 #include <functional>
 
 #include "error-code.hpp"
 #include "packet.hpp"
 
-using event = void(gh::error_code const&);
-using read_handler = void(gh::error_code const&, packet&&);
-using write_handler = void(gh::error_code const&, std::size_t);
+namespace gh {
 
-class endpoint_input {
+using Event = void(ErrorCode const&);
+using ReadHandler = void(ErrorCode const&, Packet&&);
+using WriteHandler = void(ErrorCode const&, std::size_t);
+
+class EndpointInput {
 public:
-  virtual ~endpoint_input() = 0;
-  virtual void async_start(std::move_only_function<event>&&) = 0;
-  virtual void async_read(std::move_only_function<read_handler>&&) = 0;
+  virtual ~EndpointInput() = 0;
+  virtual void AsyncStart(std::move_only_function<Event>&&) = 0;
+  virtual void AsyncRead(std::move_only_function<ReadHandler>&&) = 0;
 };
 
-class endpoint_output {
+class EndpointOutput {
 public:
-  virtual ~endpoint_output() = 0;
-  virtual void async_start(std::move_only_function<event>&&) = 0;
-  virtual void async_write(packet&&, std::move_only_function<write_handler>&&) = 0;
+  virtual ~EndpointOutput() = 0;
+  virtual void AsyncStart(std::move_only_function<Event>&&) = 0;
+  virtual void AsyncWrite(Packet&&, std::move_only_function<WriteHandler>&&) = 0;
 };
 
-class endpoint : public endpoint_input, public endpoint_output {};
+class Endpoint : public EndpointInput, public EndpointOutput {};
 
-template <typename base> class endpoint_skip_start : public base {
+template <typename Base> class EndpointSkipStart : public Base {
 public:
-  virtual void async_start(std::move_only_function<event>&& handler) { handler(gh::error_code()); }
+  void AsyncStart(std::move_only_function<Event>&& handler) override { handler(ErrorCode()); }
 };
 
-#endif /* end of include guard: ENDPOINT_H */
+} // namespace gh

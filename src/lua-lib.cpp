@@ -5,13 +5,15 @@
 #include <memory>
 
 #include "endpoint-tun.hpp"
-#include "endpoint-udp-mux-client.hpp"
-#include "endpoint-udp-mux-server.hpp"
 #include "endpoint-udp-dyn-mux-client.hpp"
 #include "endpoint-udp-dyn-mux-server.hpp"
+#include "endpoint-udp-mux-client.hpp"
+#include "endpoint-udp-mux-server.hpp"
 #include "endpoint-udp.hpp"
 #include "filter-xor.hpp"
 #include "pipeline.hpp"
+
+using namespace gh;
 
 static boost::asio::ip::address_v6 get_address(const char* str) {
   auto address = boost::asio::ip::make_address(str);
@@ -52,7 +54,7 @@ template <typename T, void (T::*mf)(), const char N[]> struct proxy<void (T::*)(
   }
 };
 
-static const struct luaL_Reg filter_metatable[] = {{"__gc", safe_call<gc<filter, name_filter>>}, {NULL, NULL}};
+static const struct luaL_Reg filter_metatable[] = {{"__gc", safe_call<gc<Filter, name_filter>>}, {NULL, NULL}};
 
 static int filter_xor_new(lua_State* L) {
   auto c = lua_gettop(L);
@@ -68,17 +70,17 @@ static int filter_xor_new(lua_State* L) {
     return 0;
   }
 
-  new (lua_newuserdata(L, sizeof(std::shared_ptr<filter>)))
-      std::shared_ptr<filter>(new filter_xor(std::vector<char>(s, s + len)));
+  new (lua_newuserdata(L, sizeof(std::shared_ptr<Filter>)))
+      std::shared_ptr<Filter>(new FilterXor(std::vector<char>(s, s + len)));
   luaL_getmetatable(L, name_filter);
   lua_setmetatable(L, -2);
   return 1;
 }
 
 static const struct luaL_Reg pipeline_metatable[] = {
-    {"__gc", safe_call<gc<pipeline, name_pipeline>>},
-    {"start", safe_call<&proxy<decltype(&pipeline::start), &pipeline::start, name_pipeline>::call>},
-    {"stop", safe_call<&proxy<decltype(&pipeline::stop), &pipeline::stop, name_pipeline>::call>},
+    {"__gc", safe_call<gc<Pipeline, name_pipeline>>},
+    {"start", safe_call<&proxy<decltype(&Pipeline::Start), &Pipeline::Start, name_pipeline>::call>},
+    {"stop", safe_call<&proxy<decltype(&Pipeline::Stop), &Pipeline::Stop, name_pipeline>::call>},
     {NULL, NULL}};
 
 static int pipeline_new(lua_State* L) {
@@ -88,20 +90,21 @@ static int pipeline_new(lua_State* L) {
     return 0;
   }
 
-  auto& in = *(std::shared_ptr<endpoint>*)luaL_checkudata(L, 1, name_endpoint);
-  auto& out = *(std::shared_ptr<endpoint>*)luaL_checkudata(L, c, name_endpoint);
-  std::vector<std::shared_ptr<filter>> filters(c - 2);
+  auto& in = *(std::shared_ptr<EndpointInput>*)luaL_checkudata(L, 1, name_endpoint);
+  auto& out = *(std::shared_ptr<EndpointOutput>*)luaL_checkudata(L, c, name_endpoint);
+  std::vector<std::shared_ptr<Filter>> filters(c - 2);
   for (auto i = 2; i < c; ++i) {
-    filters[i - 2] = *(std::shared_ptr<filter>*)luaL_checkudata(L, i, name_filter);
+    filters[i - 2] = *(std::shared_ptr<Filter>*)luaL_checkudata(L, i, name_filter);
   }
 
-  new (lua_newuserdata(L, sizeof(std::shared_ptr<pipeline>))) std::shared_ptr<pipeline>(new pipeline(in, filters, out));
+  new (lua_newuserdata(L, sizeof(std::shared_ptr<Pipeline>))) std::shared_ptr<Pipeline>(new Pipeline(in, filters, out));
   luaL_getmetatable(L, name_pipeline);
   lua_setmetatable(L, -2);
+
   return 1;
 }
 
-static const struct luaL_Reg endpoint_metatable[] = {{"__gc", safe_call<gc<endpoint, name_endpoint>>}, {NULL, NULL}};
+static const struct luaL_Reg endpoint_metatable[] = {{"__gc", safe_call<gc<Endpoint, name_endpoint>>}, {NULL, NULL}};
 
 static int udp_create_channel(lua_State* L) {
   if (lua_gettop(L) != 3) {
@@ -113,26 +116,26 @@ static int udp_create_channel(lua_State* L) {
   auto port = (int)lua_tonumber(L, 3);
   auto peer = boost::asio::ip::udp::endpoint(get_address(address), port);
 
-  auto& u = *(std::shared_ptr<udp>*)luaL_checkudata(L, 1, name_udp);
+  auto& u = *(std::shared_ptr<Udp>*)luaL_checkudata(L, 1, name_udp);
 
-  new (lua_newuserdata(L, sizeof(std::shared_ptr<endpoint>))) std::shared_ptr<endpoint>(u->create_channel(peer));
+  new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>(u->CreateChannel(peer));
   luaL_getmetatable(L, name_endpoint);
   lua_setmetatable(L, -2);
   return 1;
 }
 
 static const struct luaL_Reg udp_metatable[] = {
-    {"__gc", safe_call<gc<udp, name_udp>>}, {"create_channel", safe_call<udp_create_channel>}, {NULL, NULL}};
+    {"__gc", safe_call<gc<Udp, name_udp>>}, {"create_channel", safe_call<udp_create_channel>}, {NULL, NULL}};
 
 static int udp_new(lua_State* L) {
   auto& io_context = *(boost::asio::io_context*)lua_touserdata(L, lua_upvalueindex(1));
   switch (lua_gettop(L)) {
   case 0:
-    new (lua_newuserdata(L, sizeof(std::shared_ptr<udp>))) std::shared_ptr<udp>(new udp(io_context));
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<Udp>))) std::shared_ptr<Udp>(new Udp(io_context));
     break;
   case 1: {
     auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
-    new (lua_newuserdata(L, sizeof(std::shared_ptr<udp>))) std::shared_ptr<udp>(new udp(io_context, peer));
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<Udp>))) std::shared_ptr<Udp>(new Udp(io_context, peer));
     break;
   }
   default:
@@ -154,14 +157,14 @@ static int udp_mux_server_create_channel(lua_State* L) {
   }
 
   auto id = (uint8_t)lua_tonumber(L, 2);
-  auto& udp = *reinterpret_cast<std::shared_ptr<udp_mux_server>*>(luaL_checkudata(L, 1, name_udp_mux_server));
-  new (lua_newuserdata(L, sizeof(std::shared_ptr<endpoint>))) std::shared_ptr<endpoint>(udp->create_channel(id));
+  auto& udp = *reinterpret_cast<std::shared_ptr<UdpMuxServer>*>(luaL_checkudata(L, 1, name_udp_mux_server));
+  new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>(udp->CreateChannel(id));
   luaL_getmetatable(L, name_endpoint);
   lua_setmetatable(L, -2);
   return 1;
 }
 
-static const struct luaL_Reg udp_mux_server_metatable[] = {{"__gc", safe_call<gc<udp_mux_server, name_udp_mux_server>>},
+static const struct luaL_Reg udp_mux_server_metatable[] = {{"__gc", safe_call<gc<UdpMuxServer, name_udp_mux_server>>},
                                                            {"create_channel", safe_call<udp_mux_server_create_channel>},
                                                            {NULL, NULL}};
 
@@ -169,13 +172,13 @@ static int udp_mux_server_new(lua_State* L) {
   auto& io_context = *(boost::asio::io_context*)lua_touserdata(L, lua_upvalueindex(1));
   switch (lua_gettop(L)) {
   case 0:
-    new (lua_newuserdata(L, sizeof(std::shared_ptr<udp_mux_server>)))
-        std::shared_ptr<udp_mux_server>(new udp_mux_server(io_context));
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpMuxServer>)))
+        std::shared_ptr<UdpMuxServer>(new UdpMuxServer(io_context));
     break;
   case 1: {
     auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
-    new (lua_newuserdata(L, sizeof(std::shared_ptr<udp_mux_server>)))
-        std::shared_ptr<udp_mux_server>(new udp_mux_server(io_context, peer));
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpMuxServer>)))
+        std::shared_ptr<UdpMuxServer>(new UdpMuxServer(io_context, peer));
     break;
   }
   default:
@@ -199,8 +202,8 @@ static int udp_mux_client_new(lua_State* L) {
     auto peer_address = lua_tostring(L, 2);
     auto peer_port = (int)lua_tonumber(L, 3);
     auto peer = boost::asio::ip::udp::endpoint(get_address(peer_address), peer_port);
-    new (lua_newuserdata(L, sizeof(std::shared_ptr<endpoint>)))
-        std::shared_ptr<endpoint>(new udp_mux_client(io_context, id, peer));
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>)))
+        std::shared_ptr<Endpoint>(new UdpMuxClient(io_context, id, peer));
   } break;
   case 5: {
     auto id = (int)lua_tonumber(L, 1);
@@ -210,8 +213,8 @@ static int udp_mux_client_new(lua_State* L) {
     auto local_address = lua_tostring(L, 4);
     auto local_port = (int)lua_tonumber(L, 5);
     auto local = boost::asio::ip::udp::endpoint(get_address(local_address), local_port);
-    new (lua_newuserdata(L, sizeof(std::shared_ptr<endpoint>)))
-        std::shared_ptr<endpoint>(new udp_mux_client(io_context, id, peer, local));
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>)))
+        std::shared_ptr<Endpoint>(new UdpMuxClient(io_context, id, peer, local));
     break;
   }
   default:
@@ -227,20 +230,20 @@ static int udp_mux_client_new(lua_State* L) {
 
 // udp-dyn-mux-server
 static const struct luaL_Reg udp_dyn_mux_server_metatable[] = {
-    {"__gc", safe_call<gc<udp_dyn_mux_server, name_udp_dyn_mux_server>>},
+    {"__gc", safe_call<gc<UdpDynMuxServer, name_udp_dyn_mux_server>>},
     {NULL, NULL}};
 
 static int udp_dyn_mux_server_new(lua_State* L) {
   auto& io_context = *(boost::asio::io_context*)lua_touserdata(L, lua_upvalueindex(1));
   switch (lua_gettop(L)) {
   case 0:
-    new (lua_newuserdata(L, sizeof(std::shared_ptr<udp_dyn_mux_server>)))
-        std::shared_ptr<udp_dyn_mux_server>(new udp_dyn_mux_server(io_context));
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpDynMuxServer>)))
+        std::shared_ptr<UdpDynMuxServer>(new UdpDynMuxServer(io_context));
     break;
   case 1: {
     auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
-    new (lua_newuserdata(L, sizeof(std::shared_ptr<udp_dyn_mux_server>)))
-        std::shared_ptr<udp_dyn_mux_server>(new udp_dyn_mux_server(io_context, peer));
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpDynMuxServer>)))
+        std::shared_ptr<UdpDynMuxServer>(new UdpDynMuxServer(io_context, peer));
     break;
   }
   default:
@@ -263,8 +266,8 @@ static int udp_dyn_mux_client_new(lua_State* L) {
     auto peer_address = lua_tostring(L, 1);
     auto peer_port = (int)lua_tonumber(L, 2);
     auto peer = boost::asio::ip::udp::endpoint(get_address(peer_address), peer_port);
-    new (lua_newuserdata(L, sizeof(std::shared_ptr<endpoint>)))
-        std::shared_ptr<endpoint>(new udp_dyn_mux_client(io_context, peer));
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>)))
+        std::shared_ptr<Endpoint>(new UdpDynMuxClient(io_context, peer));
     break;
   }
   case 4: {
@@ -274,8 +277,8 @@ static int udp_dyn_mux_client_new(lua_State* L) {
     auto local_address = lua_tostring(L, 3);
     auto local_port = (int)lua_tonumber(L, 4);
     auto local = boost::asio::ip::udp::endpoint(get_address(local_address), local_port);
-    new (lua_newuserdata(L, sizeof(std::shared_ptr<endpoint>)))
-        std::shared_ptr<endpoint>(new udp_dyn_mux_client(io_context, peer, local));
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>)))
+        std::shared_ptr<Endpoint>(new UdpDynMuxClient(io_context, peer, local));
     break;
   }
   default:
@@ -298,8 +301,8 @@ static int tun_new(lua_State* L) {
     return 0;
   }
 
-  new (lua_newuserdata(L, sizeof(std::shared_ptr<endpoint>)))
-      std::shared_ptr<endpoint>(new tun(io_context, lua_tostring(L, 1)));
+  new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>)))
+      std::shared_ptr<Endpoint>(new Tun(io_context, lua_tostring(L, 1)));
   luaL_getmetatable(L, name_endpoint);
   lua_setmetatable(L, -2);
   return 1;

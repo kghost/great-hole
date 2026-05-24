@@ -1,5 +1,8 @@
 #include "logging.hpp"
 
+#include <memory>
+#include <queue>
+
 #include <boost/asio.hpp>
 #include <boost/asio/buffer.hpp>
 #include <boost/log/core/core.hpp>
@@ -7,52 +10,54 @@
 #include <boost/log/sinks/basic_sink_backend.hpp>
 #include <boost/log/sinks/frontend_requirements.hpp>
 #include <boost/log/sinks/sync_frontend.hpp>
-#include <queue>
 
 #include "endpoint.hpp"
 
-class asio_log_backend
+namespace gh {
+
+class AsioLogBackend
     : public boost::log::sinks::basic_formatted_sink_backend<char, boost::log::sinks::synchronized_feeding> {
 public:
-  explicit asio_log_backend(std::shared_ptr<endpoint_output> const& out) : impl(new detail(out)) {}
+  explicit AsioLogBackend(const std::shared_ptr<EndpointOutput>& out) : _Impl(new Detail(out)) {}
 
-  void consume(boost::log::record_view const& rec, string_type const& log) { impl->write(log); }
+  void consume(const boost::log::record_view& rec, const string_type& log) { _Impl->Write(log); }
 
 private:
-  class detail : public std::enable_shared_from_this<detail> {
+  class Detail : public std::enable_shared_from_this<Detail> {
   public:
-    explicit detail(std::shared_ptr<endpoint_output> const& out) : out(out) {}
+    explicit Detail(const std::shared_ptr<EndpointOutput>& out) : _Out(out) {}
 
-    void write(std::string const& log) {
-      q.push(log + '\n');
-      schedule_write();
+    void Write(const std::string& log) {
+      _Q.push(log + '\n');
+      ScheduleWrite();
     }
 
   private:
-    void schedule_write() {
-      if (!write_pending && !q.empty()) {
-        write_pending = true;
+    void ScheduleWrite() {
+      if (!_WritePending && !_Q.empty()) {
+        _WritePending = true;
 
-        auto p = packet{buffer(q.front()), nullptr};
-        out->async_write(std::move(p),
-                         [me = shared_from_this()](const gh::error_code& ec, std::size_t bytes_transferred) {
-                           boost::asio::detail::throw_error(ec, "write log");
-                           me->write_pending = false;
-                           me->q.pop();
-                           me->schedule_write();
-                         });
+        auto p = Packet{Buffer(_Q.front()), nullptr};
+        _Out->AsyncWrite(std::move(p), [me = shared_from_this()](const ErrorCode& ec, std::size_t bytes_transferred) {
+          boost::asio::detail::throw_error(ec, "write log");
+          me->_WritePending = false;
+          me->_Q.pop();
+          me->ScheduleWrite();
+        });
       }
     }
 
-    bool write_pending = false;
-    std::shared_ptr<endpoint_output> out;
-    std::queue<std::string> q;
+    bool _WritePending = false;
+    std::shared_ptr<EndpointOutput> _Out;
+    std::queue<std::string> _Q;
   };
 
-  std::shared_ptr<detail> impl;
+  std::shared_ptr<Detail> _Impl;
 };
 
-void init_log(std::shared_ptr<endpoint_output> out) {
-  typedef boost::log::sinks::synchronous_sink<asio_log_backend> text_sink;
-  boost::log::core::get()->add_sink(boost::make_shared<text_sink>(boost::make_shared<asio_log_backend>(out)));
+void InitLog(std::shared_ptr<EndpointOutput> out) {
+  using TextSink = boost::log::sinks::synchronous_sink<AsioLogBackend>;
+  boost::log::core::get()->add_sink(boost::make_shared<TextSink>(boost::make_shared<AsioLogBackend>(out)));
 }
+
+} // namespace gh

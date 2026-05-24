@@ -4,137 +4,141 @@
 #include <boost/log/trivial.hpp>
 #include <cassert>
 
-class udp::udp_channel : public endpoint {
+namespace gh {
+
+class Udp::UdpChannel : public Endpoint {
 public:
-  udp_channel(std::shared_ptr<udp> parent, const boost::asio::ip::udp::endpoint& peer) : parent(parent), peer(peer) {}
+  UdpChannel(std::shared_ptr<Udp> parent, const boost::asio::ip::udp::endpoint& peer) : _Parent(parent), _Peer(peer) {}
 
-  void async_start(std::move_only_function<event>&& handler) override { parent->try_async_start(std::move(handler)); }
+  void AsyncStart(std::move_only_function<Event>&& handler) override { _Parent->TryAsyncStart(std::move(handler)); }
 
-  void async_read(std::move_only_function<read_handler>&& handler) override { parent->read(peer, std::move(handler)); }
+  void AsyncRead(std::move_only_function<ReadHandler>&& handler) override { _Parent->Read(_Peer, std::move(handler)); }
 
-  void async_write(packet&& p, std::move_only_function<write_handler>&& handler) override {
-    parent->write(peer, std::move(p), std::move(handler));
+  void AsyncWrite(Packet&& p, std::move_only_function<WriteHandler>&& handler) override {
+    _Parent->Write(_Peer, std::move(p), std::move(handler));
   }
 
 private:
-  std::shared_ptr<udp> parent;
-  const boost::asio::ip::udp::endpoint peer;
+  std::shared_ptr<Udp> _Parent;
+  const boost::asio::ip::udp::endpoint _Peer;
 };
 
-std::shared_ptr<endpoint> udp::create_channel(boost::asio::ip::udp::endpoint const& peer) {
-  return std::shared_ptr<endpoint>(new udp_channel(shared_from_this(), peer));
+std::shared_ptr<Endpoint> Udp::CreateChannel(boost::asio::ip::udp::endpoint const& peer) {
+  return std::shared_ptr<Endpoint>(new UdpChannel(shared_from_this(), peer));
 }
 
-udp::udp(boost::asio::io_context& io_context) : socket(io_context), local(boost::asio::ip::udp::v6(), 0) {}
-udp::udp(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint bind) : socket(io_context), local(bind) {}
+Udp::Udp(boost::asio::io_context& io_context) : _Socket(io_context), _Local(boost::asio::ip::udp::v6(), 0) {}
+Udp::Udp(boost::asio::io_context& io_context, boost::asio::ip::udp::endpoint bind)
+    : _Socket(io_context), _Local(bind) {}
 
-void udp::try_async_start(std::move_only_function<event>&& handler) {
-  switch (state) {
-  case none:
-    async_start(std::move(handler));
+void Udp::TryAsyncStart(std::move_only_function<Event>&& handler) {
+  switch (_State) {
+  case kNone:
+    AsyncStart(std::move(handler));
     break;
-  case running:
-    handler(gh::error_code());
+  case kRunning:
+    handler(ErrorCode());
     break;
   default:
-    handler(gh::error_code{app_error_category::incorrect_state, app_error});
+    handler(ErrorCode{AppErrorCategory::kIncorrectState, kAppError});
     break;
   }
 }
 
-void udp::async_start(std::move_only_function<event>&& handler) {
+void Udp::AsyncStart(std::move_only_function<Event>&& handler) {
   try {
-    socket.open(boost::asio::ip::udp::v6());
-    socket.set_option(boost::asio::ip::v6_only(false));
-    socket.bind(local);
-    BOOST_LOG_TRIVIAL(info) << "udp(" << this << ") bound at " << socket.local_endpoint();
-    state = running;
-    handler(gh::error_code());
-  } catch (const gh::system_error& e) {
+    _Socket.open(boost::asio::ip::udp::v6());
+    _Socket.set_option(boost::asio::ip::v6_only(false));
+    _Socket.bind(_Local);
+    BOOST_LOG_TRIVIAL(info) << "udp(" << this << ") bound at " << _Socket.local_endpoint();
+    _State = kRunning;
+    handler(ErrorCode());
+  } catch (const SystemError& e) {
     BOOST_LOG_TRIVIAL(info) << "udp(" << this << ") start failed: " << e.what();
-    state = error;
+    _State = kError;
     handler(e.code());
   }
 }
 
-void udp::read(boost::asio::ip::udp::endpoint const& peer, std::move_only_function<read_handler>&& handler) {
-  if (state != running) {
+void Udp::Read(boost::asio::ip::udp::endpoint const& peer, std::move_only_function<ReadHandler>&& handler) {
+  if (_State != kRunning) {
     return;
   }
-  std::shared_ptr<tm> m;
-  if ((m = reading_channel.lock())) {
+  std::shared_ptr<ReadHandlerMap> m;
+  if ((m = _ReadingChannel.lock())) {
     assert(m->find(peer) == m->end());
   } else {
-    m.reset(new tm);
-    reading_channel = m;
+    m.reset(new ReadHandlerMap);
+    _ReadingChannel = m;
   }
   m->emplace(peer, std::move(handler));
-  schedule_read(m);
+  ScheduleRead(m);
 }
 
-void udp::schedule_read(std::shared_ptr<tm> m) {
-  if (state != running || read_pending) {
+void Udp::ScheduleRead(std::shared_ptr<ReadHandlerMap> m) {
+  if (_State != kRunning || _ReadPending) {
     return;
   }
-  read_pending = true;
+  _ReadPending = true;
 
   auto a = std::make_shared<std::array<uint8_t, 2048>>();
-  auto p = packet{buffer(*a), a};
+  auto p = Packet{Buffer(*a), a};
   auto buffer = boost::asio::mutable_buffer{p.first};
   auto peer = std::make_shared<boost::asio::ip::udp::endpoint>();
-  socket.async_receive_from(buffer, *peer,
-                            [me = shared_from_this(), p{std::move(p)}, m, peer](const gh::error_code& ec,
-                                                                                std::size_t bytes_transferred) mutable {
-                              me->read_pending = false;
-                              if (!ec) {
-                                assert(bytes_transferred <= p.first.capacity - p.first.offset);
-                                p.first.length = bytes_transferred;
+  _Socket.async_receive_from(
+      buffer, *peer,
+      [me = shared_from_this(), p{std::move(p)}, m, peer](const ErrorCode& ec, std::size_t bytes_transferred) mutable {
+        me->_ReadPending = false;
+        if (!ec) {
+          assert(bytes_transferred <= p.first.Capacity - p.first.Offset);
+          p.first.Length = bytes_transferred;
 
-                                auto h = m->find(*peer);
-                                if (h != m->end()) {
-                                  auto handler = std::move(h->second);
-                                  m->erase(h);
-                                  handler(ec, std::move(p));
-                                } else {
-                                  BOOST_LOG_TRIVIAL(info) << "udp(" << &*me << ") packet from unknown peer: " << *peer;
-                                }
-                              } else {
-                                BOOST_LOG_TRIVIAL(error)
-                                    << "udp(" << &*me << ") read error: " << ec.category().name() << ':' << ec.value();
-                              }
-                              if (!m->empty()) {
-                                me->schedule_read(m);
-                              }
-                            });
+          auto h = m->find(*peer);
+          if (h != m->end()) {
+            auto handler = std::move(h->second);
+            m->erase(h);
+            handler(ec, std::move(p));
+          } else {
+            BOOST_LOG_TRIVIAL(info) << "udp(" << &*me << ") packet from unknown peer: " << *peer;
+          }
+        } else {
+          BOOST_LOG_TRIVIAL(error) << "udp(" << &*me << ") read error: " << ec.category().name() << ':' << ec.value();
+        }
+
+        if (!m->empty()) {
+          me->ScheduleRead(m);
+        }
+      });
 }
 
-void udp::write(boost::asio::ip::udp::endpoint const& peer, packet&& p,
-                std::move_only_function<write_handler>&& handler) {
-  if (state != running) {
+void Udp::Write(boost::asio::ip::udp::endpoint const& peer, Packet&& p,
+                std::move_only_function<WriteHandler>&& handler) {
+  if (_State != kRunning) {
     return;
   }
-  write_queue.push(std::make_tuple(peer, std::move(p), std::move(handler)));
-  schedule_write();
+  _WriteQueue.push(std::make_tuple(peer, std::move(p), std::move(handler)));
+  ScheduleWrite();
 }
 
-void udp::schedule_write() {
-  if (state != running || write_pending) {
+void Udp::ScheduleWrite() {
+  if (_State != kRunning || _WritePending || _WriteQueue.empty()) {
     return;
   }
-  write_pending = true;
 
-  auto& next = write_queue.front();
+  _WritePending = true;
+  auto& next = _WriteQueue.front();
   auto peer = std::get<0>(next);
   auto p = std::move(std::get<1>(next));
   auto handler = std::move(std::get<2>(next));
-  write_queue.pop();
-  socket.async_send_to(boost::asio::const_buffer{p.first}, peer,
-                       [me = shared_from_this(), handler{std::move(handler)}](const gh::error_code& ec,
-                                                                              std::size_t bytes_transferred) mutable {
-                         me->write_pending = false;
-                         handler(ec, bytes_transferred);
-                         if (!me->write_queue.empty()) {
-                           me->schedule_write();
-                         }
-                       });
+  _WriteQueue.pop();
+
+  _Socket.async_send_to(boost::asio::const_buffer{p.first}, peer,
+                        [me = shared_from_this(), handler = std::move(handler)](const ErrorCode& ec,
+                                                                                std::size_t bytes_transferred) mutable {
+                          me->_WritePending = false;
+                          handler(ec, bytes_transferred);
+                          me->ScheduleWrite();
+                        });
 }
+
+} // namespace gh

@@ -1,4 +1,8 @@
 #include "filter.hpp"
 
-filter::~filter() {}
-filter_bidirection::~filter_bidirection() {}
+namespace gh {
+
+Filter::~Filter() {}
+FilterBidirection::~FilterBidirection() {}
+
+} // namespace gh

@@ -1,137 +1,137 @@
 #include "pipeline.hpp"
 
+#include <memory>
+
 #include <boost/asio/buffer.hpp>
 #include <boost/log/trivial.hpp>
-#include <memory>
 
 #include "endpoint.hpp"
 #include "filter.hpp"
 #include "scoped_flag.hpp"
 
-pipeline::pipeline(std::shared_ptr<endpoint_input> in, std::vector<std::shared_ptr<filter>> const& filters,
-                   std::shared_ptr<endpoint_output> out)
-    : fc(this), in(in), filters(filters), out(out) {}
+namespace gh {
 
-void pipeline::start() {
-  if (state != none) {
-    BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") already started: " << state;
+Pipeline::Pipeline(std::shared_ptr<EndpointInput> in, const std::vector<std::shared_ptr<Filter>>& filters,
+                   std::shared_ptr<EndpointOutput> out)
+    : _In(in), _Out(out), _Filters(filters), _Fc(this) {}
+
+void Pipeline::Start() {
+  if (_State != kNone) {
+    BOOST_LOG_TRIVIAL(error) << "Pipeline(" << this << ") already started: " << _State;
     return;
   }
-  BOOST_LOG_TRIVIAL(info) << "pipeline(" << this << ") starting";
-  state = starting;
+  BOOST_LOG_TRIVIAL(info) << "Pipeline(" << this << ") starting";
+  _State = kStarting;
   std::shared_ptr<char> result(new char, [me = shared_from_this()](char* r) {
     std::unique_ptr<char> _u(r);
-    if (me->state == starting) {
-      BOOST_LOG_TRIVIAL(info) << "pipeline " << &*me << " started";
-      me->state = running;
-      me->schedule_read();
+    if (me->_State == kStarting) {
+      BOOST_LOG_TRIVIAL(info) << "Pipeline " << &*me << " started";
+      me->_State = kRunning;
+      me->ScheduleRead();
     }
   });
-  in->async_start([result, me = shared_from_this()](const gh::error_code& ec) {
+  _In->AsyncStart([result, me = shared_from_this()](const ErrorCode& ec) {
     if (ec) {
-      BOOST_LOG_TRIVIAL(error) << "pipeline(" << &*me << ") input start error: " << ec.message();
-      me->state = error;
+      BOOST_LOG_TRIVIAL(error) << "Pipeline(" << &*me << ") input Start error: " << ec.message();
+      me->_State = kError;
     }
   });
-  out->async_start([result, me = shared_from_this()](const gh::error_code& ec) {
+  _Out->AsyncStart([result, me = shared_from_this()](const ErrorCode& ec) {
     if (ec) {
-      BOOST_LOG_TRIVIAL(error) << "pipeline(" << &*me << ") output start error: " << ec.message();
-      me->state = error;
+      BOOST_LOG_TRIVIAL(error) << "Pipeline(" << &*me << ") output Start error: " << ec.message();
+      me->_State = kError;
     }
   });
 }
 
-void pipeline::stop() {
-  if (state != running && state != paused) {
-    BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") is not running: " << state;
+void Pipeline::Stop() {
+  if (_State != kRunning && _State != kPaused) {
+    BOOST_LOG_TRIVIAL(error) << "Pipeline(" << this << ") is not running: " << _State;
     return;
   }
-  state = stopped;
+  _State = kStopped;
 }
 
-void pipeline::pause() {
-  if (state != running) {
-    BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") is not running: " << state;
+void Pipeline::Pause() {
+  if (_State != kRunning) {
+    BOOST_LOG_TRIVIAL(error) << "Pipeline(" << this << ") is not running: " << _State;
     return;
   }
-  state = paused;
+  _State = kPaused;
 }
 
-void pipeline::resume() {
-  if (state != paused) {
-    BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") is not paused: " << state;
+void Pipeline::Resume() {
+  if (_State != kPaused) {
+    BOOST_LOG_TRIVIAL(error) << "Pipeline(" << this << ") is not paused: " << _State;
     return;
   }
-  state = running;
-  schedule_read();
+  _State = kRunning;
+  ScheduleRead();
 }
 
-void pipeline::process(scoped_flag&& write, packet&& p) {
-  for (auto i : filters) {
-    p = i->pipe(std::move(p));
+void Pipeline::Process(ScopedFlag&& write, Packet&& p) {
+  for (auto& i : _Filters) {
+    p = i->Pipe(std::move(p));
   }
-  schedule_write(std::move(write), std::move(p));
+  ScheduleWrite(std::move(write), std::move(p));
 }
 
-void pipeline::process_queue(scoped_flag&& write) {
-  if (!buffers.empty()) {
-    auto next = std::move(buffers.front());
-    buffers.pop();
-    process(std::move(write), std::move(next));
-  }
-}
-
-void pipeline::schedule_read() {
-  if (state == running && !read_pending) {
-    schedule_read(scoped_flag(read_pending));
+void Pipeline::ProcessQueue(ScopedFlag&& write) {
+  if (!_Buffers.empty()) {
+    auto next = std::move(_Buffers.front());
+    _Buffers.pop();
+    Process(std::move(write), std::move(next));
   }
 }
 
-void pipeline::schedule_read(scoped_flag&& read) {
-  if (state == running) {
-    in->async_read(
-        [this, me = shared_from_this(), read{std::move(read)}](const gh::error_code& ec, packet&& p) mutable {
-          // fc.after_read();
-          if (!ec) {
-            if (!write_pending) {
-              process(scoped_flag(write_pending), std::move(p));
-            } else {
-              buffers.push(std::move(p));
-            }
-          } else {
-            if (me->is_critical(ec)) {
-              BOOST_LOG_TRIVIAL(error) << "pipeline(" << this << ") read error: " << ec.message();
-              stop();
-            } else {
-              BOOST_LOG_TRIVIAL(warning) << "pipeline(" << this << ") read error (non-critical): " << ec.message();
-            }
-          }
-          schedule_read(std::move(read));
-        });
+void Pipeline::ScheduleRead() {
+  if (_State == kRunning && !_ReadPending) {
+    ScheduleRead(ScopedFlag(_ReadPending));
   }
 }
 
-void pipeline::schedule_write(scoped_flag&& write, packet&& p) {
-  if (state == running || state == paused) {
-    auto buffer = boost::asio::const_buffer(p.first);
-    auto storage = p.second;
-    out->async_write(std::move(p), [me = shared_from_this(), storage, write{std::move(write)}](
-                                       const gh::error_code& ec, std::size_t bytes_transferred) mutable {
-      // me->fc.after_write();
-      if (ec) {
-        if (me->is_critical(ec)) {
-          BOOST_LOG_TRIVIAL(error) << "pipeline(" << &*me << ") write error: " << ec.message();
-          me->stop();
+void Pipeline::ScheduleRead(ScopedFlag&& read) {
+  if (_State == kRunning) {
+    _In->AsyncRead([this, me = shared_from_this(), read{std::move(read)}](const ErrorCode& ec, Packet&& p) mutable {
+      // _Fc.AfterRead();
+      if (!ec) {
+        if (!_WritePending) {
+          Process(ScopedFlag(_WritePending), std::move(p));
         } else {
-          BOOST_LOG_TRIVIAL(warning) << "pipeline(" << &*me << ") write error (non-critical): " << ec.message();
+          _Buffers.push(std::move(p));
+        }
+      } else {
+        if (me->IsCritical(ec)) {
+          BOOST_LOG_TRIVIAL(error) << "Pipeline(" << this << ") read error: " << ec.message();
+          Stop();
+        } else {
+          BOOST_LOG_TRIVIAL(warning) << "Pipeline(" << this << ") read error (non-critical): " << ec.message();
         }
       }
-      me->process_queue(std::move(write));
+      ScheduleRead(std::move(read));
     });
   }
 }
 
-bool pipeline::is_critical(const gh::error_code& ec) {
+void Pipeline::ScheduleWrite(ScopedFlag&& write, Packet&& p) {
+  if (_State == kRunning || _State == kPaused) {
+    _Out->AsyncWrite(std::move(p), [me = shared_from_this(), write{std::move(write)}](
+                                       const ErrorCode& ec, std::size_t bytes_transferred) mutable {
+      // me->_Fc.AfterWrite();
+      if (ec) {
+        if (me->IsCritical(ec)) {
+          BOOST_LOG_TRIVIAL(error) << "Pipeline(" << &*me << ") write error: " << ec.message();
+          me->Stop();
+        } else {
+          BOOST_LOG_TRIVIAL(warning) << "Pipeline(" << &*me << ") write error (non-critical): " << ec.message();
+        }
+      }
+      me->ProcessQueue(std::move(write));
+    });
+  }
+}
+
+bool Pipeline::IsCritical(const ErrorCode& ec) {
   if (ec.category() == boost::system::system_category()) {
     switch (ec.value()) {
     case boost::system::errc::invalid_argument:
@@ -143,10 +143,10 @@ bool pipeline::is_critical(const gh::error_code& ec) {
     default:
       return true;
     }
-  } else if (ec.category() == app_error) {
+  } else if (ec.category() == kAppError) {
     switch (ec.value()) {
-    case app_error_category::invalid_packet_session:
-    case app_error_category::invalid_packet_size:
+    case AppErrorCategory::kInvalidPacketSession:
+    case AppErrorCategory::kInvalidPacketSize:
       return false;
     default:
       return true;
@@ -155,3 +155,5 @@ bool pipeline::is_critical(const gh::error_code& ec) {
     return true;
   }
 }
+
+} // namespace gh
