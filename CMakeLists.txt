@@ -19,7 +19,8 @@ pkg_check_modules(LUA REQUIRED IMPORTED_TARGET lua-5.4)
 enable_testing()
 find_package(GTest REQUIRED)
 
+set(OMNIFIBER_INTERNAL ON CACHE BOOL "" FORCE)
+
 add_subdirectory(libs/omni-fiber)
 add_subdirectory(src)
 add_subdirectory(tests)
-

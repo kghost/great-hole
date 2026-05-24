@@ -1,11 +1,11 @@
-/debian/autoreconf.after
-/debian/autoreconf.before
 /debian/files
 /debian/great-hole.debhelper.log
 /debian/great-hole.substvars
 /debian/great-hole/
+/obj-x86_64-linux-gnu/
+/debian/.debhelper/
+/debian/debhelper-build-stamp
+/debian/great-hole.postrm.debhelper
 
 /build/
 /.cache/
-
-/obj-x86_64-linux-gnu/
