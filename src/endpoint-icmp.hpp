@@ -18,8 +18,7 @@ public:
 
 private:
   using tm = std::map<boost::asio::ip::icmp::endpoint, std::move_only_function<read_handler>>;
-  // read_handler is holding the whole world, where we should break ref chain
-  // here
+  // read_handler is holding the whole world, where we should break ref chain here
   std::weak_ptr<tm> reading_channel;
   boost::asio::ip::icmp::socket socket;
   boost::asio::ip::icmp::endpoint local;

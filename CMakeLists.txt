@@ -36,6 +36,8 @@ add_library(great-hole-core STATIC
     src/endpoint-udp.cpp
     src/endpoint-udp-mux-server.cpp
     src/endpoint-udp-mux-client.cpp
+    src/endpoint-udp-dyn-mux-server.cpp
+    src/endpoint-udp-dyn-mux-client.cpp
     src/filter.cpp
     src/util-exec.cpp
     src/util-console.cpp

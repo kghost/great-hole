@@ -7,6 +7,8 @@
 #include "endpoint-tun.hpp"
 #include "endpoint-udp-mux-client.hpp"
 #include "endpoint-udp-mux-server.hpp"
+#include "endpoint-udp-dyn-mux-client.hpp"
+#include "endpoint-udp-dyn-mux-server.hpp"
 #include "endpoint-udp.hpp"
 #include "filter-xor.hpp"
 #include "pipeline.hpp"
@@ -34,6 +36,7 @@ constexpr const char name_endpoint[] = "Hole.endpoint";
 constexpr const char name_filter[] = "Hole.filter";
 constexpr const char name_udp[] = "Hole.udp";
 constexpr const char name_udp_mux_server[] = "Hole.udp-mux-server";
+constexpr const char name_udp_dyn_mux_server[] = "Hole.udp-dyn-mux-server";
 
 template <typename T, const char N[]> static int gc(lua_State* L) {
   typedef std::shared_ptr<T> P;
@@ -222,6 +225,70 @@ static int udp_mux_client_new(lua_State* L) {
   return 1;
 }
 
+// udp-dyn-mux-server
+static const struct luaL_Reg udp_dyn_mux_server_metatable[] = {
+    {"__gc", safe_call<gc<udp_dyn_mux_server, name_udp_dyn_mux_server>>},
+    {NULL, NULL}};
+
+static int udp_dyn_mux_server_new(lua_State* L) {
+  auto& io_context = *(boost::asio::io_context*)lua_touserdata(L, lua_upvalueindex(1));
+  switch (lua_gettop(L)) {
+  case 0:
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<udp_dyn_mux_server>)))
+        std::shared_ptr<udp_dyn_mux_server>(new udp_dyn_mux_server(io_context));
+    break;
+  case 1: {
+    auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<udp_dyn_mux_server>)))
+        std::shared_ptr<udp_dyn_mux_server>(new udp_dyn_mux_server(io_context, peer));
+    break;
+  }
+  default:
+    luaL_error(L, "udp_dyn_mux_server: not enough arguments");
+    break;
+  }
+
+  luaL_getmetatable(L, name_udp_dyn_mux_server);
+  lua_setmetatable(L, -2);
+
+  return 1;
+}
+
+// udp-dyn-mux-client
+static int udp_dyn_mux_client_new(lua_State* L) {
+  auto& io_context = *(boost::asio::io_context*)lua_touserdata(L, lua_upvalueindex(1));
+
+  switch (lua_gettop(L)) {
+  case 2: {
+    auto peer_address = lua_tostring(L, 1);
+    auto peer_port = (int)lua_tonumber(L, 2);
+    auto peer = boost::asio::ip::udp::endpoint(get_address(peer_address), peer_port);
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<endpoint>)))
+        std::shared_ptr<endpoint>(new udp_dyn_mux_client(io_context, peer));
+    break;
+  }
+  case 4: {
+    auto peer_address = lua_tostring(L, 1);
+    auto peer_port = (int)lua_tonumber(L, 2);
+    auto peer = boost::asio::ip::udp::endpoint(get_address(peer_address), peer_port);
+    auto local_address = lua_tostring(L, 3);
+    auto local_port = (int)lua_tonumber(L, 4);
+    auto local = boost::asio::ip::udp::endpoint(get_address(local_address), local_port);
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<endpoint>)))
+        std::shared_ptr<endpoint>(new udp_dyn_mux_client(io_context, peer, local));
+    break;
+  }
+  default:
+    luaL_error(L, "udp_dyn_mux_client: not enough arguments");
+    break;
+  }
+
+  luaL_getmetatable(L, name_endpoint);
+  lua_setmetatable(L, -2);
+
+  return 1;
+}
+
 // tun
 static int tun_new(lua_State* L) {
   auto& io_context = *(boost::asio::io_context*)lua_touserdata(L, lua_upvalueindex(1));
@@ -245,6 +312,8 @@ static const struct luaL_Reg hole_io_object[] = {{"tun", safe_call<tun_new>},
                                                  {"udp", safe_call<udp_new>},
                                                  {"udp_mux_server", safe_call<udp_mux_server_new>},
                                                  {"udp_mux_client", safe_call<udp_mux_client_new>},
+                                                 {"udp_dyn_mux_server", safe_call<udp_dyn_mux_server_new>},
+                                                 {"udp_dyn_mux_client", safe_call<udp_dyn_mux_client_new>},
                                                  {NULL, NULL}};
 
 static int hole_open(lua_State* L) {
@@ -267,6 +336,12 @@ static int hole_open(lua_State* L) {
   lua_pushvalue(L, -1);           /* push metatable */
   lua_setfield(L, -2, "__index"); /* metatable.__index = metatable */
   luaL_setfuncs(L, udp_mux_server_metatable, 0);
+  lua_pop(L, 1);
+
+  luaL_newmetatable(L, name_udp_dyn_mux_server);
+  lua_pushvalue(L, -1);           /* push metatable */
+  lua_setfield(L, -2, "__index"); /* metatable.__index = metatable */
+  luaL_setfuncs(L, udp_dyn_mux_server_metatable, 0);
   lua_pop(L, 1);
 
   luaL_newmetatable(L, name_endpoint);
