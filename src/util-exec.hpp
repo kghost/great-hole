@@ -2,9 +2,10 @@
 #define UTIL_EXEC_H
 
 #include <boost/asio.hpp>
-#include <boost/iostreams/device/file_descriptor.hpp>
+#include <boost/process/v2/process.hpp>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -25,12 +26,6 @@ public:
   std::shared_ptr<endpoint_input> get_err();
 
 private:
-  class signal;
-  static signal s;
-
-  static boost::iostreams::file_descriptor_source null_stream_source;
-  static boost::iostreams::file_descriptor_sink null_stream_sink;
-
   std::string prog;
   std::vector<std::string> args;
   std::map<std::string, std::string> env;
@@ -42,13 +37,14 @@ private:
 
   boost::asio::io_context& io_context;
 
-  boost::iostreams::file_descriptor_source child_in = null_stream_source;
-  boost::iostreams::file_descriptor_sink child_out = null_stream_sink;
-  boost::iostreams::file_descriptor_sink child_err = null_stream_sink;
-
   std::shared_ptr<endpoint_output> in;
   std::shared_ptr<endpoint_input> out;
   std::shared_ptr<endpoint_input> err;
+
+  std::optional<boost::asio::readable_pipe> child_in;
+  std::optional<boost::asio::writable_pipe> child_out;
+  std::optional<boost::asio::writable_pipe> child_err;
+
   std::weak_ptr<proc> p;
 };
 

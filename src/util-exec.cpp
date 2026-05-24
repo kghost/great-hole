@@ -1,16 +1,15 @@
 #include "util-exec.hpp"
 
-#include <algorithm>
 #include <signal.h>
-#include <sys/types.h>
-#include <sys/wait.h>
 
 #include <boost/asio.hpp>
 #include <boost/format.hpp>
-#include <boost/iostreams/device/file_descriptor.hpp>
 #include <boost/log/trivial.hpp>
-#include <boost/process.hpp>
-#include <boost/process/mitigate.hpp>
+#include <boost/process/v2/environment.hpp>
+#include <boost/process/v2/process.hpp>
+#include <boost/process/v2/stdio.hpp>
+
+namespace bp2 = boost::process::v2;
 
 class exit_error_category : public gh::error_category {
 public:
@@ -18,106 +17,49 @@ public:
   virtual std::string message(int ev) const { return ""; }
 } exit_error;
 
-class exec::signal {
-public:
-  void add_proc(std::shared_ptr<proc> p);
-
-  void schedule_wait_signal(boost::asio::io_context& io_context) {
-    if (!set) {
-      set.reset(new boost::asio::signal_set(io_context, SIGCHLD));
-      set->async_wait([this](const gh::error_code& ec, int signal_number) { sigchld_handler(ec, signal_number); });
-    }
-  }
-
-private:
-  void sigchld_handler(const gh::error_code& ec, int signal_number);
-
-  std::unique_ptr<boost::asio::signal_set> set;
-  std::map<pid_t, std::shared_ptr<proc>> running_processes;
-} exec::s;
-
 class exec::proc : public std::enable_shared_from_this<proc> {
 public:
-  proc(std::move_only_function<event>&& handler, pid_t pid) : handler(std::move(handler)), pid(pid) {}
+  proc(std::move_only_function<event>&& handler, bp2::process&& p) : handler(std::move(handler)), p(std::move(p)) {}
 
-  void notify(int code) {
-    if (code != 0) {
-      handler(gh::error_code());
-    } else {
-      handler(gh::error_code(code, exit_error));
-    }
+  void start_wait() {
+    auto self = shared_from_this();
+    p.async_wait([self](const gh::error_code& ec, int exit_code) {
+      if (!ec) {
+        BOOST_LOG_TRIVIAL(info) << "process exited: " << exit_code;
+        if (exit_code == 0) {
+          self->handler(gh::error_code());
+        } else {
+          self->handler(gh::error_code(exit_code, exit_error));
+        }
+      } else if (ec != boost::asio::error::operation_aborted) {
+        BOOST_LOG_TRIVIAL(error) << "process wait error: " << ec;
+        self->handler(ec);
+      }
+    });
   }
-  void kill(int signum) { ::kill(pid, signum); }
+
+  void kill(int signum) { ::kill(p.id(), signum); }
 
 private:
   std::move_only_function<event> handler;
-  pid_t pid;
-  friend class signal;
+  bp2::process p;
 };
-
-void exec::signal::add_proc(std::shared_ptr<proc> p) { running_processes[p->pid] = p; }
-
-void exec::signal::sigchld_handler(const gh::error_code& ec, int signal_number) {
-  if (!ec) {
-    for (;;) {
-      int status;
-      pid_t pid = ::waitpid(-1, &status, WNOHANG);
-      if (pid == 0) {
-        break;
-      }
-      if (pid < 0) {
-        gh::error_code ec;
-        ec.assign(errno, gh::system_category());
-        boost::asio::detail::throw_error(ec, "waitpid");
-      }
-      auto search = running_processes.find(pid);
-      if (search != running_processes.end()) {
-        auto& p = search->second;
-        if (WIFEXITED(status)) {
-          BOOST_LOG_TRIVIAL(info) << "sigchld_handler process(" << pid << ") exited: " << WEXITSTATUS(status);
-          p->notify(WEXITSTATUS(status));
-          running_processes.erase(search);
-        } else if (WIFSIGNALED(status)) {
-          BOOST_LOG_TRIVIAL(info) << "sigchld_handler process(" << pid << ") killed: " << WTERMSIG(status);
-          p->notify(0x80 | WTERMSIG(status));
-          running_processes.erase(search);
-        } else if (WIFSTOPPED(status)) {
-          BOOST_LOG_TRIVIAL(info) << "sigchld_handler process(" << pid << ") stopped: " << WSTOPSIG(status);
-        } else if (WIFCONTINUED(status)) {
-          BOOST_LOG_TRIVIAL(info) << "sigchld_handler process(" << pid << ") continued";
-        }
-      } else {
-        BOOST_LOG_TRIVIAL(error) << "sigchld_handler unknown pid: " << pid;
-      }
-    }
-    set->async_wait([this](const gh::error_code& ec, int signal_number) { sigchld_handler(ec, signal_number); });
-  } else if (ec == boost::asio::error::operation_aborted) {
-    for (auto& process : running_processes) {
-      process.second->kill(SIGHUP);
-    }
-    running_processes.clear();
-  } else {
-    BOOST_LOG_TRIVIAL(error) << "exec signal handler error: " << ec;
-    boost::asio::detail::throw_error(ec, "sigchld_handler");
-  }
-}
 
 class exec::input : public endpoint_skip_start<endpoint_output> {
 public:
-  input(boost::asio::io_context& io_context, decltype(boost::process::pipe::sink) sink) : pipe(io_context, sink) {}
+  input(boost::asio::io_context& io_context, boost::asio::writable_pipe pipe) : pipe(std::move(pipe)) {}
 
   void async_write(packet&& p, std::move_only_function<write_handler>&& handler) override {
     boost::asio::async_write(pipe, boost::asio::const_buffer{p.first}, std::move(handler));
   }
 
 private:
-  boost::process::pipe_end pipe;
+  boost::asio::writable_pipe pipe;
 };
 
 class exec::output : public endpoint_skip_start<endpoint_input> {
 public:
-  output(boost::asio::io_context& io_context, decltype(boost::process::pipe::source) source)
-      : pipe(io_context, source) {}
+  output(boost::asio::io_context& io_context, boost::asio::readable_pipe pipe) : pipe(std::move(pipe)) {}
 
   virtual void async_read(std::move_only_function<read_handler>&& handler) {
     auto a = std::make_shared<std::array<uint8_t, 2048>>();
@@ -134,35 +76,40 @@ public:
   }
 
 private:
-  boost::process::pipe_end pipe;
+  boost::asio::readable_pipe pipe;
 };
 
-boost::iostreams::file_descriptor_source exec::null_stream_source(boost::process::null_device());
-boost::iostreams::file_descriptor_sink exec::null_stream_sink(boost::process::null_device());
+exec::~exec() { kill(); }
 
 std::shared_ptr<endpoint_output> exec::get_in() {
   if (!in) {
-    boost::process::pipe p = boost::process::create_pipe();
-    in.reset(new input(io_context, p.sink));
-    child_in = boost::iostreams::file_descriptor_source(p.source, boost::iostreams::close_handle);
+    boost::asio::readable_pipe read_end(io_context);
+    boost::asio::writable_pipe write_end(io_context);
+    boost::asio::connect_pipe(read_end, write_end);
+    in.reset(new input(io_context, std::move(write_end)));
+    child_in = std::move(read_end);
   }
   return in;
 }
 
 std::shared_ptr<endpoint_input> exec::get_out() {
   if (!out) {
-    boost::process::pipe p = boost::process::create_pipe();
-    out.reset(new output(io_context, p.source));
-    child_out = boost::iostreams::file_descriptor_sink(p.sink, boost::iostreams::close_handle);
+    boost::asio::readable_pipe read_end(io_context);
+    boost::asio::writable_pipe write_end(io_context);
+    boost::asio::connect_pipe(read_end, write_end);
+    out.reset(new output(io_context, std::move(read_end)));
+    child_out = std::move(write_end);
   }
   return out;
 }
 
 std::shared_ptr<endpoint_input> exec::get_err() {
   if (!err) {
-    boost::process::pipe p = boost::process::create_pipe();
-    err.reset(new output(io_context, p.source));
-    child_err = boost::iostreams::file_descriptor_sink(p.sink, boost::iostreams::close_handle);
+    boost::asio::readable_pipe read_end(io_context);
+    boost::asio::writable_pipe write_end(io_context);
+    boost::asio::connect_pipe(read_end, write_end);
+    err.reset(new output(io_context, std::move(read_end)));
+    child_err = std::move(write_end);
   }
   return err;
 }
@@ -172,24 +119,33 @@ void exec::run(std::move_only_function<event>&& handler) {
     BOOST_LOG_TRIVIAL(error) << "proc " << this << " already running.";
     handler(gh::error_code(app_error_category::already_started, app_error));
   } else {
-    using namespace boost::process;
-    using namespace boost::process::initializers;
+    try {
+      std::vector<std::string> e;
+      for (auto const& [k, v] : env) {
+        e.push_back((boost::format("%1%=%2%") % k % v).str());
+      }
 
-    s.schedule_wait_signal(io_context);
+      bp2::process_stdio stdio;
+      if (child_in) {
+        stdio.in = *child_in;
+      }
+      if (child_out) {
+        stdio.out = *child_out;
+      }
+      if (child_err) {
+        stdio.err = *child_err;
+      }
 
-    std::vector<std::string> e(env.size());
-    boost::transform(env, e.begin(), [](const typename decltype(env)::value_type& v) -> std::string {
-      return (boost::format("%1%=%2%") % v.first % v.second).str();
-    });
-
-    child c = execute(run_exe(prog), set_args(args), set_env(e), notify_io_service(io_context), bind_stdin(child_in),
-                      bind_stdout(child_out), bind_stderr(child_err));
-    if (c.pid > 0) {
-      auto i = std::make_shared<proc>(std::move(handler), c.pid);
-      s.add_proc(i);
+      auto i = std::make_shared<proc>(std::move(handler),
+                                      bp2::process(io_context, prog, args, stdio, bp2::process_environment{e}));
+      i->start_wait();
       p = i;
-    } else {
-      BOOST_LOG_TRIVIAL(error) << "proc " << this << " execute failed.";
+
+      child_in.reset();
+      child_out.reset();
+      child_err.reset();
+    } catch (const boost::system::system_error& e) {
+      BOOST_LOG_TRIVIAL(error) << "proc " << this << " execute failed: " << e.what();
       handler(gh::error_code{app_error_category::fork_exec_error, app_error});
     }
   }
