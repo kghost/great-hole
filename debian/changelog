@@ -1,3 +1,9 @@
+great-hole (0.1.10) bookworm; urgency=medium
+
+  * Rewrite the library great-hole to omni-fiber.
+
+ -- Zealot <zealot0630@gmail.com>  Sun, 25 May 2026 14:56:00 +0800
+
 great-hole (0.1.9) bookworm; urgency=medium
 
   * Network/host unreachable is not fatal.

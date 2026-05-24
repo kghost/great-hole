@@ -61,3 +61,6 @@ target_link_libraries(great-hole-core PUBLIC
 target_link_libraries(great-hole PRIVATE
     great-hole-core
 )
+
+include(GNUInstallDirs)
+install(TARGETS great-hole RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
