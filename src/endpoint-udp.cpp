@@ -101,8 +101,8 @@ void Udp::ScheduleRead(std::shared_ptr<ReadHandlerMap> m) {
           } else {
             BOOST_LOG_TRIVIAL(info) << "udp(" << &*me << ") packet from unknown peer: " << *peer;
           }
-        } else {
-          BOOST_LOG_TRIVIAL(error) << "udp(" << &*me << ") read error: " << ec.category().name() << ':' << ec.value();
+        } else if (ec != boost::asio::error::operation_aborted) {
+          BOOST_LOG_TRIVIAL(error) << "udp(" << &*me << ") read error: " << ec.message();
         }
 
         if (!m->empty()) {

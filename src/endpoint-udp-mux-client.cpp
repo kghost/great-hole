@@ -100,8 +100,8 @@ void UdpMuxClient::AsyncWrite(Packet&& p, std::move_only_function<WriteHandler>&
   buf.Data[buf.Offset] = _Id;
 
   _Socket.async_send(boost::asio::const_buffer{buf},
-                     [me = shared_from_this(), handler = std::move(handler)](const ErrorCode& ec,
-                                                                             std::size_t bytes_transferred) mutable {
+                     [me = shared_from_this(), p = std::move(p),
+                      handler = std::move(handler)](const ErrorCode& ec, std::size_t bytes_transferred) mutable {
                        me->_WritePending = false;
                        handler(ec, bytes_transferred);
                      });

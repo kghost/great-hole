@@ -73,7 +73,9 @@ void Tun::AsyncRead(std::move_only_function<ReadHandler>&& handler) {
 }
 
 void Tun::AsyncWrite(Packet&& p, std::move_only_function<WriteHandler>&& handler) {
-  _S.async_write_some(boost::asio::const_buffer{p.first}, std::move(handler));
+  _S.async_write_some(boost::asio::const_buffer{p.first},
+                      [me = shared_from_this(), p{std::move(p)}, handler = std::move(handler)](
+                          const ErrorCode& ec, std::size_t bytes_transferred) mutable { handler(ec, bytes_transferred); });
 }
 
 } // namespace gh

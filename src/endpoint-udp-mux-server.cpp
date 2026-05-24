@@ -165,7 +165,7 @@ void UdpMuxServer::ScheduleWrite(ScopedFlag&& write) {
   buf.Data[buf.Offset] = id;
 
   _Socket.async_send_to(boost::asio::const_buffer{buf}, peer_iter->second,
-                        [me = shared_from_this(), handler = std::move(handler),
+                        [me = shared_from_this(), p = std::move(p), handler = std::move(handler),
                          write = std::move(write)](const ErrorCode& ec, std::size_t bytes_transferred) mutable {
                           handler(ec, bytes_transferred);
                           if (!me->_WriteQueue.empty()) {
