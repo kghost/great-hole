@@ -7,7 +7,7 @@
 #include <vector>
 
 #include <boost/asio.hpp>
-#include <boost/process/v2/process.hpp>
+#include <boost/process/v1/async_pipe.hpp>
 
 #include "endpoint.hpp"
 
@@ -43,9 +43,9 @@ private:
   std::shared_ptr<EndpointInput> _Out;
   std::shared_ptr<EndpointInput> _Err;
 
-  std::optional<boost::asio::readable_pipe> _ChildIn;
-  std::optional<boost::asio::writable_pipe> _ChildOut;
-  std::optional<boost::asio::writable_pipe> _ChildErr;
+  std::shared_ptr<boost::process::v1::async_pipe> _ChildIn;
+  std::shared_ptr<boost::process::v1::async_pipe> _ChildOut;
+  std::shared_ptr<boost::process::v1::async_pipe> _ChildErr;
 
   std::weak_ptr<Proc> _P;
 };

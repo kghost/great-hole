@@ -1,15 +1,17 @@
 #include "util-exec.hpp"
 
-#include <signal.h>
+#include <csignal>
 
 #include <boost/asio.hpp>
 #include <boost/format.hpp>
 #include <boost/log/trivial.hpp>
-#include <boost/process/v2/environment.hpp>
-#include <boost/process/v2/process.hpp>
-#include <boost/process/v2/stdio.hpp>
+#include <boost/process/v1/child.hpp>
+#include <boost/process/v1/detail/on_exit.hpp>
+#include <boost/process/v1/env.hpp>
+#include <boost/process/v1/environment.hpp>
+#include <boost/process/v1/io.hpp>
 
-namespace bp2 = boost::process::v2;
+namespace bp = boost::process::v1;
 
 namespace gh {
 
@@ -21,54 +23,42 @@ public:
 
 class Exec::Proc : public std::enable_shared_from_this<Proc> {
 public:
-  Proc(std::move_only_function<Event>&& handler, bp2::process&& p) : _Handler(std::move(handler)), _P(std::move(p)) {}
+  explicit Proc(std::move_only_function<Event>&& handler) : _Handler(std::move(handler)) {}
 
-  void StartWait() {
-    auto self = shared_from_this();
-    _P.async_wait([self](const ErrorCode& ec, int exit_code) {
-      if (!ec) {
-        BOOST_LOG_TRIVIAL(info) << "process exited: " << exit_code;
-        if (exit_code == 0) {
-          self->_Handler(ErrorCode());
-        } else {
-          self->_Handler(ErrorCode(exit_code, kExitError));
-        }
-      } else if (ec != boost::asio::error::operation_aborted) {
-        BOOST_LOG_TRIVIAL(error) << "process wait error: " << ec;
-        self->_Handler(ec);
-      }
-    });
+  void Start(bp::child&& p) { _P = std::move(p); }
+
+  void Kill(int signum) {
+    if (_P.running()) {
+      ::kill(_P.id(), signum);
+    }
   }
 
-  void Kill(int signum) { ::kill(_P.id(), signum); }
-
-private:
   std::move_only_function<Event> _Handler;
-  bp2::process _P;
+  bp::child _P;
 };
 
 class Exec::Input : public EndpointSkipStart<EndpointOutput> {
 public:
-  Input(boost::asio::io_context& io_context, boost::asio::writable_pipe pipe) : _Pipe(std::move(pipe)) {}
+  Input(boost::asio::io_context& io_context, std::shared_ptr<boost::process::v1::async_pipe> pipe) : _Pipe(std::move(pipe)) {}
 
   void AsyncWrite(Packet&& p, std::move_only_function<WriteHandler>&& handler) override {
-    boost::asio::async_write(_Pipe, boost::asio::const_buffer{p.first}, std::move(handler));
+    boost::asio::async_write(*_Pipe, boost::asio::const_buffer{p.first}, std::move(handler));
   }
 
 private:
-  boost::asio::writable_pipe _Pipe;
+  std::shared_ptr<boost::process::v1::async_pipe> _Pipe;
 };
 
 class Exec::Output : public EndpointSkipStart<EndpointInput> {
 public:
-  Output(boost::asio::io_context& io_context, boost::asio::readable_pipe pipe) : _Pipe(std::move(pipe)) {}
+  Output(boost::asio::io_context& io_context, std::shared_ptr<boost::process::v1::async_pipe> pipe) : _Pipe(std::move(pipe)) {}
 
   void AsyncRead(std::move_only_function<ReadHandler>&& handler) override {
     auto a = std::make_shared<std::array<uint8_t, 2048>>();
     auto p = Packet{Buffer(*a), a};
     auto buffer = boost::asio::mutable_buffer{p.first};
-    _Pipe.async_read_some(buffer, [p{std::move(p)}, handler = std::move(handler)](
-                                     const ErrorCode& ec, std::size_t bytes_transferred) mutable {
+    _Pipe->async_read_some(buffer, [p{std::move(p)}, handler = std::move(handler)](
+                                      const ErrorCode& ec, std::size_t bytes_transferred) mutable {
       if (!ec) {
         assert(bytes_transferred <= p.first.Capacity - p.first.Offset);
         p.first.Length = bytes_transferred;
@@ -78,40 +68,31 @@ public:
   }
 
 private:
-  boost::asio::readable_pipe _Pipe;
+  std::shared_ptr<boost::process::v1::async_pipe> _Pipe;
 };
 
 Exec::~Exec() { Kill(); }
 
 std::shared_ptr<EndpointOutput> Exec::GetIn() {
   if (!_In) {
-    boost::asio::readable_pipe read_end(_IoContext);
-    boost::asio::writable_pipe write_end(_IoContext);
-    boost::asio::connect_pipe(read_end, write_end);
-    _In.reset(new Input(_IoContext, std::move(write_end)));
-    _ChildIn = std::move(read_end);
+    _ChildIn = std::make_shared<boost::process::v1::async_pipe>(_IoContext);
+    _In.reset(new Input(_IoContext, _ChildIn));
   }
   return _In;
 }
 
 std::shared_ptr<EndpointInput> Exec::GetOut() {
   if (!_Out) {
-    boost::asio::readable_pipe read_end(_IoContext);
-    boost::asio::writable_pipe write_end(_IoContext);
-    boost::asio::connect_pipe(read_end, write_end);
-    _Out.reset(new Output(_IoContext, std::move(read_end)));
-    _ChildOut = std::move(write_end);
+    _ChildOut = std::make_shared<boost::process::v1::async_pipe>(_IoContext);
+    _Out.reset(new Output(_IoContext, _ChildOut));
   }
   return _Out;
 }
 
 std::shared_ptr<EndpointInput> Exec::GetErr() {
   if (!_Err) {
-    boost::asio::readable_pipe read_end(_IoContext);
-    boost::asio::writable_pipe write_end(_IoContext);
-    boost::asio::connect_pipe(read_end, write_end);
-    _Err.reset(new Output(_IoContext, std::move(read_end)));
-    _ChildErr = std::move(write_end);
+    _ChildErr = std::make_shared<boost::process::v1::async_pipe>(_IoContext);
+    _Err.reset(new Output(_IoContext, _ChildErr));
   }
   return _Err;
 }
@@ -122,25 +103,47 @@ void Exec::Run(std::move_only_function<Event>&& handler) {
     handler(ErrorCode(AppErrorCategory::kAlreadyStarted, kAppError));
   } else {
     try {
-      std::vector<std::string> e;
+      auto env = boost::this_process::environment();
+      bp::environment env_child = env;
       for (auto const& [k, v] : _Env) {
-        e.push_back((boost::format("%1%=%2%") % k % v).str());
+        env_child[k] = v;
       }
 
-      bp2::process_stdio stdio;
-      if (_ChildIn) {
-        stdio.in = *_ChildIn;
+      auto i = std::make_shared<Proc>(std::move(handler));
+      auto self = i;
+
+      // Ensure all pipes are initialized so they have a consistent type for redirection expressions
+      if (!_ChildIn) {
+        _ChildIn = std::make_shared<boost::process::v1::async_pipe>(_IoContext);
       }
-      if (_ChildOut) {
-        stdio.out = *_ChildOut;
+      if (!_ChildOut) {
+        _ChildOut = std::make_shared<boost::process::v1::async_pipe>(_IoContext);
       }
-      if (_ChildErr) {
-        stdio.err = *_ChildErr;
+      if (!_ChildErr) {
+        _ChildErr = std::make_shared<boost::process::v1::async_pipe>(_IoContext);
       }
 
-      auto i = std::make_shared<Proc>(std::move(handler),
-                                      bp2::process(_IoContext, _Prog, _Args, stdio, bp2::process_environment{e}));
-      i->StartWait();
+      auto c = bp::child(_Prog, _Args, env_child,
+                         bp::std_in < *_ChildIn,
+                         bp::std_out > *_ChildOut,
+                         bp::std_err > *_ChildErr,
+                         _IoContext,
+                         bp::on_exit([self](int exit_code, const std::error_code& ec) {
+                           ErrorCode boost_ec(ec);
+                           if (!ec) {
+                             BOOST_LOG_TRIVIAL(info) << "process exited: " << exit_code;
+                             if (exit_code == 0) {
+                               self->_Handler(ErrorCode());
+                             } else {
+                               self->_Handler(ErrorCode(exit_code, kExitError));
+                             }
+                           } else if (boost_ec != boost::asio::error::operation_aborted) {
+                             BOOST_LOG_TRIVIAL(error) << "process wait error: " << ec.message();
+                             self->_Handler(boost_ec);
+                           }
+                         }));
+
+      i->Start(std::move(c));
       _P = i;
 
       _ChildIn.reset();
