@@ -1,0 +1,3 @@
+[submodule "libs/omni-fiber"]
+	path = libs/omni-fiber
+	url = https://github.com/kghost/omni-fiber
