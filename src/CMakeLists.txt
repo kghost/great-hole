@@ -53,10 +53,13 @@ target_link_libraries(great-hole-core PUBLIC
     Boost::program_options
     Boost::filesystem
     Boost::thread
-    Boost::process
     PkgConfig::LUA
     omnifiber
 )
+
+if (Boost_PROCESS_FOUND)
+    target_link_libraries(great-hole-core PUBLIC Boost::process)
+endif()
 
 target_link_libraries(great-hole PRIVATE
     great-hole-core
