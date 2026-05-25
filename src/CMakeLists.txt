@@ -49,7 +49,6 @@ target_link_libraries(great-hole-core PUBLIC
     Threads::Threads
     ZLIB::ZLIB
     Boost::log
-    Boost::iostreams
     Boost::program_options
     Boost::filesystem
     Boost::thread

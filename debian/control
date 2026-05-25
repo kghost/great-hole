@@ -2,19 +2,9 @@ Source: great-hole
 Section: utils
 Priority: extra
 Maintainer: Zang MingJie <zealot0630@gmail.com>
-Build-Depends: debhelper (>= 9.0.0), cmake, zlib1g-dev,
- libboost-dev (>= 1.88) | libboost1.88-dev,
- libboost-iostreams-dev (>= 1.88) | libboost-iostreams1.88-dev,
- libboost-program-options-dev (>= 1.88) | libboost-program-options1.88-dev,
- libboost-filesystem-dev (>= 1.88) | libboost-filesystem1.88-dev,
- libboost-log-dev (>= 1.88) | libboost-log1.88-dev,
- libboost-chrono-dev (>= 1.88) | libboost-chrono1.88-dev,
- libboost-thread-dev (>= 1.88) | libboost-thread1.88-dev,
- libboost-atomic-dev (>= 1.88) | libboost-atomic1.88-dev,
- libboost-regex-dev (>= 1.88) | libboost-regex1.88-dev,
- libboost-process-dev (>= 1.88) | libboost1.88-dev,
- libboost-random-dev (>= 1.88) | libboost-random1.88-dev,
- liblua5.4-dev, pkgconf, libgtest-dev
+Build-Depends: debhelper (>= 9.0.0), cmake, zlib1g-dev, libboost-dev,
+ libboost-program-options-dev, libboost-log-dev,
+ libboost-chrono-dev, liblua5.4-dev, pkgconf, libgtest-dev
 Standards-Version: 3.9.4
 Homepage: https://github.com/kghost/great-hole
 Vcs-Git: git://github.com/kghost/great-hole.git

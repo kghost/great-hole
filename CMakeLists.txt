@@ -12,7 +12,7 @@ endif()
 # Dependencies
 find_package(Threads REQUIRED)
 find_package(ZLIB REQUIRED)
-find_package(Boost REQUIRED COMPONENTS log iostreams program_options filesystem thread)
+find_package(Boost REQUIRED COMPONENTS log program_options)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LUA REQUIRED IMPORTED_TARGET lua-5.4)
 

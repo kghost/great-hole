@@ -2,12 +2,17 @@
 
 #include <map>
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
 #include <boost/asio.hpp>
+#if BOOST_VERSION >= 108800
+#include <boost/process/v1.hpp>
 #include <boost/process/v1/async_pipe.hpp>
+#else
+#include <boost/process.hpp>
+#include <boost/process/async.hpp>
+#endif
 
 #include "endpoint.hpp"
 
@@ -19,7 +24,6 @@ public:
        const std::map<std::string, std::string>& env = {})
       : _Prog(prog), _Args(args), _Env(env), _IoContext(ioContext) {}
   ~Exec();
-
   void Run(std::move_only_function<Event>&& handler);
   void Kill();
 
@@ -43,9 +47,15 @@ private:
   std::shared_ptr<EndpointInput> _Out;
   std::shared_ptr<EndpointInput> _Err;
 
-  std::shared_ptr<boost::process::v1::async_pipe> _ChildIn;
-  std::shared_ptr<boost::process::v1::async_pipe> _ChildOut;
-  std::shared_ptr<boost::process::v1::async_pipe> _ChildErr;
+#if BOOST_VERSION >= 108800
+  using async_pipe = boost::process::v1::async_pipe;
+#else
+  using async_pipe = boost::process::async_pipe;
+#endif
+
+  std::shared_ptr<async_pipe> _ChildIn;
+  std::shared_ptr<async_pipe> _ChildOut;
+  std::shared_ptr<async_pipe> _ChildErr;
 
   std::weak_ptr<Proc> _P;
 };
