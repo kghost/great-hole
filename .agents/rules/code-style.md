@@ -75,7 +75,6 @@ We use `.clang-format` based on `LLVM` style with specific customizations. Key r
   - Use `explicit` on all constructors that can be called with a single argument to prevent implicit conversions.
   - *Example:* `explicit Process(ProcessManager& manager, PidType pid);`
 - **Virtual Functions:** Always use the `override` keyword when overriding a virtual method from a base class. Use `virtual` only for the base declaration.
-- **Null Pointers:** Use `nullptr` instead of `NULL` or `0` for pointer values.
 - **Smart Pointers:** Prefer standard ownership patterns:
   - Use `std::unique_ptr` for exclusive ownership.
   - Use `std::shared_ptr` for shared ownership.
@@ -86,6 +85,12 @@ We use `.clang-format` based on `LLVM` style with specific customizations. Key r
     Process(const Process&) = delete;
     Process& operator=(const Process&) = delete;
     ```
+- Prefer std::array over C-style array.
+- **Avoid pointers**
+  - Use std::optional<std::reference_wrapper<T>> to replace nullable pointer
+  - Use T& to replace non-nullable pointer
+  - Unless required by platform API or third-party API, try avoid use pointers.
+- **Null Pointers:** Use `nullptr` instead of `NULL` or `0` for pointer values.
 
 ## 5. Namespaces
 
@@ -99,7 +104,3 @@ We use `.clang-format` based on `LLVM` style with specific customizations. Key r
 
   } // namespace frontend::ftxui
   ```
-
-## 6. Others
-
-- Prefer std::array over C-style array.
