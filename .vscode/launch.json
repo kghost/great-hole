@@ -23,6 +23,7 @@
             "request": "launch",
             "name": "launch test",
             "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
             "program": "${cmake.testProgram}",
             "args": [
                 "${cmake.testArgs}"

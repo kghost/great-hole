@@ -35,17 +35,18 @@ Omni::Fiber::Coroutine<void> Pipeline::Start(Omni::Fiber::Event<>& stopSignal) {
   auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
   fiber.Spawn("pipe-work", [this]() mutable -> Omni::Fiber::Coroutine<void> {
     while (true) {
-      auto [err, packet] = co_await _In->Read();
-      if (err) {
-        if (IsCritical(err)) {
-          BOOST_LOG_TRIVIAL(error) << "Pipeline(" << this << ") read error: " << err.message();
-          throw boost::system::system_error(err, "Pipeline read error");
+      Packet p;
+      auto err_read = co_await _In->Read(p);
+      if (err_read) {
+        if (IsCritical(err_read)) {
+          BOOST_LOG_TRIVIAL(error) << "Pipeline(" << this << ") read error: " << err_read.message();
+          throw boost::system::system_error(err_read, "Pipeline read error");
         } else {
-          BOOST_LOG_TRIVIAL(warning) << "Pipeline(" << this << ") read error (non-critical): " << err.message();
+          BOOST_LOG_TRIVIAL(warning) << "Pipeline(" << this << ") read error (non-critical): " << err_read.message();
         }
       }
       for (auto& i : _Filters) {
-        auto [err_pipe, packet2] = co_await i->Pipe(std::move(packet));
+        auto err_pipe = co_await i->Pipe(p);
         if (err_pipe) {
           if (IsCritical(err_pipe)) {
             BOOST_LOG_TRIVIAL(error) << "Pipeline(" << this << ") filter error: " << err_pipe.message();
@@ -55,9 +56,8 @@ Omni::Fiber::Coroutine<void> Pipeline::Start(Omni::Fiber::Event<>& stopSignal) {
                                        << ") filter error (non-critical): " << err_pipe.message();
           }
         }
-        packet = std::move(packet2);
       }
-      auto [err_write, bytes_transferred] = co_await _Out->Write(std::move(packet));
+      auto err_write = co_await _Out->Write(p);
       if (err_write) {
         if (IsCritical(err_write)) {
           BOOST_LOG_TRIVIAL(error) << "Pipeline(" << this << ") write error: " << err_write.message();

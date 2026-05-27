@@ -7,22 +7,18 @@
 
 namespace gh {
 
-using Event = void(ErrorCode const&);
-using ReadHandler = void(ErrorCode const&, Packet&&);
-using WriteHandler = void(ErrorCode const&, std::size_t);
-
 class EndpointInput {
 public:
   virtual ~EndpointInput() = 0;
   virtual Omni::Fiber::Coroutine<ErrorCode> Start(Omni::Fiber::Event<>&) = 0;
-  virtual Omni::Fiber::Coroutine<std::tuple<ErrorCode, Packet>> Read() = 0;
+  virtual Omni::Fiber::Coroutine<ErrorCode> Read(Packet&) = 0;
 };
 
 class EndpointOutput {
 public:
   virtual ~EndpointOutput() = 0;
   virtual Omni::Fiber::Coroutine<ErrorCode> Start(Omni::Fiber::Event<>&) = 0;
-  virtual Omni::Fiber::Coroutine<std::tuple<ErrorCode, std::size_t>> Write(Packet&&) = 0;
+  virtual Omni::Fiber::Coroutine<ErrorCode> Write(Packet&) = 0;
 };
 
 class Endpoint : public EndpointInput, public EndpointOutput {};

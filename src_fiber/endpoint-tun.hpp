@@ -13,8 +13,8 @@ public:
   Tun(boost::asio::io_context& io_context, std::string const& name);
 
   Omni::Fiber::Coroutine<ErrorCode> Start(Omni::Fiber::Event<>& stop_signal) override;
-  Omni::Fiber::Coroutine<std::tuple<ErrorCode, Packet>> Read() override;
-  Omni::Fiber::Coroutine<std::tuple<ErrorCode, std::size_t>> Write(Packet&&) override;
+  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p) override;
+  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p) override;
 
 private:
   Omni::Fiber::Coroutine<ErrorCode> DoStart();

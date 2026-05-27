@@ -11,17 +11,14 @@ class Input : public EndpointSkipStart<EndpointInput> {
 public:
   explicit Input(boost::asio::io_context& io_context, decltype(STDERR_FILENO) f) : _S(io_context, f) {}
 
-  Omni::Fiber::Coroutine<std::tuple<ErrorCode, Packet>> Read() override {
-    auto a = std::make_shared<std::array<uint8_t, 2048>>();
-    auto p = Packet{Buffer(*a), a};
-    auto buffer = boost::asio::mutable_buffer{p.first};
-    auto [err, bytes_transferred] = co_await _S.async_read_some(buffer, Omni::Fiber::AsioUseFiber);
+  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p) override {
+    auto [err, bytes_transferred] =
+        co_await _S.async_read_some(p.operator boost::asio::mutable_buffer(), Omni::Fiber::AsioUseFiber);
     if (err) {
-      throw boost::system::system_error(err);
+      co_return err;
     }
-    assert(bytes_transferred <= p.first.Capacity - p.first.Offset);
-    p.first.Length = bytes_transferred;
-    co_return std::make_tuple(err, std::move(p));
+    p._Length = bytes_transferred;
+    co_return err;
   }
 
 private:
@@ -32,13 +29,17 @@ class Output : public EndpointSkipStart<EndpointOutput> {
 public:
   explicit Output(boost::asio::io_context& io_context, decltype(STDERR_FILENO) f) : _S(io_context, f) {}
 
-  Omni::Fiber::Coroutine<std::tuple<ErrorCode, std::size_t>> Write(Packet&& p) override {
-    auto [err, bytes_transferred] =
-        co_await _S.async_write_some(boost::asio::const_buffer{p.first}, Omni::Fiber::AsioUseFiber);
-    if (err) {
-      throw boost::system::system_error(err);
+  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p) override {
+    std::size_t sent = 0;
+    while (sent < p._Length) {
+      auto [err, bytes_transferred] =
+          co_await _S.async_write_some(boost::asio::const_buffer{p} + sent, Omni::Fiber::AsioUseFiber);
+      if (err) {
+        co_return err;
+      }
+      sent += bytes_transferred;
     }
-    co_return std::make_tuple(err, bytes_transferred);
+    co_return ErrorCode{};
   }
 
 private:

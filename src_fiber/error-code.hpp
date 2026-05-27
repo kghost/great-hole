@@ -18,6 +18,7 @@ public:
   std::string message(int ev) const override { return _Errs[ev]; }
 
   enum Codes {
+    kEndOfStream = 0,
     kIncorrectState = 1,
     kAlreadyStarted = 2,
     kForkExecError = 3,

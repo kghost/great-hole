@@ -90,12 +90,14 @@ static int pipeline_new(lua_State* L) {
     return 0;
   }
 
-  auto& in = *(std::shared_ptr<EndpointInput>*)luaL_checkudata(L, 1, name_endpoint);
-  auto& out = *(std::shared_ptr<EndpointOutput>*)luaL_checkudata(L, c, name_endpoint);
+  auto& endpointIn = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, 1, name_endpoint);
+  std::shared_ptr<EndpointInput> in = endpointIn;
   std::vector<std::shared_ptr<Filter>> filters(c - 2);
   for (auto i = 2; i < c; ++i) {
     filters[i - 2] = *(std::shared_ptr<Filter>*)luaL_checkudata(L, i, name_filter);
   }
+  auto& endpointOut = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, c, name_endpoint);
+  std::shared_ptr<EndpointOutput> out = endpointOut;
 
   new (lua_newuserdata(L, sizeof(std::shared_ptr<Pipeline>))) std::shared_ptr<Pipeline>(new Pipeline(in, filters, out));
   luaL_getmetatable(L, name_pipeline);
@@ -230,8 +232,7 @@ static int udp_mux_client_new(lua_State* L) {
 
 // udp-dyn-mux-server
 static const struct luaL_Reg udp_dyn_mux_server_metatable[] = {
-    {"__gc", safe_call<gc<UdpDynMuxServer, name_udp_dyn_mux_server>>},
-    {NULL, NULL}};
+    {"__gc", safe_call<gc<UdpDynMuxServer, name_udp_dyn_mux_server>>}, {NULL, NULL}};
 
 static int udp_dyn_mux_server_new(lua_State* L) {
   auto& io_context = *(boost::asio::io_context*)lua_touserdata(L, lua_upvalueindex(1));

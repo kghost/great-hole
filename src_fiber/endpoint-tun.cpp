@@ -1,7 +1,7 @@
 #include "endpoint-tun.hpp"
 
+#include <boost/asio/buffer.hpp>
 #include <linux/if_tun.h>
-#include <memory>
 
 #include <boost/log/trivial.hpp>
 
@@ -14,11 +14,9 @@ Tun::Tun(boost::asio::io_context& io_context, std::string const& name) : _S(io_c
 
 Omni::Fiber::Coroutine<ErrorCode> Tun::Start(Omni::Fiber::Event<>& stopSignal) {
   co_return co_await BackgroundStart(
-      _IsStarted, _StartedError, stopSignal, [this]() -> Omni::Fiber::Coroutine<ErrorCode> { return DoStart(); },
-      [this]() -> Omni::Fiber::Coroutine<void> {
-        _S.close();
-        co_return;
-      });
+      "Start tun:" + _Name, _IsStarted, _StartedError, stopSignal,
+      [this]() -> Omni::Fiber::Coroutine<ErrorCode> { return DoStart(); },
+      [this]() -> Omni::Fiber::Coroutine<void> { co_return _S.close(); });
 }
 
 Omni::Fiber::Coroutine<ErrorCode> Tun::DoStart() {
@@ -41,20 +39,17 @@ Omni::Fiber::Coroutine<ErrorCode> Tun::DoStart() {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<std::tuple<ErrorCode, Packet>> Tun::Read() {
-  auto a = std::make_shared<std::array<uint8_t, 2048>>();
-  auto p = Packet{Buffer(*a), a};
-  auto buffer = boost::asio::mutable_buffer{p.first};
-  auto [err, bytes_transferred] = co_await _S.async_read_some(buffer, Omni::Fiber::AsioUseFiber);
-  if (!err) {
-    assert(bytes_transferred <= p.first.Capacity - p.first.Offset);
-    p.first.Length = bytes_transferred;
-  }
-  co_return std::make_tuple(err, std::move(p));
+Omni::Fiber::Coroutine<ErrorCode> Tun::Read(Packet& p) {
+  auto [err, bytes_transferred] =
+      co_await _S.async_read_some(boost::asio::mutable_buffer(p), Omni::Fiber::AsioUseFiber);
+  p._Length = bytes_transferred;
+  co_return err;
 }
 
-Omni::Fiber::Coroutine<std::tuple<ErrorCode, std::size_t>> Tun::Write(Packet&& p) {
-  co_return co_await _S.async_write_some(boost::asio::const_buffer{p.first}, Omni::Fiber::AsioUseFiber);
+Omni::Fiber::Coroutine<ErrorCode> Tun::Write(Packet& p) {
+  auto [err, bytes_transferred] = co_await _S.async_write_some(boost::asio::const_buffer(p), Omni::Fiber::AsioUseFiber);
+  assert(p._Length == bytes_transferred);
+  co_return err;
 }
 
 } // namespace gh

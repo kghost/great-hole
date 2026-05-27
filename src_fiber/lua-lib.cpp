@@ -10,7 +10,7 @@
 // #include "endpoint-udp-dyn-mux-server.hpp"
 // #include "endpoint-udp-mux-client.hpp"
 // #include "endpoint-udp-mux-server.hpp"
-// #include "endpoint-udp.hpp"
+#include "endpoint-udp.hpp"
 #include "filter-xor.hpp"
 #include "pipeline.hpp"
 
@@ -37,7 +37,7 @@ template <int f(lua_State* L)> static int safe_call(lua_State* L) {
 constexpr const char name_pipeline[] = "Hole.pipeline";
 constexpr const char name_endpoint[] = "Hole.endpoint";
 constexpr const char name_filter[] = "Hole.filter";
-// constexpr const char name_udp[] = "Hole.udp";
+constexpr const char name_udp[] = "Hole.udp";
 // constexpr const char name_udp_mux_server[] = "Hole.udp-mux-server";
 // constexpr const char name_udp_dyn_mux_server[] = "Hole.udp-dyn-mux-server";
 
@@ -80,12 +80,14 @@ static int pipeline_new(lua_State* L) {
     return 0;
   }
 
-  auto& in = *(std::shared_ptr<EndpointInput>*)luaL_checkudata(L, 1, name_endpoint);
-  auto& out = *(std::shared_ptr<EndpointOutput>*)luaL_checkudata(L, c, name_endpoint);
+  auto& endpointIn = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, 1, name_endpoint);
+  std::shared_ptr<EndpointInput> in = endpointIn;
   std::vector<std::shared_ptr<Filter>> filters(c - 2);
   for (auto i = 2; i < c; ++i) {
     filters[i - 2] = *(std::shared_ptr<Filter>*)luaL_checkudata(L, i, name_filter);
   }
+  auto& endpointOut = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, c, name_endpoint);
+  std::shared_ptr<EndpointOutput> out = endpointOut;
 
   new (lua_newuserdata(L, sizeof(std::shared_ptr<Pipeline>))) std::shared_ptr<Pipeline>(new Pipeline(in, filters, out));
   luaL_getmetatable(L, name_pipeline);
@@ -96,48 +98,48 @@ static int pipeline_new(lua_State* L) {
 
 static const struct luaL_Reg endpoint_metatable[] = {{"__gc", safe_call<gc<Endpoint, name_endpoint>>}, {NULL, NULL}};
 
-// static int udp_create_channel(lua_State* L) {
-//   if (lua_gettop(L) != 3) {
-//     luaL_error(L, "udp_create_channel: not enough arguments");
-//     return 0;
-//   }
+static int udp_create_channel(lua_State* L) {
+  if (lua_gettop(L) != 3) {
+    luaL_error(L, "udp_create_channel: not enough arguments");
+    return 0;
+  }
 
-//   auto address = lua_tostring(L, 2);
-//   auto port = (int)lua_tonumber(L, 3);
-//   auto peer = boost::asio::ip::udp::endpoint(get_address(address), port);
+  auto address = lua_tostring(L, 2);
+  auto port = (int)lua_tonumber(L, 3);
+  auto peer = boost::asio::ip::udp::endpoint(get_address(address), port);
 
-//   auto& u = *(std::shared_ptr<Udp>*)luaL_checkudata(L, 1, name_udp);
+  auto& u = *(std::shared_ptr<Udp>*)luaL_checkudata(L, 1, name_udp);
 
-//   new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>(u->CreateChannel(peer));
-//   luaL_getmetatable(L, name_endpoint);
-//   lua_setmetatable(L, -2);
-//   return 1;
-// }
+  new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>(u->CreateChannel(peer));
+  luaL_getmetatable(L, name_endpoint);
+  lua_setmetatable(L, -2);
+  return 1;
+}
 
-// static const struct luaL_Reg udp_metatable[] = {
-//     {"__gc", safe_call<gc<Udp, name_udp>>}, {"create_channel", safe_call<udp_create_channel>}, {NULL, NULL}};
+static const struct luaL_Reg udp_metatable[] = {
+    {"__gc", safe_call<gc<Udp, name_udp>>}, {"create_channel", safe_call<udp_create_channel>}, {NULL, NULL}};
 
-// static int udp_new(lua_State* L) {
-//   auto& io_context = *(boost::asio::io_context*)lua_touserdata(L, lua_upvalueindex(1));
-//   switch (lua_gettop(L)) {
-//   case 0:
-//     new (lua_newuserdata(L, sizeof(std::shared_ptr<Udp>))) std::shared_ptr<Udp>(new Udp(io_context));
-//     break;
-//   case 1: {
-//     auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
-//     new (lua_newuserdata(L, sizeof(std::shared_ptr<Udp>))) std::shared_ptr<Udp>(new Udp(io_context, peer));
-//     break;
-//   }
-//   default:
-//     luaL_error(L, "udp: not enough arguments");
-//     break;
-//   }
+static int udp_new(lua_State* L) {
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+  switch (lua_gettop(L)) {
+  case 0:
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<Udp>))) std::shared_ptr<Udp>(new Udp(interface.GetContext()));
+    break;
+  case 1: {
+    auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
+    new (lua_newuserdata(L, sizeof(std::shared_ptr<Udp>))) std::shared_ptr<Udp>(new Udp(interface.GetContext(), peer));
+    break;
+  }
+  default:
+    luaL_error(L, "udp: not enough arguments");
+    break;
+  }
 
-//   luaL_getmetatable(L, name_udp);
-//   lua_setmetatable(L, -2);
+  luaL_getmetatable(L, name_udp);
+  lua_setmetatable(L, -2);
 
-//   return 1;
-// }
+  return 1;
+}
 
 // // udp-mux-server
 // static int udp_mux_server_create_channel(lua_State* L) {
@@ -323,7 +325,7 @@ static auto hole = std::to_array<const struct luaL_Reg>({
 static auto hole_io_object = std::to_array<const struct luaL_Reg>({
     {.name = "schedule", .func = safe_call<hole_schedule>},
     {.name = "tun", .func = safe_call<tun_new>},
-    // {"udp", safe_call<udp_new>},
+    {.name = "udp", .func = safe_call<udp_new>},
     // {"udp_mux_server", safe_call<udp_mux_server_new>},
     // {"udp_mux_client", safe_call<udp_mux_client_new>},
     // {"udp_dyn_mux_server", safe_call<udp_dyn_mux_server_new>},
@@ -341,11 +343,11 @@ static int hole_open(lua_State* L) {
   lua_pushlightuserdata(L, &interface);
   luaL_setfuncs(L, hole_io_object.data(), 1);
 
-  // luaL_newmetatable(L, name_udp);
-  // lua_pushvalue(L, -1);           /* push metatable */
-  // lua_setfield(L, -2, "__index"); /* metatable.__index = metatable */
-  // luaL_setfuncs(L, udp_metatable, 0);
-  // lua_pop(L, 1);
+  luaL_newmetatable(L, name_udp);
+  lua_pushvalue(L, -1);           /* push metatable */
+  lua_setfield(L, -2, "__index"); /* metatable.__index = metatable */
+  luaL_setfuncs(L, udp_metatable, 0);
+  lua_pop(L, 1);
 
   // luaL_newmetatable(L, name_udp_mux_server);
   // lua_pushvalue(L, -1);           /* push metatable */

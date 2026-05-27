@@ -101,6 +101,13 @@ int main(int ac, char** av) {
           throw boost::system::system_error(ec, "error on waiting signal");
         }
       });
+
+      // Debug
+      auto timer = boost::asio::steady_timer(interface.GetContext(), std::chrono::seconds(2));
+      co_await timer.async_wait(Omni::Fiber::AsioUseFiber);
+      stop_signal.Fire();
+      // Debug
+
       co_await stop_signal;
       co_await signals_fiber.WaitAll();
     });
