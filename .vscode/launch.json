@@ -7,22 +7,15 @@
         {
             "type": "lldb-dap",
             "request": "launch",
-            "name": "launch test udp_dyn_mux_test",
-            "program": "${workspaceFolder}/build/tests/udp_dyn_mux_test",
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb-dap",
-            "request": "launch",
-            "name": "launch test fiber",
-            "program": "${workspaceFolder}/build/libs/omni-fiber/tests/omnifiber_test_fiber",
-            "cwd": "${workspaceFolder}"
-        },
-        {
-            "type": "lldb-dap",
-            "request": "launch",
-            "name": "launch test coroutine",
-            "program": "${workspaceFolder}/build/libs/omni-fiber/tests/omnifiber_test_coroutine",
+            "name": "launch great-hole-fiber",
+            "program": "${workspaceFolder}/build/src_fiber/great-hole-fiber",
+            "console": "integratedTerminal",
+            "initCommands": [
+                "process handle SIGINT --stop false --notify false --pass true"
+            ],
+            "args": [
+                "test-async-log.lua"
+            ],
             "cwd": "${workspaceFolder}"
         },
         {

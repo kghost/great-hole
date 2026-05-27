@@ -1,0 +1,1 @@
+-- Internal lua scripts run before any user scripts
