@@ -69,8 +69,23 @@ static int filter_xor_new(lua_State* L) {
   return 1;
 }
 
-static auto pipeline_metatable = std::to_array<const struct luaL_Reg>(
-    {{.name = "__gc", .func = safe_call<gc<Pipeline, name_pipeline>>}, {.name = NULL, .func = NULL}});
+static int pipeline_stop(lua_State* L) {
+  auto& pipe = *(std::shared_ptr<Pipeline>*)luaL_checkudata(L, 1, name_pipeline);
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  interface.Schedule([&interface, pipe](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    co_await pipe->Stop();
+    co_return 0;
+  });
+
+  return lua_yield(L, 0);
+}
+
+static auto pipeline_metatable = std::to_array<const struct luaL_Reg>({
+    {.name = "__gc", .func = safe_call<gc<Pipeline, name_pipeline>>},
+    {.name = "stop", .func = safe_call<pipeline_stop>},
+    {.name = NULL, .func = NULL},
+});
 
 static int pipeline_new(lua_State* L) {
   auto c = lua_gettop(L);
@@ -103,7 +118,20 @@ static int pipeline_new(lua_State* L) {
   return lua_yield(L, 0);
 }
 
-static const struct luaL_Reg endpoint_metatable[] = {{"__gc", safe_call<gc<Endpoint, name_endpoint>>}, {NULL, NULL}};
+static int endpoint_stop(lua_State* L) {
+  auto& ep = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, 1, name_endpoint);
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  interface.Schedule([&interface, ep](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    co_await ep->Stop();
+    co_return 0;
+  });
+
+  return lua_yield(L, 0);
+}
+
+static const struct luaL_Reg endpoint_metatable[] = {
+    {"__gc", safe_call<gc<Endpoint, name_endpoint>>}, {"stop", safe_call<endpoint_stop>}, {NULL, NULL}};
 
 static int udp_create_channel(lua_State* L) {
   if (lua_gettop(L) != 3) {
@@ -115,15 +143,36 @@ static int udp_create_channel(lua_State* L) {
   auto peer = boost::asio::ip::udp::endpoint(get_address(address), port);
 
   auto& u = *(std::shared_ptr<Udp>*)luaL_checkudata(L, 1, name_udp);
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>(u->CreateChannel(peer));
+  auto ch = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>();
   luaL_getmetatable(L, name_endpoint);
   lua_setmetatable(L, -2);
-  return 1;
+
+  interface.Schedule([&interface, u, peer, ch](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    *ch = co_await u->CreateChannel(peer);
+    co_return 1;
+  });
+
+  return lua_yield(L, 0);
 }
 
-static const struct luaL_Reg udp_metatable[] = {
-    {"__gc", safe_call<gc<Udp, name_udp>>}, {"create_channel", safe_call<udp_create_channel>}, {NULL, NULL}};
+static int udp_stop(lua_State* L) {
+  auto& u = *(std::shared_ptr<Udp>*)luaL_checkudata(L, 1, name_udp);
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  interface.Schedule([&interface, u](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    co_await u->Stop();
+    co_return 0;
+  });
+
+  return lua_yield(L, 0);
+}
+
+static const struct luaL_Reg udp_metatable[] = {{"__gc", safe_call<gc<Udp, name_udp>>},
+                                                {"create_channel", safe_call<udp_create_channel>},
+                                                {"stop", safe_call<udp_stop>},
+                                                {NULL, NULL}};
 
 static int udp_new(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
@@ -318,6 +367,17 @@ static int tun_new(lua_State* L) {
   return lua_yield(L, 0);
 }
 
+static int hole_wait_for_exit(lua_State* L) {
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  interface.Schedule([&interface](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    co_await interface.GetStopSignal();
+    co_return 0;
+  });
+
+  return lua_yield(L, 0);
+}
+
 // =========================== pipeline ===========================
 static auto hole = std::to_array<const struct luaL_Reg>({
     {.name = "filter_xor", .func = safe_call<filter_xor_new>},
@@ -326,6 +386,7 @@ static auto hole = std::to_array<const struct luaL_Reg>({
 
 // =========================== pipe io object ===========================
 static auto hole_io_object = std::to_array<const struct luaL_Reg>({
+    {.name = "wait_for_exit", .func = safe_call<hole_wait_for_exit>},
     {.name = "pipeline", .func = safe_call<pipeline_new>},
     {.name = "tun", .func = safe_call<tun_new>},
     {.name = "udp", .func = safe_call<udp_new>},
@@ -349,7 +410,8 @@ static int hole_open(lua_State* L) {
   luaL_newmetatable(L, name_udp);
   lua_pushvalue(L, -1);           /* push metatable */
   lua_setfield(L, -2, "__index"); /* metatable.__index = metatable */
-  luaL_setfuncs(L, udp_metatable, 0);
+  lua_pushlightuserdata(L, &interface);
+  luaL_setfuncs(L, udp_metatable, 1);
   lua_pop(L, 1);
 
   // luaL_newmetatable(L, name_udp_mux_server);
@@ -367,13 +429,15 @@ static int hole_open(lua_State* L) {
   luaL_newmetatable(L, name_endpoint);
   lua_pushvalue(L, -1);           /* push metatable */
   lua_setfield(L, -2, "__index"); /* metatable.__index = metatable */
-  luaL_setfuncs(L, endpoint_metatable, 0);
+  lua_pushlightuserdata(L, &interface);
+  luaL_setfuncs(L, endpoint_metatable, 1);
   lua_pop(L, 1);
 
   luaL_newmetatable(L, name_pipeline);
   lua_pushvalue(L, -1);           /* push metatable */
   lua_setfield(L, -2, "__index"); /* metatable.__index = metatable */
-  luaL_setfuncs(L, pipeline_metatable.data(), 0);
+  lua_pushlightuserdata(L, &interface);
+  luaL_setfuncs(L, pipeline_metatable.data(), 1);
   lua_pop(L, 1);
 
   luaL_newmetatable(L, name_filter);

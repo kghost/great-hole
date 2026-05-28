@@ -17,11 +17,10 @@ Pipeline::Pipeline(std::shared_ptr<EndpointInput> in, const std::vector<std::sha
     : _In(in), _Out(out), _Filters(filters) {}
 
 Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start() {
-  BOOST_LOG_TRIVIAL(info) << "Pipeline(" << this << ") started";
-
   auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
   fiber.Spawn(std::format("Pipeline:{:p}", static_cast<void*>(this)), [this]() mutable -> Omni::Fiber::Coroutine<void> {
     auto me = std::static_pointer_cast<Pipeline>(shared_from_this());
+    BOOST_LOG_TRIVIAL(info) << "Pipeline(" << this << ") started";
 
     struct ActivePipelineGuard {
       Service* In;
@@ -89,9 +88,9 @@ Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start() {
         }
       }
     }
+    BOOST_LOG_TRIVIAL(info) << "Pipeline(" << this << ") exited";
     co_return;
   });
-  BOOST_LOG_TRIVIAL(info) << "Pipeline(" << this << ") exited";
   co_return ErrorCode{};
 }
 

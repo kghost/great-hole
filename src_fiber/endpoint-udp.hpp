@@ -1,6 +1,7 @@
 #pragma once
 
 #include <expected>
+#include <functional>
 #include <map>
 #include <memory>
 
@@ -8,7 +9,6 @@
 
 #include "Cancel.hpp"
 #include "Coroutine.hpp"
-#include "Event.hpp"
 #include "Pipe.hpp"
 #include "endpoint.hpp"
 #include "error-code.hpp"
@@ -31,9 +31,10 @@ public:
   Omni::Fiber::Coroutine<ErrorCode> Start();
   Omni::Fiber::Coroutine<ErrorCode> Stop();
 
-  std::shared_ptr<Endpoint> CreateChannel(boost::asio::ip::udp::endpoint const& peer);
+  Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> CreateChannel(boost::asio::ip::udp::endpoint const& peer);
   void RemoveChannel(boost::asio::ip::udp::endpoint const& peer);
   Omni::Fiber::Coroutine<ErrorCode> WriteTo(boost::asio::ip::udp::endpoint const& peer, Packet& p, Cancel& c);
+  boost::asio::ip::udp::endpoint LocalEndpoint() const { return _Socket.local_endpoint(); }
 
 private:
   Omni::Fiber::Coroutine<void> ReadLoop();
@@ -41,6 +42,8 @@ private:
   boost::asio::ip::udp::socket _Socket;
   boost::asio::ip::udp::endpoint _Local;
   std::map<boost::asio::ip::udp::endpoint, std::weak_ptr<UdpChannel>> _Channels;
+  Omni::Fiber::Pipe<std::move_only_function<Omni::Fiber::Coroutine<void>()>> _CreateChannelPipe;
+  Cancel _Stop;
 };
 
 class Udp::UdpChannel : public Endpoint {
@@ -66,11 +69,7 @@ public:
 private:
   std::shared_ptr<Udp> _Parent;
   boost::asio::ip::udp::endpoint _Peer;
-
   Omni::Fiber::Pipe<std::expected<Packet, ErrorCode>> _Pipe;
-
-  bool _IsStarted = false;
-  Omni::Fiber::Event<ErrorCode> _StartedError;
 };
 
 } // namespace gh

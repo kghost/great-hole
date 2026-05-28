@@ -7,6 +7,7 @@
 #include <lua.hpp>
 
 #include "Asio.hpp"
+#include "Cancel.hpp"
 #include "Coroutine.hpp"
 #include "GetCurrentFiber.hpp"
 #include "LuaEngine.hpp"
@@ -59,12 +60,12 @@ int main(int ac, char** av) {
   Omni::Fiber::Manager manager(executor);
 
   auto fiber_root = manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    Omni::Fiber::Event stop_signal;
+    Cancel stop_signal;
 
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
     current.Spawn("LuaEngine", [&io_context, &stop_signal, &start]() mutable -> Omni::Fiber::Coroutine<void> {
       {
-        LuaEngine engine(io_context, stop_signal);
+        LuaEngine engine(io_context, stop_signal.GetFiberCancelEvent());
         co_await engine.DoFile(start);
       }
       auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
@@ -72,30 +73,36 @@ int main(int ac, char** av) {
     });
 
     current.Spawn("signals", [&] -> Omni::Fiber::Coroutine<void> {
-      boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
       auto& signals_fiber = co_await Omni::Fiber::GetCurrentFiber();
-      signals_fiber.Spawn("wait", [&] -> Omni::Fiber::Coroutine<void> {
-        auto [err, signal_number] = co_await signals.async_wait(Omni::Fiber::AsioUseFiber);
-        if (!err) {
-          stop_signal.Fire();
-        } else {
-          throw boost::system::system_error(err, "error on waiting signal");
+      signals_fiber.Spawn("wait", [&io_context, &stop_signal] -> Omni::Fiber::Coroutine<void> {
+        boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
+        while (!stop_signal.IsTriggered()) {
+          auto [err, signal_number] = co_await signals.async_wait(
+              boost::asio::bind_cancellation_slot(stop_signal.GetAsioCancelSlot(), Omni::Fiber::AsioUseFiber));
+          if (!err) {
+            stop_signal.Trigger();
+          } else if (err == boost::asio::error::operation_aborted) {
+            continue;
+          } else {
+            throw boost::system::system_error(err, "error on waiting signal");
+          }
         }
+        signals.clear();
       });
 
       // Debug
       auto timer = boost::asio::steady_timer(io_context, std::chrono::seconds(1));
       co_await timer.async_wait(Omni::Fiber::AsioUseFiber);
+      co_await Omni::Fiber::StackTraceAllFibers();
 
-      stop_signal.Fire();
+      stop_signal.Trigger();
 
       auto timer2 = boost::asio::steady_timer(io_context, std::chrono::seconds(1));
       co_await timer2.async_wait(Omni::Fiber::AsioUseFiber);
       co_await Omni::Fiber::StackTraceAllFibers();
       // Debug
 
-      co_await stop_signal;
-      signals.clear();
+      co_await stop_signal.GetFiberCancelEvent();
       co_await signals_fiber.WaitAll();
     });
 

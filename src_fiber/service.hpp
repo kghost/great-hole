@@ -18,6 +18,8 @@ public:
   virtual Omni::Fiber::Coroutine<ErrorCode> Start() = 0;
   virtual Omni::Fiber::Coroutine<ErrorCode> Stop() = 0;
 
+  bool IsStopped() const { return _Stop.IsTriggered(); }
+
   void AddPipeline() {
     _PipelineCount++;
     BOOST_LOG_TRIVIAL(debug) << "Service(" << this << ") AddPipeline count: " << _PipelineCount;
