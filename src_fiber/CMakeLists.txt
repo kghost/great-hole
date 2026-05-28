@@ -15,13 +15,13 @@ add_library(great-hole-core-fiber STATIC
     LuaInterface.cpp
     pipeline.cpp
     endpoint.cpp
-    logging.cpp
     error-code.cpp
     filter.cpp
     util-console.cpp
     endpoint-tun.cpp
     endpoint-udp.cpp
     ${INIT_LUA_OBJ}
+    LuaEngine.cpp
 )
 
 add_executable(great-hole-fiber

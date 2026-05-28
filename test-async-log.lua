@@ -7,6 +7,3 @@ f = hole.filter_xor("adfasfasghagertasknldgfowpgnhophgoasndgflanhgopwehtgweopgfh
 
 p1 = hole.pipeline(c1, f, c2)
 p2 = hole.pipeline(c2, f, c1)
-
-hole.schedule(p1)
-hole.schedule(p2)

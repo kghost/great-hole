@@ -17,7 +17,7 @@ public:
            std::shared_ptr<EndpointOutput> out);
   ~Pipeline() {}
 
-  Omni::Fiber::Coroutine<void> Start(Omni::Fiber::Event<>& stopSignal);
+  Omni::Fiber::Coroutine<ErrorCode> Start(Omni::Fiber::Event<>& stopSignal);
 
 private:
   bool IsCritical(const ErrorCode& ec);

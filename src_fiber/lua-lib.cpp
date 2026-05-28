@@ -5,12 +5,14 @@
 #include <boost/asio/ip/address_v6.hpp>
 #include <memory>
 
+#include "Coroutine.hpp"
 #include "endpoint-tun.hpp"
 // #include "endpoint-udp-dyn-mux-client.hpp"
 // #include "endpoint-udp-dyn-mux-server.hpp"
 // #include "endpoint-udp-mux-client.hpp"
 // #include "endpoint-udp-mux-server.hpp"
 #include "endpoint-udp.hpp"
+#include "error-code.hpp"
 #include "filter-xor.hpp"
 #include "pipeline.hpp"
 
@@ -29,8 +31,7 @@ template <int f(lua_State* L)> static int safe_call(lua_State* L) {
   try {
     return f(L);
   } catch (std::exception const& e) {
-    luaL_error(L, e.what());
-    return 0;
+    return luaL_error(L, e.what());
   }
 }
 
@@ -52,15 +53,13 @@ static const struct luaL_Reg filter_metatable[] = {{"__gc", safe_call<gc<Filter,
 static int filter_xor_new(lua_State* L) {
   auto c = lua_gettop(L);
   if (c != 1) {
-    luaL_error(L, "filter_xor: not enough arguments");
-    return 0;
+    return luaL_error(L, "filter_xor: not enough arguments");
   }
 
   size_t len;
   auto s = lua_tolstring(L, 1, &len);
   if (len < 32 || s == NULL) {
-    luaL_error(L, "filter_xor: malformed xor key");
-    return 0;
+    return luaL_error(L, "filter_xor: malformed xor key");
   }
 
   new (lua_newuserdata(L, sizeof(std::shared_ptr<Filter>)))
@@ -76,32 +75,39 @@ static auto pipeline_metatable = std::to_array<const struct luaL_Reg>(
 static int pipeline_new(lua_State* L) {
   auto c = lua_gettop(L);
   if (c < 2) {
-    luaL_error(L, "pipeline: not enough arguments");
-    return 0;
+    return luaL_error(L, "pipeline: not enough arguments");
   }
 
-  auto& endpointIn = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, 1, name_endpoint);
-  std::shared_ptr<EndpointInput> in = endpointIn;
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  std::shared_ptr<EndpointInput> in = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, 1, name_endpoint);
   std::vector<std::shared_ptr<Filter>> filters(c - 2);
   for (auto i = 2; i < c; ++i) {
     filters[i - 2] = *(std::shared_ptr<Filter>*)luaL_checkudata(L, i, name_filter);
   }
-  auto& endpointOut = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, c, name_endpoint);
-  std::shared_ptr<EndpointOutput> out = endpointOut;
+  std::shared_ptr<EndpointOutput> out = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, c, name_endpoint);
 
-  new (lua_newuserdata(L, sizeof(std::shared_ptr<Pipeline>))) std::shared_ptr<Pipeline>(new Pipeline(in, filters, out));
+  auto pipe = new (lua_newuserdata(L, sizeof(std::shared_ptr<Pipeline>)))
+      std::shared_ptr<Pipeline>(new Pipeline(in, filters, out));
   luaL_getmetatable(L, name_pipeline);
   lua_setmetatable(L, -2);
 
-  return 1;
+  interface.Schedule([&interface, pipe](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    ErrorCode err = co_await (*pipe)->Start(interface.GetStopSignal());
+    if (err) {
+      throw boost::system::system_error(err, "udp start error");
+    }
+    co_return 1;
+  });
+
+  return lua_yield(L, 0);
 }
 
 static const struct luaL_Reg endpoint_metatable[] = {{"__gc", safe_call<gc<Endpoint, name_endpoint>>}, {NULL, NULL}};
 
 static int udp_create_channel(lua_State* L) {
   if (lua_gettop(L) != 3) {
-    luaL_error(L, "udp_create_channel: not enough arguments");
-    return 0;
+    return luaL_error(L, "udp_create_channel: not enough arguments");
   }
 
   auto address = lua_tostring(L, 2);
@@ -121,31 +127,39 @@ static const struct luaL_Reg udp_metatable[] = {
 
 static int udp_new(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+  std::shared_ptr<Udp>* udp;
   switch (lua_gettop(L)) {
   case 0:
-    new (lua_newuserdata(L, sizeof(std::shared_ptr<Udp>))) std::shared_ptr<Udp>(new Udp(interface.GetContext()));
+    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<Udp>))) std::shared_ptr<Udp>(new Udp(interface.GetContext()));
     break;
   case 1: {
-    auto peer = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
-    new (lua_newuserdata(L, sizeof(std::shared_ptr<Udp>))) std::shared_ptr<Udp>(new Udp(interface.GetContext(), peer));
+    auto bind = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
+    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<Udp>)))
+        std::shared_ptr<Udp>(new Udp(interface.GetContext(), bind));
     break;
   }
   default:
-    luaL_error(L, "udp: not enough arguments");
-    break;
+    return luaL_error(L, "udp: not enough arguments");
   }
 
   luaL_getmetatable(L, name_udp);
   lua_setmetatable(L, -2);
 
-  return 1;
+  interface.Schedule([&interface, udp](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    ErrorCode err = co_await (*udp)->Start(interface.GetStopSignal());
+    if (err) {
+      throw boost::system::system_error(err, "udp start error");
+    }
+    co_return 1;
+  });
+
+  return lua_yield(L, 0);
 }
 
 // // udp-mux-server
 // static int udp_mux_server_create_channel(lua_State* L) {
 //   if (lua_gettop(L) != 2) {
-//     luaL_error(L, "udp_mux_server_create_channel: not enough arguments");
-//     return 0;
+//     return luaL_error(L, "udp_mux_server_create_channel: not enough arguments");
 //   }
 
 //   auto id = (uint8_t)lua_tonumber(L, 2);
@@ -175,8 +189,7 @@ static int udp_new(lua_State* L) {
 //     break;
 //   }
 //   default:
-//     luaL_error(L, "udp_mux_server: not enough arguments");
-//     break;
+//     return luaL_error(L, "udp_mux_server: not enough arguments");
 //   }
 
 //   luaL_getmetatable(L, name_udp_mux_server);
@@ -211,8 +224,7 @@ static int udp_new(lua_State* L) {
 //     break;
 //   }
 //   default:
-//     luaL_error(L, "udp_mux_client: not enough arguments");
-//     break;
+//     return luaL_error(L, "udp_mux_client: not enough arguments");
 //   }
 
 //   luaL_getmetatable(L, name_endpoint);
@@ -239,8 +251,7 @@ static int udp_new(lua_State* L) {
 //     break;
 //   }
 //   default:
-//     luaL_error(L, "udp_dyn_mux_server: not enough arguments");
-//     break;
+//     return luaL_error(L, "udp_dyn_mux_server: not enough arguments");
 //   }
 
 //   luaL_getmetatable(L, name_udp_dyn_mux_server);
@@ -274,8 +285,7 @@ static int udp_new(lua_State* L) {
 //     break;
 //   }
 //   default:
-//     luaL_error(L, "udp_dyn_mux_client: not enough arguments");
-//     break;
+//     return luaL_error(L, "udp_dyn_mux_client: not enough arguments");
 //   }
 
 //   luaL_getmetatable(L, name_endpoint);
@@ -289,41 +299,34 @@ static int tun_new(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   if (lua_gettop(L) != 1) {
-    luaL_error(L, "tun: not enough arguments");
-    return 0;
+    return luaL_error(L, "tun: not enough arguments");
   }
 
-  new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>)))
+  auto tun = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>)))
       std::shared_ptr<Endpoint>(new Tun(interface.GetContext(), lua_tostring(L, 1)));
   luaL_getmetatable(L, name_endpoint);
   lua_setmetatable(L, -2);
-  return 1;
-}
 
-// =========================== schedule ===========================
-static int hole_schedule(lua_State* L) {
-  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+  interface.Schedule([&interface, tun](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    ErrorCode err = co_await (*tun)->Start(interface.GetStopSignal());
+    if (err) {
+      throw boost::system::system_error(err, "tun start error");
+    }
+    co_return 1;
+  });
 
-  if (lua_gettop(L) != 1) {
-    luaL_error(L, "schedule: not enough arguments");
-    return 0;
-  }
-
-  auto& pipeline = *(std::shared_ptr<Pipeline>*)luaL_checkudata(L, 1, name_pipeline);
-  interface.Schedule(pipeline);
-  return 0;
+  return lua_yield(L, 0);
 }
 
 // =========================== pipeline ===========================
 static auto hole = std::to_array<const struct luaL_Reg>({
-    {.name = "pipeline", .func = safe_call<pipeline_new>},
     {.name = "filter_xor", .func = safe_call<filter_xor_new>},
     {.name = NULL, .func = NULL},
 });
 
 // =========================== pipe io object ===========================
 static auto hole_io_object = std::to_array<const struct luaL_Reg>({
-    {.name = "schedule", .func = safe_call<hole_schedule>},
+    {.name = "pipeline", .func = safe_call<pipeline_new>},
     {.name = "tun", .func = safe_call<tun_new>},
     {.name = "udp", .func = safe_call<udp_new>},
     // {"udp_mux_server", safe_call<udp_mux_server_new>},

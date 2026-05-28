@@ -8,6 +8,7 @@
 #include "Event.hpp"
 #include "GetCurrentFiber.hpp"
 #include "endpoint.hpp"
+#include "error-code.hpp"
 #include "filter.hpp"
 
 namespace gh {
@@ -16,24 +17,11 @@ Pipeline::Pipeline(std::shared_ptr<EndpointInput> in, const std::vector<std::sha
                    std::shared_ptr<EndpointOutput> out)
     : _In(in), _Out(out), _Filters(filters) {}
 
-Omni::Fiber::Coroutine<void> Pipeline::Start(Omni::Fiber::Event<>& stopSignal) {
-  BOOST_LOG_TRIVIAL(info) << "Pipeline(" << this << ") starting";
-
-  ErrorCode ec = co_await _In->Start(stopSignal);
-  if (ec) {
-    BOOST_LOG_TRIVIAL(error) << "Pipeline(" << this << ") input Start error: " << ec.message();
-    throw boost::system::system_error(ec, "Pipeline input start error");
-  }
-  ec = co_await _Out->Start(stopSignal);
-  if (ec) {
-    BOOST_LOG_TRIVIAL(error) << "Pipeline(" << this << ") output Start error: " << ec.message();
-    throw boost::system::system_error(ec, "Pipeline output start error");
-  }
-
+Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start(Omni::Fiber::Event<>& stopSignal) {
   BOOST_LOG_TRIVIAL(info) << "Pipeline(" << this << ") started";
 
   auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
-  fiber.Spawn("pipe-work", [this]() mutable -> Omni::Fiber::Coroutine<void> {
+  fiber.Spawn(std::format("Pipeline:{:p}", static_cast<void*>(this)), [this]() mutable -> Omni::Fiber::Coroutine<void> {
     while (true) {
       Packet p;
       auto err_read = co_await _In->Read(p);
@@ -70,8 +58,7 @@ Omni::Fiber::Coroutine<void> Pipeline::Start(Omni::Fiber::Event<>& stopSignal) {
     co_return;
   });
 
-  co_await fiber.WaitAll();
-  co_return;
+  co_return ErrorCode{};
 }
 
 bool Pipeline::IsCritical(const ErrorCode& ec) {

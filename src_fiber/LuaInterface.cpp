@@ -1,27 +1,23 @@
 #include "LuaInterface.hpp"
 
+#include <boost/asio.hpp>
+#include <functional>
+#include <lua.hpp>
+#include <optional>
 #include <utility>
 
-#include <boost/asio.hpp>
-#include <lua.hpp>
-
 #include "Coroutine.hpp"
-#include "GetCurrentFiber.hpp"
-#include "pipeline.hpp"
 
 namespace gh {
 
-void LuaInterface::Schedule(std::shared_ptr<Pipeline> pipeline) {
-  Schedule([pipeline, this]() -> Omni::Fiber::Coroutine<void> {
-    co_await pipeline->Start(_StopSignal);
-  });
+void LuaInterface::Schedule(std::move_only_function<Omni::Fiber::Coroutine<int>(lua_State*, int)>&& task) {
+  assert(!_PendingYield.has_value());
+  _PendingYield.emplace(std::move(task));
 }
 
-Omni::Fiber::Coroutine<void> LuaInterface::SpawnTasks() {
-  auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
-  for (auto& task : std::exchange(_PendingTasks, {})) {
-    fiber.Spawn("lua_task" + std::to_string(_TaskCounter++), std::move(task));
-  }
+Omni::Fiber::Coroutine<int> LuaInterface::Yield(lua_State* L, int nres) {
+  assert(_PendingYield.has_value());
+  co_return co_await std::exchange(_PendingYield, std::nullopt).value()(L, nres);
 }
 
 } // namespace gh

@@ -17,14 +17,8 @@ public:
   Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p) override;
 
 private:
-  Omni::Fiber::Coroutine<ErrorCode> DoStart();
-
-  boost::asio::posix::stream_descriptor _S;
-
+  boost::asio::posix::stream_descriptor _TunFileDescriptor;
   const std::string _Name;
-
-  bool _IsStarted = false;
-  Omni::Fiber::Event<ErrorCode> _StartedError;
 };
 
 } // namespace gh

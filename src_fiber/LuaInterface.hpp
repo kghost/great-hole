@@ -1,8 +1,5 @@
 #pragma once
 
-#include <memory>
-#include <vector>
-
 #include <boost/asio.hpp>
 #include <lua.hpp>
 
@@ -16,21 +13,20 @@ class Pipeline;
 // Expose C++ interface to lua script
 class LuaInterface {
 public:
-  explicit LuaInterface(boost::asio::io_context& io_context, Omni::Fiber::Event<>& stopSignal)
-      : _Context(io_context), _StopSignal(stopSignal) {}
+  explicit LuaInterface(boost::asio::io_context& io_context, Omni::Fiber::Event<>& stop_signal)
+      : _Context(io_context), _StopSignal(stop_signal) {}
   ~LuaInterface() {}
 
   boost::asio::io_context& GetContext() { return _Context; }
+  Omni::Fiber::Event<>& GetStopSignal() { return _StopSignal; }
 
-  void Schedule(std::function<Omni::Fiber::Coroutine<void>()>&& task) { _PendingTasks.emplace_back(std::move(task)); }
-  void Schedule(std::shared_ptr<Pipeline> pipeline);
-  Omni::Fiber::Coroutine<void> SpawnTasks();
+  void Schedule(std::move_only_function<Omni::Fiber::Coroutine<int>(lua_State*, int)>&&);
+  Omni::Fiber::Coroutine<int> Yield(lua_State*, int);
 
 private:
   boost::asio::io_context& _Context;
   Omni::Fiber::Event<>& _StopSignal;
-  std::vector<std::function<Omni::Fiber::Coroutine<void>()>> _PendingTasks;
-  int _TaskCounter = 0;
+  std::optional<std::move_only_function<Omni::Fiber::Coroutine<int>(lua_State*, int)>> _PendingYield;
 };
 
 } // namespace gh

@@ -21,7 +21,10 @@ public:
   virtual Omni::Fiber::Coroutine<ErrorCode> Write(Packet&) = 0;
 };
 
-class Endpoint : public EndpointInput, public EndpointOutput {};
+class Endpoint : public EndpointInput, public EndpointOutput {
+public:
+  virtual Omni::Fiber::Coroutine<ErrorCode> Start(Omni::Fiber::Event<>&) = 0;
+};
 
 template <typename Base> class EndpointSkipStart : public Base {
 public:
