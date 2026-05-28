@@ -10,55 +10,74 @@ add_custom_command(
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-add_library(great-hole-core-fiber STATIC
-    lua-lib.cpp
-    LuaInterface.cpp
-    pipeline.cpp
-    endpoint.cpp
-    error-code.cpp
-    filter.cpp
-    util-console.cpp
-    endpoint-tun.cpp
-    endpoint-udp.cpp
-    ${INIT_LUA_OBJ}
-    LuaEngine.cpp
-)
+foreach(suffix "" "-asan")
+  if(suffix STREQUAL "-asan")
+    set(target_core "great-hole-core-fiber-asan")
+    set(target_exe "great-hole-fiber-asan")
+    set(lib_omnifiber "omnifiber-asan")
+  else()
+    set(target_core "great-hole-core-fiber")
+    set(target_exe "great-hole-fiber")
+    set(lib_omnifiber "omnifiber")
+  endif()
 
-add_executable(great-hole-fiber
-    main.cpp
-)
+  add_library(${target_core} STATIC
+      lua-lib.cpp
+      LuaInterface.cpp
+      pipeline.cpp
+      endpoint.cpp
+      error-code.cpp
+      filter.cpp
+      util-console.cpp
+      endpoint-tun.cpp
+      endpoint-udp.cpp
+      ${INIT_LUA_OBJ}
+      LuaEngine.cpp
+  )
 
-target_include_directories(great-hole-core-fiber PUBLIC
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_SOURCE_DIR}/libs
-    ${CMAKE_CURRENT_SOURCE_DIR}
-)
+  add_executable(${target_exe}
+      main.cpp
+  )
 
-target_compile_definitions(great-hole-core-fiber PUBLIC
-    BOOST_ALL_DYN_LINK
-    BOOST_ASIO_ENABLE_OLD_SERVICES
-    BOOST_ASIO_DISABLE_HANDLER_TYPE_REQUIREMENTS
-    BOOST_ASIO_HAS_MOVE
-)
+  target_include_directories(${target_core} PUBLIC
+      ${CMAKE_CURRENT_BINARY_DIR}
+      ${CMAKE_SOURCE_DIR}/libs
+      ${CMAKE_CURRENT_SOURCE_DIR}
+  )
 
-target_link_libraries(great-hole-core-fiber PUBLIC
-    Threads::Threads
-    ZLIB::ZLIB
-    Boost::log
-    Boost::program_options
-    Boost::filesystem
-    Boost::thread
-    PkgConfig::LUA
-    omnifiber
-)
+  target_compile_definitions(${target_core} PUBLIC
+      BOOST_ALL_DYN_LINK
+      BOOST_ASIO_ENABLE_OLD_SERVICES
+      BOOST_ASIO_DISABLE_HANDLER_TYPE_REQUIREMENTS
+      BOOST_ASIO_HAS_MOVE
+  )
 
-if (Boost_PROCESS_FOUND)
-    target_link_libraries(great-hole-core-fiber PUBLIC Boost::process)
-endif()
+  target_link_libraries(${target_core} PUBLIC
+      Threads::Threads
+      ZLIB::ZLIB
+      Boost::log
+      Boost::program_options
+      Boost::filesystem
+      Boost::thread
+      PkgConfig::LUA
+      ${lib_omnifiber}
+  )
 
-target_link_libraries(great-hole-fiber PRIVATE
-    great-hole-core-fiber
-)
+  if (Boost_PROCESS_FOUND)
+      target_link_libraries(${target_core} PUBLIC Boost::process)
+  endif()
 
-include(GNUInstallDirs)
-install(TARGETS great-hole-fiber RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+  target_link_libraries(${target_exe} PRIVATE
+      ${target_core}
+  )
+
+  if(suffix STREQUAL "-asan")
+      target_compile_options(${target_core} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+      target_link_options(${target_core} PRIVATE -fsanitize=address)
+      target_compile_options(${target_exe} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+      target_link_options(${target_exe} PRIVATE -fsanitize=address)
+  endif()
+
+  include(GNUInstallDirs)
+  install(TARGETS ${target_exe} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endforeach()

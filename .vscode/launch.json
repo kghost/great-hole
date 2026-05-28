@@ -34,6 +34,12 @@
             "args": [
                 "${cmake.testArgs}"
             ],
+            "sourceMap": [
+                [
+                    ".",
+                    "${workspaceFolder}"
+                ]
+            ]
         }
     ]
 }
