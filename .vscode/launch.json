@@ -16,7 +16,13 @@
             "args": [
                 "test-async-log.lua"
             ],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "sourceMap": [
+                [
+                    ".",
+                    "${workspaceFolder}"
+                ]
+            ]
         },
         {
             "type": "lldb-dap",

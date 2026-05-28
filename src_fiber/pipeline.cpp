@@ -22,6 +22,7 @@ Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start(Omni::Fiber::Event<>& stopSign
 
   auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
   fiber.Spawn(std::format("Pipeline:{:p}", static_cast<void*>(this)), [this]() mutable -> Omni::Fiber::Coroutine<void> {
+    auto me = shared_from_this();
     while (true) {
       Packet p;
       auto err_read = co_await _In->Read(p);

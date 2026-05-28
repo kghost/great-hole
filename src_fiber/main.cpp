@@ -10,6 +10,7 @@
 #include "Coroutine.hpp"
 #include "GetCurrentFiber.hpp"
 #include "LuaEngine.hpp"
+#include "StackTrace.hpp"
 
 extern const char _binary_init_lua_start[];
 extern const char _binary_init_lua_end[];
@@ -62,8 +63,10 @@ int main(int ac, char** av) {
 
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
     current.Spawn("LuaEngine", [&io_context, &stop_signal, &start]() mutable -> Omni::Fiber::Coroutine<void> {
-      LuaEngine engine(io_context, stop_signal);
-      co_await engine.DoFile(start);
+      {
+        LuaEngine engine(io_context, stop_signal);
+        co_await engine.DoFile(start);
+      }
       auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
       co_await fiber.WaitAll();
     });
@@ -81,10 +84,14 @@ int main(int ac, char** av) {
       });
 
       // Debug
-      auto timer = boost::asio::steady_timer(io_context, std::chrono::seconds(2));
+      auto timer = boost::asio::steady_timer(io_context, std::chrono::seconds(1));
       co_await timer.async_wait(Omni::Fiber::AsioUseFiber);
-      manager.DumpAllFibers();
+
       stop_signal.Fire();
+
+      auto timer2 = boost::asio::steady_timer(io_context, std::chrono::seconds(1));
+      co_await timer2.async_wait(Omni::Fiber::AsioUseFiber);
+      co_await Omni::Fiber::StackTraceAllFibers();
       // Debug
 
       co_await stop_signal;
