@@ -6,6 +6,7 @@
 
 #include <boost/asio.hpp>
 
+#include "Cancel.hpp"
 #include "Coroutine.hpp"
 #include "Event.hpp"
 #include "Pipe.hpp"
@@ -27,11 +28,12 @@ public:
   Udp(Udp&&) = delete;
   Udp& operator=(Udp&&) = delete;
 
-  Omni::Fiber::Coroutine<ErrorCode> Start(Omni::Fiber::Event<>& stopSignal);
+  Omni::Fiber::Coroutine<ErrorCode> Start();
+  Omni::Fiber::Coroutine<ErrorCode> Stop();
 
   std::shared_ptr<Endpoint> CreateChannel(boost::asio::ip::udp::endpoint const& peer);
   void RemoveChannel(boost::asio::ip::udp::endpoint const& peer);
-  Omni::Fiber::Coroutine<ErrorCode> WriteTo(boost::asio::ip::udp::endpoint const& peer, Packet& p);
+  Omni::Fiber::Coroutine<ErrorCode> WriteTo(boost::asio::ip::udp::endpoint const& peer, Packet& p, Cancel& c);
 
 private:
   Omni::Fiber::Coroutine<void> ReadLoop();
@@ -51,9 +53,11 @@ public:
   UdpChannel(UdpChannel&&) = delete;
   UdpChannel& operator=(UdpChannel&&) = delete;
 
-  Omni::Fiber::Coroutine<ErrorCode> Start(Omni::Fiber::Event<>& stopSignal) override;
-  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p) override;
-  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p) override;
+  Omni::Fiber::Coroutine<ErrorCode> Start() override;
+  Omni::Fiber::Coroutine<ErrorCode> Stop() override;
+
+  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel&) override;
+  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel&) override;
 
   template <typename... Args> Omni::Fiber::Coroutine<void> Send(Args&&... args) {
     co_return co_await _Pipe.GetProducer().Put(std::forward<Args>(args)...);

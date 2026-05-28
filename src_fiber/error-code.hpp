@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <boost/system/error_code.hpp>
 #include <boost/system/system_error.hpp>
 
@@ -19,16 +20,26 @@ public:
 
   enum Codes {
     kEndOfStream = 0,
-    kIncorrectState = 1,
-    kAlreadyStarted = 2,
-    kForkExecError = 3,
-    kInvalidPacketSize = 4,
-    kInvalidPacketSession = 5,
-    kInvalidPacketReserved = 6,
+    kOperationAborted = 1,
+    kIncorrectState = 2,
+    kAlreadyStarted = 3,
+    kForkExecError = 4,
+    kInvalidPacketSize = 5,
+    kInvalidPacketSession = 6,
+    kInvalidPacketReserved = 7,
   };
 
 private:
-  static const std::string _Errs[];
+  static constexpr auto _Errs = std::to_array({
+      "end of stream",
+      "operation aborted",
+      "incorrect state",
+      "already_started",
+      "fork_exec_error",
+      "invalid_packet_size",
+      "invalid_packet_session",
+      "invalid_packet_reserved",
+  });
 };
 
 extern AppErrorCategory kAppError;

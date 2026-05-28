@@ -93,7 +93,7 @@ static int pipeline_new(lua_State* L) {
   lua_setmetatable(L, -2);
 
   interface.Schedule([&interface, pipe](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    ErrorCode err = co_await (*pipe)->Start(interface.GetStopSignal());
+    ErrorCode err = co_await (*pipe)->Start();
     if (err) {
       throw boost::system::system_error(err, "udp start error");
     }
@@ -146,7 +146,7 @@ static int udp_new(lua_State* L) {
   lua_setmetatable(L, -2);
 
   interface.Schedule([&interface, udp](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    ErrorCode err = co_await (*udp)->Start(interface.GetStopSignal());
+    ErrorCode err = co_await (*udp)->Start();
     if (err) {
       throw boost::system::system_error(err, "udp start error");
     }
@@ -308,7 +308,7 @@ static int tun_new(lua_State* L) {
   lua_setmetatable(L, -2);
 
   interface.Schedule([&interface, tun](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    ErrorCode err = co_await (*tun)->Start(interface.GetStopSignal());
+    ErrorCode err = co_await (*tun)->Start();
     if (err) {
       throw boost::system::system_error(err, "tun start error");
     }

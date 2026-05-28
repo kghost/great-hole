@@ -5,7 +5,6 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/log/trivial.hpp>
 
-#include "Event.hpp"
 #include "GetCurrentFiber.hpp"
 #include "endpoint.hpp"
 #include "error-code.hpp"
@@ -17,17 +16,23 @@ Pipeline::Pipeline(std::shared_ptr<EndpointInput> in, const std::vector<std::sha
                    std::shared_ptr<EndpointOutput> out)
     : _In(in), _Out(out), _Filters(filters) {}
 
-Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start(Omni::Fiber::Event<>& stopSignal) {
+Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start() {
   BOOST_LOG_TRIVIAL(info) << "Pipeline(" << this << ") started";
 
   auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
   fiber.Spawn(std::format("Pipeline:{:p}", static_cast<void*>(this)), [this]() mutable -> Omni::Fiber::Coroutine<void> {
     auto me = shared_from_this();
-    while (true) {
+    while (!_Stop.IsTriggered()) {
       Packet p;
-      auto err_read = co_await _In->Read(p);
+      auto err_read = co_await _In->Read(p, _Stop);
       if (err_read) {
-        if (IsCritical(err_read)) {
+        if (err_read == ErrorCode{AppErrorCategory::kOperationAborted, kAppError}) {
+          BOOST_LOG_TRIVIAL(info) << "Pipeline(" << this << ") read cancelled detected";
+          continue;
+        } else if (err_read == ErrorCode{AppErrorCategory::kEndOfStream, kAppError}) {
+          BOOST_LOG_TRIVIAL(info) << "Pipeline(" << this << ") EoF detected";
+          break;
+        } else if (IsCritical(err_read)) {
           BOOST_LOG_TRIVIAL(error) << "Pipeline(" << this << ") read error: " << err_read.message();
           throw boost::system::system_error(err_read, "Pipeline read error");
         } else {
@@ -35,9 +40,12 @@ Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start(Omni::Fiber::Event<>& stopSign
         }
       }
       for (auto& i : _Filters) {
-        auto err_pipe = co_await i->Pipe(p);
+        auto err_pipe = co_await i->Pipe(p, _Stop);
         if (err_pipe) {
-          if (IsCritical(err_pipe)) {
+          if (err_pipe == ErrorCode{AppErrorCategory::kOperationAborted, kAppError}) {
+            BOOST_LOG_TRIVIAL(info) << "Pipeline(" << this << ") filter cancelled detected";
+            continue;
+          } else if (IsCritical(err_pipe)) {
             BOOST_LOG_TRIVIAL(error) << "Pipeline(" << this << ") filter error: " << err_pipe.message();
             throw boost::system::system_error(err_pipe, "Pipeline filter error");
           } else {
@@ -46,9 +54,12 @@ Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start(Omni::Fiber::Event<>& stopSign
           }
         }
       }
-      auto err_write = co_await _Out->Write(p);
+      auto err_write = co_await _Out->Write(p, _Stop);
       if (err_write) {
-        if (IsCritical(err_write)) {
+        if (err_write == ErrorCode{AppErrorCategory::kOperationAborted, kAppError}) {
+          BOOST_LOG_TRIVIAL(info) << "Pipeline(" << this << ") write cancelled detected";
+          continue;
+        } else if (IsCritical(err_write)) {
           BOOST_LOG_TRIVIAL(error) << "Pipeline(" << this << ") write error: " << err_write.message();
           throw boost::system::system_error(err_write, "Pipeline write error");
         } else {
@@ -58,7 +69,12 @@ Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start(Omni::Fiber::Event<>& stopSign
     }
     co_return;
   });
+  BOOST_LOG_TRIVIAL(info) << "Pipeline(" << this << ") exited";
+  co_return ErrorCode{};
+}
 
+Omni::Fiber::Coroutine<ErrorCode> Pipeline::Stop() {
+  _Stop.Trigger();
   co_return ErrorCode{};
 }
 
@@ -70,6 +86,7 @@ bool Pipeline::IsCritical(const ErrorCode& ec) {
     case boost::system::errc::connection_refused:
     case boost::system::errc::network_unreachable:
     case boost::system::errc::host_unreachable:
+    case boost::system::errc::operation_canceled:
       return false;
     default:
       return true;

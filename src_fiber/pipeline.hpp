@@ -3,8 +3,8 @@
 #include <memory>
 #include <vector>
 
+#include "Cancel.hpp"
 #include "Coroutine.hpp"
-#include "Event.hpp"
 #include "endpoint.hpp"
 #include "error-code.hpp"
 #include "filter.hpp"
@@ -17,7 +17,8 @@ public:
            std::shared_ptr<EndpointOutput> out);
   ~Pipeline() {}
 
-  Omni::Fiber::Coroutine<ErrorCode> Start(Omni::Fiber::Event<>& stopSignal);
+  Omni::Fiber::Coroutine<ErrorCode> Start();
+  Omni::Fiber::Coroutine<ErrorCode> Stop();
 
 private:
   bool IsCritical(const ErrorCode& ec);
@@ -25,6 +26,7 @@ private:
   std::shared_ptr<EndpointInput> _In;
   std::shared_ptr<EndpointOutput> _Out;
   std::vector<std::shared_ptr<Filter>> _Filters;
+  Cancel _Stop;
 };
 
 } // namespace gh
