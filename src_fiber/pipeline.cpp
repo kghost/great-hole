@@ -21,7 +21,29 @@ Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start() {
 
   auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
   fiber.Spawn(std::format("Pipeline:{:p}", static_cast<void*>(this)), [this]() mutable -> Omni::Fiber::Coroutine<void> {
-    auto me = shared_from_this();
+    auto me = std::static_pointer_cast<Pipeline>(shared_from_this());
+
+    struct ActivePipelineGuard {
+      Service* In;
+      Service* Out;
+      ActivePipelineGuard(Service* in, Service* out) : In(in), Out(out) {
+        if (In) {
+          In->AddPipeline();
+        }
+        if (Out && Out != In) {
+          Out->AddPipeline();
+        }
+      }
+      ~ActivePipelineGuard() {
+        if (In) {
+          In->RemovePipeline();
+        }
+        if (Out && Out != In) {
+          Out->RemovePipeline();
+        }
+      }
+    } guard(_In.get(), _Out.get());
+
     while (!_Stop.IsTriggered()) {
       Packet p;
       auto err_read = co_await _In->Read(p, _Stop);

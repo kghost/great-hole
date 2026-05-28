@@ -4,28 +4,25 @@
 #include "Coroutine.hpp"
 #include "error-code.hpp"
 #include "packet.hpp"
+#include "service.hpp"
 
 namespace gh {
 
-class EndpointInput {
+class EndpointInput : virtual public Service {
 public:
   virtual ~EndpointInput() = 0;
-  virtual Omni::Fiber::Coroutine<ErrorCode> Start() = 0;
-  virtual Omni::Fiber::Coroutine<ErrorCode> Stop() = 0;
   virtual Omni::Fiber::Coroutine<ErrorCode> Read(Packet&, Cancel&) = 0;
 };
 
-class EndpointOutput {
+class EndpointOutput : virtual public Service {
 public:
   virtual ~EndpointOutput() = 0;
-  virtual Omni::Fiber::Coroutine<ErrorCode> Start() = 0;
-  virtual Omni::Fiber::Coroutine<ErrorCode> Stop() = 0;
   virtual Omni::Fiber::Coroutine<ErrorCode> Write(Packet&, Cancel&) = 0;
 };
 
 class Endpoint : public EndpointInput, public EndpointOutput {
 public:
-  virtual Omni::Fiber::Coroutine<ErrorCode> Start() = 0;
+  virtual ~Endpoint() = default;
 };
 
 template <typename Base> class EndpointSkipStart : public Base {
@@ -35,3 +32,4 @@ public:
 };
 
 } // namespace gh
+

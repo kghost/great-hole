@@ -25,7 +25,20 @@ Udp::UdpChannel::UdpChannel(std::shared_ptr<Udp> parent, boost::asio::ip::udp::e
     : _Parent(parent), _Peer(peer) {}
 Udp::UdpChannel::~UdpChannel() { _Parent->RemoveChannel(_Peer); }
 
-Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::Start() { co_return ErrorCode{}; }
+Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::Start() {
+  auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
+  fiber.Spawn("Start UdpChannel:" + boost::lexical_cast<std::string>(_Peer), [this]() -> Omni::Fiber::Coroutine<void> {
+    auto me = std::dynamic_pointer_cast<UdpChannel>(shared_from_this());
+    co_await _Stop.GetFiberCancelEvent();
+    if (_PipelineCount > 0) {
+      co_await _GracefulExitEvent;
+    }
+    BOOST_LOG_TRIVIAL(info) << "UdpChannel(" << this << ") graceful exit triggered, closing pipe";
+    _Pipe.GetProducer().Close();
+    co_return;
+  });
+  co_return ErrorCode{};
+}
 
 Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::Read(Packet& p, Cancel& c) {
   bool stopped = false;
@@ -60,7 +73,7 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::Write(Packet& p, Cancel& c) {
 }
 
 Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::Stop() {
-  _Pipe.GetProducer().Close();
+  _Stop.Trigger();
   co_return ErrorCode{};
 }
 

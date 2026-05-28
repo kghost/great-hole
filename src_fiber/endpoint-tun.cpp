@@ -5,6 +5,7 @@
 #include <linux/if_tun.h>
 
 #include "Asio.hpp"
+#include "GetCurrentFiber.hpp"
 
 namespace gh {
 
@@ -27,6 +28,20 @@ Omni::Fiber::Coroutine<ErrorCode> Tun::Start() {
 
   _TunFileDescriptor.assign(fd);
   _TunFileDescriptor.non_blocking(true);
+
+  auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
+  fiber.Spawn("Start Tun:" + _Name, [this]() -> Omni::Fiber::Coroutine<void> {
+    auto me = std::dynamic_pointer_cast<Tun>(shared_from_this());
+    co_await _Stop.GetFiberCancelEvent();
+    if (_PipelineCount > 0) {
+      co_await _GracefulExitEvent;
+    }
+    assert(_PipelineCount = 0);
+    BOOST_LOG_TRIVIAL(info) << "Tun(" << this << ") graceful exit triggered, closing descriptor";
+    _TunFileDescriptor.close();
+    co_return;
+  });
+
   co_return ErrorCode{};
 }
 
@@ -45,8 +60,8 @@ Omni::Fiber::Coroutine<ErrorCode> Tun::Write(Packet& p, Cancel& c) {
 }
 
 Omni::Fiber::Coroutine<ErrorCode> Tun::Stop() {
-  boost::system::error_code ec;
-  co_return _TunFileDescriptor.close(ec);
+  _Stop.Trigger();
+  co_return ErrorCode{};
 }
 
 } // namespace gh

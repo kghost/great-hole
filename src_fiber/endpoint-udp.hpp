@@ -43,7 +43,7 @@ private:
   std::map<boost::asio::ip::udp::endpoint, std::weak_ptr<UdpChannel>> _Channels;
 };
 
-class Udp::UdpChannel : public std::enable_shared_from_this<UdpChannel>, public Endpoint {
+class Udp::UdpChannel : public Endpoint {
 public:
   explicit UdpChannel(std::shared_ptr<Udp> parent, boost::asio::ip::udp::endpoint const& peer);
   ~UdpChannel() override;

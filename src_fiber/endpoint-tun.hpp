@@ -7,7 +7,7 @@
 
 namespace gh {
 
-class Tun : public std::enable_shared_from_this<Tun>, public Endpoint {
+class Tun : public Endpoint {
 public:
   Tun(boost::asio::io_context& io_context, std::string const& name);
 
