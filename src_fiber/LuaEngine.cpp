@@ -1,9 +1,8 @@
 #include "LuaEngine.hpp"
 
 #include <iostream>
-#include <lauxlib.h>
 
-#include "lua-lib.hpp"
+#include "LuaLib.hpp"
 
 extern const char _binary_init_lua_start[];
 extern const char _binary_init_lua_end[];

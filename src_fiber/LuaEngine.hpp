@@ -1,10 +1,9 @@
 #pragma once
 
-#include "LuaInterface.hpp"
-
 #include <lua.hpp>
 
 #include "Coroutine.hpp"
+#include "LuaInterface.hpp"
 
 namespace gh {
 

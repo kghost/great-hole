@@ -1,8 +1,6 @@
 #pragma once
 
-#include "LuaInterface.hpp"
 #include <boost/asio.hpp>
-
 #include <lua.hpp>
 
 namespace gh {

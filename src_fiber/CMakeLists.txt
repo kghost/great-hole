@@ -22,16 +22,16 @@ foreach(suffix "" "-asan")
   endif()
 
   add_library(${target_core} STATIC
-      lua-lib.cpp
-      LuaInterface.cpp
-      pipeline.cpp
-      endpoint.cpp
-      error-code.cpp
-      filter.cpp
-      util-console.cpp
-      endpoint-tun.cpp
-      endpoint-udp.cpp
       ${INIT_LUA_OBJ}
+      LuaLib.cpp
+      LuaInterface.cpp
+      Pipeline.cpp
+      Endpoint.cpp
+      ErrorCode.cpp
+      Filter.cpp
+      UtilConsole.cpp
+      EndpointTun.cpp
+      EndpointUdp.cpp
       LuaEngine.cpp
   )
 

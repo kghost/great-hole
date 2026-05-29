@@ -1,4 +1,4 @@
-#include "endpoint.hpp"
+#include "Endpoint.hpp"
 
 namespace gh {
 

@@ -1,10 +1,10 @@
-#include "util-console.hpp"
+#include "UtilConsole.hpp"
 
 #include <boost/asio.hpp>
 
 #include "Asio.hpp"
 #include "Cancel.hpp"
-#include "endpoint.hpp"
+#include "Endpoint.hpp"
 
 namespace gh {
 

@@ -9,9 +9,9 @@
 
 #include "Cancel.hpp"
 #include "Coroutine.hpp"
+#include "Endpoint.hpp"
+#include "ErrorCode.hpp"
 #include "Pipe.hpp"
-#include "endpoint.hpp"
-#include "error-code.hpp"
 
 namespace gh {
 

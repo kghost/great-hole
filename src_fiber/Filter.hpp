@@ -4,7 +4,7 @@
 
 #include "Cancel.hpp"
 #include "Coroutine.hpp"
-#include "packet.hpp"
+#include "Packet.hpp"
 
 namespace gh {
 

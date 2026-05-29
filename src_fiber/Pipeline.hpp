@@ -4,10 +4,10 @@
 #include <vector>
 
 #include "Coroutine.hpp"
-#include "endpoint.hpp"
-#include "error-code.hpp"
-#include "filter.hpp"
-#include "service.hpp"
+#include "Endpoint.hpp"
+#include "ErrorCode.hpp"
+#include "Filter.hpp"
+#include "Service.hpp"
 
 namespace gh {
 
@@ -29,4 +29,3 @@ private:
 };
 
 } // namespace gh
-

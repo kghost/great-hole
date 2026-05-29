@@ -1,4 +1,4 @@
-#include "error-code.hpp"
+#include "ErrorCode.hpp"
 
 namespace gh {
 

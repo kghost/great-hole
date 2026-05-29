@@ -2,8 +2,8 @@
 
 #include <vector>
 
-#include "filter.hpp"
-#include "packet.hpp"
+#include "Filter.hpp"
+#include "Packet.hpp"
 
 namespace gh {
 

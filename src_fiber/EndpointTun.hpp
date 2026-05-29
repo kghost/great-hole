@@ -3,7 +3,7 @@
 #include <boost/asio.hpp>
 #include <boost/asio/posix/basic_descriptor.hpp>
 
-#include "endpoint.hpp"
+#include "Endpoint.hpp"
 
 namespace gh {
 

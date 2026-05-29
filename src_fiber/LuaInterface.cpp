@@ -1,11 +1,5 @@
 #include "LuaInterface.hpp"
 
-#include <boost/asio.hpp>
-#include <functional>
-#include <lua.hpp>
-#include <optional>
-#include <utility>
-
 #include "Coroutine.hpp"
 
 namespace gh {

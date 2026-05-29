@@ -1,4 +1,4 @@
-#include "filter.hpp"
+#include "Filter.hpp"
 
 namespace gh {
 

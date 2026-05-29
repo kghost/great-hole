@@ -2,9 +2,9 @@
 
 #include "Cancel.hpp"
 #include "Coroutine.hpp"
-#include "error-code.hpp"
-#include "packet.hpp"
-#include "service.hpp"
+#include "ErrorCode.hpp"
+#include "Packet.hpp"
+#include "Service.hpp"
 
 namespace gh {
 
@@ -32,4 +32,3 @@ public:
 };
 
 } // namespace gh
-

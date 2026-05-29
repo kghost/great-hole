@@ -1,20 +1,22 @@
-#include "lua-lib.hpp"
-#include <array>
-#include <lua.hpp>
+#include "LuaLib.hpp"
 
-#include <boost/asio/ip/address_v6.hpp>
+#include <array>
 #include <memory>
 
+#include <boost/asio/ip/address_v6.hpp>
+#include <lua.hpp>
+
 #include "Coroutine.hpp"
-#include "endpoint-tun.hpp"
+#include "EndpointTun.hpp"
 // #include "endpoint-udp-dyn-mux-client.hpp"
 // #include "endpoint-udp-dyn-mux-server.hpp"
 // #include "endpoint-udp-mux-client.hpp"
 // #include "endpoint-udp-mux-server.hpp"
-#include "endpoint-udp.hpp"
-#include "error-code.hpp"
-#include "filter-xor.hpp"
-#include "pipeline.hpp"
+#include "EndpointUdp.hpp"
+#include "ErrorCode.hpp"
+#include "FilterXor.hpp"
+#include "LuaInterface.hpp"
+#include "Pipeline.hpp"
 
 namespace gh {
 
