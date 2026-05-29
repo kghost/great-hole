@@ -30,7 +30,10 @@ public:
   std::size_t FrontSpace() const { return _Offset; }
   std::size_t BackSpace() const { return _Data.capacity() - _Offset - _Length; }
 
-  void PushFront(std::span<uint8_t> data) {
+  std::span<uint8_t> Data() { return std::span<uint8_t>(_Data.data() + _Offset, _Length); }
+  std::span<const uint8_t> Data() const { return std::span<const uint8_t>(_Data.data() + _Offset, _Length); }
+
+  void PushFront(std::span<const uint8_t> data) {
     assert(FrontSpace() >= data.size());
     _Offset -= data.size();
     _Length += data.size();
@@ -45,7 +48,7 @@ public:
     return span;
   }
 
-  void PushBack(std::span<uint8_t> data) {
+  void PushBack(std::span<const uint8_t> data) {
     assert(BackSpace() >= data.size());
     std::copy(data.begin(), data.end(), _Data.data() + _Offset + _Length);
     _Length += data.size();

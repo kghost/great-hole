@@ -1,6 +1,7 @@
 #include "EndpointUdpMuxServer.hpp"
 
 #include <cassert>
+#include <cstdint>
 #include <expected>
 #include <format>
 #include <map>
@@ -171,19 +172,27 @@ Omni::Fiber::Coroutine<void> UdpMuxServer::ReadLoop() {
       }
       break;
     }
+    p._Length = bytes_transferred;
 
-    if (bytes_transferred < 1) {
-      BOOST_LOG_TRIVIAL(info) << "UdpMuxServer(" << this << ") ignored empty packet";
+    if (p.DataSize() < 1) {
+      BOOST_LOG_TRIVIAL(info) << "UdpMuxServer(" << this << ") ignored empty packet from " << peer;
       continue;
     }
 
-    uint8_t id = p._Data[p._Offset];
-    p._Offset += 1;
-    p._Length = bytes_transferred - 1;
-
+    uint8_t id = p.PopFront(1)[0];
     auto it = _Channels.find(id);
     if (it != _Channels.end()) {
-      it->second.Peer = peer; // learn peer mapping
+      if (it->second.Peer.has_value()) {
+        if (it->second.Peer.value() != peer) {
+          BOOST_LOG_TRIVIAL(info) << GetName() << " remaps peer " << it->second.Peer.value() << " to " << peer
+                                  << " for channel " << (int)id;
+          it->second.Peer = peer;
+        }
+      } else {
+        BOOST_LOG_TRIVIAL(info) << GetName() << " learns peer " << peer << " for channel " << (int)id;
+        it->second.Peer = peer;
+      }
+
       if (auto ch = it->second.WeakChannel.lock()) {
         co_await ch->Send(std::move(p));
       } else {
@@ -205,13 +214,11 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMuxServer::WriteTo(uint8_t id, Packet& p, C
     co_return ErrorCode{AppErrorCategory::kInvalidPacketSession, kAppError};
   }
 
-  if (p._Offset < 1) {
+  if (p.FrontSpace() < 1) {
     co_return ErrorCode{AppErrorCategory::kInvalidPacketReserved, kAppError};
   }
 
-  p._Offset -= 1;
-  p._Length += 1;
-  p._Data[p._Offset] = id;
+  p.PushFront(std::span<uint8_t, 1>(&id, 1));
 
   auto [err, bytes_transferred] = co_await _Socket.async_send_to(
       boost::asio::const_buffer(p), it->second.Peer.value(),
