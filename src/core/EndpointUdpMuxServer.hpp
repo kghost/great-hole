@@ -89,6 +89,7 @@ private:
   std::shared_ptr<UdpMuxServer> _Parent;
   uint8_t _Id;
   Omni::Fiber::Pipe<std::expected<Packet, ErrorCode>> _Pipe;
+  std::shared_ptr<ResolverEndpoint> _PeerResolver = nullptr;
 };
 
 } // namespace gh

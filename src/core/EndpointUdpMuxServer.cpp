@@ -24,11 +24,31 @@ namespace gh {
 
 UdpMuxServer::Channel::Channel(std::shared_ptr<UdpMuxServer> parent, uint8_t id) : _Parent(parent), _Id(id) {}
 
+UdpMuxServer::Channel::Channel(std::shared_ptr<UdpMuxServer> parent, uint8_t id, std::shared_ptr<ResolverEndpoint> peer)
+    : _Parent(parent), _Id(id), _PeerResolver(peer) {}
+
 UdpMuxServer::Channel::~Channel() { _Parent->RemoveChannel(_Id); }
 
 std::string UdpMuxServer::Channel::GetName() const { return std::format("UdpMuxChannel:[{}]", _Id); }
 
-Omni::Fiber::Coroutine<ErrorCode> UdpMuxServer::Channel::DoStart() { co_return ErrorCode{}; }
+Omni::Fiber::Coroutine<ErrorCode> UdpMuxServer::Channel::DoStart() {
+  if (_PeerResolver) {
+    auto err = co_await _PeerResolver->Start();
+    if (err) {
+      co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
+      co_return err;
+    }
+    auto peerEp = _PeerResolver->GetEndpoint();
+    co_await _PeerResolver->Stop();
+    co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
+
+    auto it = _Parent->_Channels.find(_Id);
+    if (it != _Parent->_Channels.end()) {
+      it->second.Peer = peerEp;
+    }
+  }
+  co_return ErrorCode{};
+}
 
 Omni::Fiber::Coroutine<ErrorCode> UdpMuxServer::Channel::DoGracefulStop() {
   co_await _PipielineUsageCounter.WaitAll();
@@ -143,6 +163,25 @@ Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> UdpMuxServer::CreateChannel(ui
     co_return;
   });
 
+  co_return ch;
+}
+
+Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> UdpMuxServer::CreateChannel(uint8_t id, std::shared_ptr<ResolverEndpoint> peer) {
+  auto ch = std::make_shared<Channel>(std::static_pointer_cast<UdpMuxServer>(shared_from_this()), id, peer);
+  auto [it, inserted] = _Channels.try_emplace(id, ChannelInfo{.WeakChannel = ch, .Peer = std::nullopt});
+  assert(inserted);
+
+  auto event = std::make_shared<Omni::Fiber::Event<ErrorCode>>();
+  co_await _CreateChannelPipe.GetProducer().Put([ch, event]() -> Omni::Fiber::Coroutine<void> {
+    auto err = co_await ch->Start();
+    event->Fire(err);
+    co_return;
+  });
+
+  auto err = co_await *event;
+  if (err) {
+    co_return nullptr;
+  }
   co_return ch;
 }
 

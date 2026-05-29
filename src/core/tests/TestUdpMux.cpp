@@ -14,6 +14,7 @@
 #include "GetCurrentFiber.hpp"
 #include "Manager.hpp"
 #include "Packet.hpp"
+#include "resolvers/ResolverHelper.hpp"
 
 using boost::asio::ip::udp;
 using namespace gh;
@@ -367,6 +368,110 @@ TEST(UdpMuxFiberTest, WriteCancellation) {
 
     auto stopErr = co_await server->Stop();
     EXPECT_FALSE(stopErr);
+
+    co_await current.WaitAll();
+    testPassed = true;
+    co_return;
+  });
+
+  RunEventLoop(io);
+  EXPECT_TRUE(testPassed);
+}
+
+TEST(UdpMuxFiberTest, CreateChannelFromResolverEndpoint) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::Manager manager(executor);
+
+  auto server = std::make_shared<UdpMuxServer>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+
+    auto err = co_await server->Start();
+    EXPECT_FALSE(err);
+    if (err) {
+      co_return;
+    }
+
+    auto serverEp = server->LocalEndpoint();
+
+    auto client = std::make_shared<UdpMuxClient>(io, 42, serverEp, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+    auto clientErr = co_await client->Start();
+    EXPECT_FALSE(clientErr);
+    if (clientErr) {
+      co_await server->Stop();
+      co_return;
+    }
+
+    class MockResolveFor : public ResolveFor {
+    public:
+      MockResolveFor(boost::asio::any_io_executor executor, std::string service, Protocol protocol)
+          : _Executor(executor), _Service(service), _Protocol(protocol) {}
+      ~MockResolveFor() override = default;
+
+      boost::asio::any_io_executor GetExecutor() override { return _Executor; }
+      std::string GetService() override { return _Service; }
+      Protocol GetProtocol() override { return _Protocol; }
+
+      boost::asio::any_io_executor _Executor;
+      std::string _Service;
+      Protocol _Protocol;
+    };
+    auto mockedResolveFor = MockResolveFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
+
+    // Create a dynamic ResolverEndpoint for the peer
+    std::string resolverInput = "[::1]:" + std::to_string(client->LocalEndpoint().port());
+    auto resolver = FindResolverEndpoint(resolverInput, mockedResolveFor);
+
+    auto channel = co_await server->CreateChannel(42, resolver);
+    EXPECT_NE(channel, nullptr);
+    if (channel == nullptr) {
+      co_await client->Stop();
+      co_await server->Stop();
+      co_return;
+    }
+
+    // Ping pong test
+    Packet sendPacket;
+    std::string testMsg = "Hello Dynamic Resolver Mux!";
+    std::copy(testMsg.begin(), testMsg.end(), sendPacket._Data.begin() + sendPacket._Offset);
+    sendPacket._Length = testMsg.size();
+
+    Cancel cancelObj;
+    bool readCompleted = false;
+    bool writeCompleted = false;
+
+    auto writeFiber = current.Spawn("writer", [&]() -> Omni::Fiber::Coroutine<void> {
+      auto writeErr = co_await channel->Write(sendPacket, cancelObj);
+      EXPECT_FALSE(writeErr);
+      writeCompleted = true;
+      co_return;
+    });
+
+    auto readFiber = current.Spawn("reader", [&]() -> Omni::Fiber::Coroutine<void> {
+      Packet receivePacket;
+      auto readErr = co_await client->Read(receivePacket, cancelObj);
+      EXPECT_FALSE(readErr);
+
+      std::string receivedMsg(receivePacket._Data.begin() + receivePacket._Offset,
+                              receivePacket._Data.begin() + receivePacket._Offset + receivePacket._Length);
+      EXPECT_EQ(receivedMsg, testMsg);
+      readCompleted = true;
+      co_return;
+    });
+
+    co_await current.Join(writeFiber);
+    co_await current.Join(readFiber);
+
+    EXPECT_TRUE(readCompleted);
+    EXPECT_TRUE(writeCompleted);
+
+    auto stopErr1 = co_await client->Stop();
+    EXPECT_FALSE(stopErr1);
+    auto stopErr2 = co_await server->Stop();
+    EXPECT_FALSE(stopErr2);
 
     co_await current.WaitAll();
     testPassed = true;

@@ -223,20 +223,40 @@ static int udp_new(lua_State* L) {
 
 // udp-mux-server
 static int udp_mux_server_create_channel(lua_State* L) {
-  if (lua_gettop(L) != 2) {
-    return luaL_error(L, "udp_mux_server_create_channel: not enough arguments");
+  auto top = lua_gettop(L);
+  if (top < 2 || top > 4) {
+    return luaL_error(L, "udp_mux_server_create_channel: invalid number of arguments");
   }
 
-  auto id = (uint8_t)lua_tonumber(L, 2);
+  auto id = (uint8_t)luaL_checknumber(L, 2);
   auto& u = *(std::shared_ptr<UdpMuxServer>*)luaL_checkudata(L, 1, name_udp_mux_server);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  auto ch = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>();
-  luaL_getmetatable(L, name_endpoint);
-  lua_setmetatable(L, -2);
+  std::shared_ptr<ResolverEndpoint> resolver = nullptr;
+  if (top == 3) {
+    auto input = luaL_checkstring(L, 3);
+    resolver = FindResolverEndpoint(input, u->GetResolveFor());
+  } else if (top == 4) {
+    auto host = luaL_checkstring(L, 3);
+    luaL_checkany(L, 4);
+    auto port = lua_tostring(L, 4);
+    if (!port) {
+      return luaL_error(L, "udp_mux_server_create_channel: port must be a number or a string");
+    }
+    resolver = std::make_shared<ResolverCombinedEndpoint>(FindResolverIp(host, u->GetResolveFor()),
+                                                          FindResolverPort(port, u->GetResolveFor()));
+  }
 
-  interface.Schedule([&interface, u, id, ch](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    *ch = co_await u->CreateChannel(id);
+  interface.Schedule([&interface, u, id, resolver](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    auto ch = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>();
+    luaL_getmetatable(L, name_endpoint);
+    lua_setmetatable(L, -2);
+
+    if (resolver) {
+      *ch = co_await u->CreateChannel(id, resolver);
+    } else {
+      *ch = co_await u->CreateChannel(id);
+    }
     co_return 1;
   });
 
