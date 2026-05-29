@@ -1,6 +1,5 @@
 #include <memory>
 #include <string>
-#include <vector>
 
 #include <boost/asio.hpp>
 #include <gtest/gtest.h>
@@ -36,22 +35,16 @@ TEST(ResolverTest, StaticIpResolverSuccess) {
     auto err1 = co_await r1->Start();
     EXPECT_FALSE(err1);
     if (!err1) {
-      auto addrs = r1->GetAddresses();
-      EXPECT_EQ(addrs.size(), 1);
-      if (addrs.size() == 1) {
-        EXPECT_EQ(addrs[0].to_string(), "127.0.0.1");
-      }
+      auto addr = r1->GetAddress();
+      EXPECT_EQ(addr.to_string(), "127.0.0.1");
     }
 
     auto r2 = std::make_shared<ResolverStaticIp>("::1");
     auto err2 = co_await r2->Start();
     EXPECT_FALSE(err2);
     if (!err2) {
-      auto addrs = r2->GetAddresses();
-      EXPECT_EQ(addrs.size(), 1);
-      if (addrs.size() == 1) {
-        EXPECT_EQ(addrs[0].to_string(), "::1");
-      }
+      auto addr = r2->GetAddress();
+      EXPECT_EQ(addr.to_string(), "::1");
     }
 
     co_await r1->Stop();
@@ -167,8 +160,8 @@ TEST(ResolverTest, StaticDnsResolverSuccess) {
     // DNS resolving "localhost" should succeed on any machine
     EXPECT_FALSE(err);
     if (!err) {
-      auto addrs = r->GetAddresses();
-      EXPECT_FALSE(addrs.empty());
+      auto addr = r->GetAddress();
+      EXPECT_FALSE(addr.is_unspecified());
     }
 
     co_await r->Stop();
@@ -197,12 +190,9 @@ TEST(ResolverTest, ResolverEndpointSuccess) {
     auto err = co_await r->Start();
     EXPECT_FALSE(err);
     if (!err) {
-      auto endpoints = r->GetEndpoints();
-      EXPECT_EQ(endpoints.size(), 1);
-      if (endpoints.size() == 1) {
-        EXPECT_EQ(endpoints[0].address().to_string(), "127.0.0.1");
-        EXPECT_EQ(endpoints[0].port(), 9090);
-      }
+      auto endpoint = r->GetEndpoint();
+      EXPECT_EQ(endpoint.address().to_string(), "127.0.0.1");
+      EXPECT_EQ(endpoint.port(), 9090);
     }
 
     co_await r->Stop();
@@ -297,18 +287,15 @@ TEST(ResolverTest, ResolverHelperTest) {
     auto err1 = co_await ipRes1->Start();
     EXPECT_FALSE(err1);
     if (!err1) {
-      auto addrs = ipRes1->GetAddresses();
-      EXPECT_EQ(addrs.size(), 1);
-      if (addrs.size() == 1) {
-        EXPECT_EQ(addrs[0].to_string(), "127.0.0.1");
-      }
+      auto addr = ipRes1->GetAddress();
+      EXPECT_EQ(addr.to_string(), "127.0.0.1");
     }
 
     auto ipRes2 = FindResolverIp(io, "localhost");
     auto err2 = co_await ipRes2->Start();
     EXPECT_FALSE(err2);
     if (!err2) {
-      EXPECT_FALSE(ipRes2->GetAddresses().empty());
+      EXPECT_FALSE(ipRes2->GetAddress().is_unspecified());
     }
 
     // 2. Test FindResolverPort
@@ -324,12 +311,9 @@ TEST(ResolverTest, ResolverHelperTest) {
     auto err4 = co_await epRes1->Start();
     EXPECT_FALSE(err4);
     if (!err4) {
-      auto endpoints = epRes1->GetEndpoints();
-      EXPECT_EQ(endpoints.size(), 1);
-      if (endpoints.size() == 1) {
-        EXPECT_EQ(endpoints[0].address().to_string(), "127.0.0.1");
-        EXPECT_EQ(endpoints[0].port(), 9090);
-      }
+      auto endpoint = epRes1->GetEndpoint();
+      EXPECT_EQ(endpoint.address().to_string(), "127.0.0.1");
+      EXPECT_EQ(endpoint.port(), 9090);
     }
 
     // 4. Test FindResolverEndpoint (Combined IPv6)
@@ -337,12 +321,9 @@ TEST(ResolverTest, ResolverHelperTest) {
     auto err5 = co_await epRes2->Start();
     EXPECT_FALSE(err5);
     if (!err5) {
-      auto endpoints = epRes2->GetEndpoints();
-      EXPECT_EQ(endpoints.size(), 1);
-      if (endpoints.size() == 1) {
-        EXPECT_EQ(endpoints[0].address().to_string(), "::1");
-        EXPECT_EQ(endpoints[0].port(), 9999);
-      }
+      auto endpoint = epRes2->GetEndpoint();
+      EXPECT_EQ(endpoint.address().to_string(), "::1");
+      EXPECT_EQ(endpoint.port(), 9999);
     }
 
     // 5. Test FindResolverEndpoint (SRV Dns Service)

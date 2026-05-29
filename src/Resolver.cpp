@@ -7,6 +7,7 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/log/trivial.hpp>
 #include <cstring>
+#include <random>
 #include <thread>
 
 #include "Asio.hpp"
@@ -19,7 +20,12 @@ namespace gh {
 // ==================== ResolverStaticIp ====================
 ResolverStaticIp::ResolverStaticIp(std::string const& ipStr) : _IpStr(ipStr) {}
 
-std::vector<boost::asio::ip::address> ResolverStaticIp::GetAddresses() const { return _Addresses; }
+boost::asio::ip::address ResolverStaticIp::GetAddress() const {
+  if (_Addresses.empty()) {
+    return boost::asio::ip::address{};
+  }
+  return _Addresses[0];
+}
 
 Omni::Fiber::Coroutine<ErrorCode> ResolverStaticIp::DoStart() {
   try {
@@ -37,7 +43,15 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverStaticIp::DoGracefulStop() { co_return
 ResolverStaticDns::ResolverStaticDns(boost::asio::io_context& ioContext, std::string const& host)
     : _IoContext(ioContext), _Host(host) {}
 
-std::vector<boost::asio::ip::address> ResolverStaticDns::GetAddresses() const { return _Addresses; }
+boost::asio::ip::address ResolverStaticDns::GetAddress() const {
+  if (_Addresses.empty()) {
+    return boost::asio::ip::address{};
+  }
+  static std::random_device rd;
+  static std::mt19937 gen(rd());
+  std::uniform_int_distribution<size_t> dis(0, _Addresses.size() - 1);
+  return _Addresses[dis(gen)];
+}
 
 Omni::Fiber::Coroutine<ErrorCode> ResolverStaticDns::DoStart() {
   if (_Stop.IsTriggered()) {
@@ -87,7 +101,7 @@ ResolverCombinedEndpoint::ResolverCombinedEndpoint(boost::asio::io_context& ioCo
                                                    std::shared_ptr<ResolverPort> portResolver)
     : _IoContext(ioContext), _IpResolver(ipResolver), _PortResolver(portResolver) {}
 
-std::vector<boost::asio::ip::udp::endpoint> ResolverCombinedEndpoint::GetEndpoints() const { return _Endpoints; }
+boost::asio::ip::udp::endpoint ResolverCombinedEndpoint::GetEndpoint() const { return _Endpoint; }
 
 Omni::Fiber::Coroutine<ErrorCode> ResolverCombinedEndpoint::DoStart() {
   auto errIp = co_await _IpResolver->Start();
@@ -99,11 +113,9 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverCombinedEndpoint::DoStart() {
     co_return errPort;
   }
 
-  auto addresses = _IpResolver->GetAddresses();
+  auto addr = _IpResolver->GetAddress();
   auto port = _PortResolver->GetPort();
-  for (auto const& addr : addresses) {
-    _Endpoints.emplace_back(addr, port);
-  }
+  _Endpoint = boost::asio::ip::udp::endpoint(addr, port);
   co_return ErrorCode{};
 }
 
@@ -124,7 +136,15 @@ struct SRVResult {
 ResolverDnsService::ResolverDnsService(boost::asio::io_context& ioContext, std::string const& serviceName)
     : _IoContext(ioContext), _ServiceName(serviceName) {}
 
-std::vector<boost::asio::ip::udp::endpoint> ResolverDnsService::GetEndpoints() const { return _Endpoints; }
+boost::asio::ip::udp::endpoint ResolverDnsService::GetEndpoint() const {
+  if (_Endpoints.empty()) {
+    return boost::asio::ip::udp::endpoint{};
+  }
+  static std::random_device rd;
+  static std::mt19937 gen(rd());
+  std::uniform_int_distribution<size_t> dis(0, _Endpoints.size() - 1);
+  return _Endpoints[dis(gen)];
+}
 
 Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() {
   if (_Stop.IsTriggered()) {

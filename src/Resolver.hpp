@@ -8,7 +8,6 @@
 
 #include "Coroutine.hpp"
 #include "ErrorCode.hpp"
-#include "Event.hpp"
 #include "ServiceBase.hpp"
 
 namespace gh {
@@ -18,7 +17,7 @@ class ResolverIp : public ServiceBase {
 public:
   virtual ~ResolverIp() override = default;
 
-  virtual std::vector<boost::asio::ip::address> GetAddresses() const = 0;
+  virtual boost::asio::ip::address GetAddress() const = 0;
 };
 
 // ==================== ResolverPort ====================
@@ -40,7 +39,7 @@ public:
   ResolverStaticIp(ResolverStaticIp&&) = delete;
   ResolverStaticIp& operator=(ResolverStaticIp&&) = delete;
 
-  std::vector<boost::asio::ip::address> GetAddresses() const override;
+  boost::asio::ip::address GetAddress() const override;
 
 protected:
   std::string GetName() const override { return "ResolverStaticIp"; }
@@ -63,7 +62,7 @@ public:
   ResolverStaticDns(ResolverStaticDns&&) = delete;
   ResolverStaticDns& operator=(ResolverStaticDns&&) = delete;
 
-  std::vector<boost::asio::ip::address> GetAddresses() const override;
+  boost::asio::ip::address GetAddress() const override;
 
 protected:
   std::string GetName() const override { return "ResolverStaticDns"; }
@@ -106,14 +105,13 @@ class ResolverEndpoint : public ServiceBase {
 public:
   virtual ~ResolverEndpoint() override = default;
 
-  virtual std::vector<boost::asio::ip::udp::endpoint> GetEndpoints() const = 0;
+  virtual boost::asio::ip::udp::endpoint GetEndpoint() const = 0;
 };
 
 // ==================== ResolverCombinedEndpoint ====================
 class ResolverCombinedEndpoint final : public ResolverEndpoint {
 public:
-  explicit ResolverCombinedEndpoint(boost::asio::io_context& ioContext,
-                                    std::shared_ptr<ResolverIp> ipResolver,
+  explicit ResolverCombinedEndpoint(boost::asio::io_context& ioContext, std::shared_ptr<ResolverIp> ipResolver,
                                     std::shared_ptr<ResolverPort> portResolver);
   ~ResolverCombinedEndpoint() override = default;
 
@@ -122,7 +120,7 @@ public:
   ResolverCombinedEndpoint(ResolverCombinedEndpoint&&) = delete;
   ResolverCombinedEndpoint& operator=(ResolverCombinedEndpoint&&) = delete;
 
-  std::vector<boost::asio::ip::udp::endpoint> GetEndpoints() const override;
+  boost::asio::ip::udp::endpoint GetEndpoint() const override;
 
 protected:
   std::string GetName() const override { return "ResolverCombinedEndpoint"; }
@@ -133,7 +131,7 @@ private:
   boost::asio::io_context& _IoContext;
   std::shared_ptr<ResolverIp> _IpResolver;
   std::shared_ptr<ResolverPort> _PortResolver;
-  std::vector<boost::asio::ip::udp::endpoint> _Endpoints;
+  boost::asio::ip::udp::endpoint _Endpoint;
 };
 
 // ==================== ResolverDnsService ====================
@@ -147,7 +145,7 @@ public:
   ResolverDnsService(ResolverDnsService&&) = delete;
   ResolverDnsService& operator=(ResolverDnsService&&) = delete;
 
-  std::vector<boost::asio::ip::udp::endpoint> GetEndpoints() const override;
+  boost::asio::ip::udp::endpoint GetEndpoint() const override;
 
 protected:
   std::string GetName() const override { return "ResolverDnsService"; }

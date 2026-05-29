@@ -1,7 +1,5 @@
 #include "ResolverHelper.hpp"
 
-#include <stdexcept>
-
 namespace gh {
 
 std::shared_ptr<ResolverIp> FindResolverIp(boost::asio::io_context& ioContext, std::string const& input) {
@@ -24,10 +22,8 @@ std::shared_ptr<ResolverPort> FindResolverPort(std::string const& input) {
   return std::make_shared<ResolverStaticPort>(input);
 }
 
-std::shared_ptr<ResolverEndpoint> FindResolverEndpoint(boost::asio::io_context& ioContext,
-                                                       std::string const& input,
-                                                       std::string const& service,
-                                                       std::string const& protocol) {
+std::shared_ptr<ResolverEndpoint> FindResolverEndpoint(boost::asio::io_context& ioContext, std::string const& input,
+                                                       std::string const& service, std::string const& protocol) {
   if (!service.empty() && !protocol.empty()) {
     std::string srvName = "_" + service + "._" + protocol + "." + input;
     return std::make_shared<ResolverDnsService>(ioContext, srvName);
