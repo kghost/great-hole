@@ -78,7 +78,7 @@ int main(int ac, char** av) {
         boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
         while (!stop_signal.IsTriggered()) {
           auto [err, signal_number] = co_await signals.async_wait(
-              boost::asio::bind_cancellation_slot(stop_signal.GetAsioCancelSlot(), Omni::Fiber::AsioUseFiber));
+              boost::asio::bind_cancellation_slot(stop_signal.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
           if (!err) {
             stop_signal.Trigger();
           } else if (err == boost::asio::error::operation_aborted) {

@@ -35,6 +35,8 @@ foreach(suffix "" "-asan")
       EndpointUdp.cpp
       EndpointUdpMuxServer.cpp
       EndpointUdpMuxClient.cpp
+      EndpointUdpDynMuxServer.cpp
+      EndpointUdpDynMuxClient.cpp
       LuaEngine.cpp
   )
 

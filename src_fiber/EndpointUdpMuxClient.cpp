@@ -37,7 +37,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMuxClient::DoStart() {
   }
 
   auto [err] = co_await _Socket.async_connect(
-      _Peer, boost::asio::bind_cancellation_slot(_Stop.GetAsioCancelSlot(), Omni::Fiber::AsioUseFiber));
+      _Peer, boost::asio::bind_cancellation_slot(_Stop.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
   if (err) {
     BOOST_LOG_TRIVIAL(info) << "UdpMuxClient(" << this << ") connect failed: " << err.message();
     co_return err;
@@ -53,6 +53,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMuxClient::DoGracefulStop() {
 }
 
 Omni::Fiber::Coroutine<ErrorCode> UdpMuxClient::Read(Packet& p, Cancel& c) {
+  auto slotTracker = c.AsioSlot();
   while (true) {
     if (c.IsTriggered()) {
       co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
@@ -60,7 +61,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMuxClient::Read(Packet& p, Cancel& c) {
 
     auto [err, bytes_transferred] = co_await _Socket.async_receive(
         boost::asio::mutable_buffer(p),
-        boost::asio::bind_cancellation_slot(c.GetAsioCancelSlot(), Omni::Fiber::AsioUseFiber));
+        boost::asio::bind_cancellation_slot(slotTracker.Slot(), Omni::Fiber::AsioUseFiber));
     if (err) {
       co_return err;
     }
@@ -95,9 +96,9 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMuxClient::Write(Packet& p, Cancel& c) {
   p._Length += 1;
   p._Data[p._Offset] = _Id;
 
-  auto [err, bytes_transferred] = co_await _Socket.async_send(
-      boost::asio::const_buffer(p),
-      boost::asio::bind_cancellation_slot(c.GetAsioCancelSlot(), Omni::Fiber::AsioUseFiber));
+  auto [err, bytes_transferred] =
+      co_await _Socket.async_send(boost::asio::const_buffer(p),
+                                  boost::asio::bind_cancellation_slot(c.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
   assert(err || bytes_transferred == p._Length);
   co_return err;
 }

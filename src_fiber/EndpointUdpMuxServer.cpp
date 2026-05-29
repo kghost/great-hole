@@ -148,13 +148,14 @@ Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> UdpMuxServer::CreateChannel(ui
 void UdpMuxServer::RemoveChannel(uint8_t id) { _Channels.erase(id); }
 
 Omni::Fiber::Coroutine<void> UdpMuxServer::ReadLoop() {
+  auto slotTracker = _Stop.AsioSlot();
   while (!_Stop.IsTriggered()) {
     Packet p;
     boost::asio::ip::udp::endpoint peer;
 
     auto [err, bytes_transferred] = co_await _Socket.async_receive_from(
         boost::asio::mutable_buffer(p), peer,
-        boost::asio::bind_cancellation_slot(_Stop.GetAsioCancelSlot(), Omni::Fiber::AsioUseFiber));
+        boost::asio::bind_cancellation_slot(slotTracker.Slot(), Omni::Fiber::AsioUseFiber));
     if (err) {
       if (err == boost::asio::error::operation_aborted) {
         BOOST_LOG_TRIVIAL(info) << "UdpMuxServer(" << this << ") read loop cancelled";
@@ -214,7 +215,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMuxServer::WriteTo(uint8_t id, Packet& p, C
 
   auto [err, bytes_transferred] = co_await _Socket.async_send_to(
       boost::asio::const_buffer(p), it->second.Peer.value(),
-      boost::asio::bind_cancellation_slot(c.GetAsioCancelSlot(), Omni::Fiber::AsioUseFiber));
+      boost::asio::bind_cancellation_slot(c.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
   assert(err || bytes_transferred == p._Length);
   co_return err;
 }

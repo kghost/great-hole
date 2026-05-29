@@ -23,3 +23,9 @@ target_link_libraries(udp_mux_fiber_test PRIVATE great-hole-core-fiber-asan GTes
 target_compile_options(udp_mux_fiber_test PRIVATE -fsanitize=address -fno-omit-frame-pointer)
 target_link_options(udp_mux_fiber_test PRIVATE -fsanitize=address)
 gtest_discover_tests(udp_mux_fiber_test)
+
+add_executable(udp_dyn_mux_fiber_test test_udp_dyn_mux_fiber.cpp)
+target_link_libraries(udp_dyn_mux_fiber_test PRIVATE great-hole-core-fiber-asan GTest::gtest_main)
+target_compile_options(udp_dyn_mux_fiber_test PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+target_link_options(udp_dyn_mux_fiber_test PRIVATE -fsanitize=address)
+gtest_discover_tests(udp_dyn_mux_fiber_test)
