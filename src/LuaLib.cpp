@@ -17,7 +17,8 @@
 #include "FilterXor.hpp"
 #include "LuaInterface.hpp"
 #include "Pipeline.hpp"
-#include "resolvers/ResolverHelper.hpp"
+#include "ResolverCombinedEndpoint.hpp"
+#include "ResolverHelper.hpp"
 
 namespace gh {
 

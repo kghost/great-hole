@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <expected>
+#include <format>
 #include <map>
 #include <memory>
 #include <tuple>
@@ -29,7 +30,8 @@ Udp::UdpChannel::~UdpChannel() {
 }
 
 std::string Udp::UdpChannel::GetName() const {
-  std::string ret = "UdpChannel:";
+  std::string ret = std::format("UdpChannel({:p})@({}):", static_cast<const void*>(this),
+                                boost::lexical_cast<std::string>(_Parent->LocalEndpoint()));
   if (std::holds_alternative<boost::asio::ip::udp::endpoint>(_Peer)) {
     ret += boost::lexical_cast<std::string>(std::get<boost::asio::ip::udp::endpoint>(_Peer));
   } else if (std::holds_alternative<std::shared_ptr<ResolverEndpoint>>(_Peer)) {
