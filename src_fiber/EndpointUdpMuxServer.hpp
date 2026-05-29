@@ -7,34 +7,37 @@
 
 #include <boost/asio.hpp>
 
-#include "Cancel.hpp"
 #include "Coroutine.hpp"
 #include "Endpoint.hpp"
 #include "ErrorCode.hpp"
 #include "Pipe.hpp"
+#include "ServiceBase.hpp"
 
 namespace gh {
 
-class UdpMuxServer : public std::enable_shared_from_this<UdpMuxServer> {
+class UdpMuxServer : public ServiceBase {
 public:
   class Channel;
 
   explicit UdpMuxServer(boost::asio::io_context& ioContext);
   explicit UdpMuxServer(boost::asio::io_context& ioContext, boost::asio::ip::udp::endpoint bind);
-  ~UdpMuxServer();
+  ~UdpMuxServer() override;
 
   UdpMuxServer(const UdpMuxServer&) = delete;
   UdpMuxServer& operator=(const UdpMuxServer&) = delete;
   UdpMuxServer(UdpMuxServer&&) = delete;
   UdpMuxServer& operator=(UdpMuxServer&&) = delete;
 
-  Omni::Fiber::Coroutine<ErrorCode> Start();
-  Omni::Fiber::Coroutine<ErrorCode> Stop();
-
   Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> CreateChannel(uint8_t id);
   void RemoveChannel(uint8_t id);
   Omni::Fiber::Coroutine<ErrorCode> WriteTo(uint8_t id, Packet& p, Cancel& c);
   boost::asio::ip::udp::endpoint LocalEndpoint() const { return _Socket.local_endpoint(); }
+
+protected:
+  std::string GetName() const override;
+  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
+  Omni::Fiber::Coroutine<void> DoWork() override;
+  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 
 private:
   Omni::Fiber::Coroutine<void> ReadLoop();
@@ -44,7 +47,6 @@ private:
   std::map<uint8_t, std::weak_ptr<Channel>> _Channels;
   std::map<uint8_t, boost::asio::ip::udp::endpoint> _Peers;
   Omni::Fiber::Pipe<std::move_only_function<Omni::Fiber::Coroutine<void>()>> _CreateChannelPipe;
-  Cancel _Stop;
 };
 
 class UdpMuxServer::Channel : public Endpoint {
