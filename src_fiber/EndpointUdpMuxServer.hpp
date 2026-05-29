@@ -4,6 +4,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 
 #include <boost/asio.hpp>
 
@@ -42,10 +43,14 @@ protected:
 private:
   Omni::Fiber::Coroutine<void> ReadLoop();
 
+  struct ChannelInfo {
+    std::weak_ptr<Channel> WeakChannel;
+    std::optional<boost::asio::ip::udp::endpoint> Peer;
+  };
+
   boost::asio::ip::udp::socket _Socket;
   boost::asio::ip::udp::endpoint _Local;
-  std::map<uint8_t, std::weak_ptr<Channel>> _Channels;
-  std::map<uint8_t, boost::asio::ip::udp::endpoint> _Peers;
+  std::map<uint8_t, ChannelInfo> _Channels;
   Omni::Fiber::Pipe<std::move_only_function<Omni::Fiber::Coroutine<void>()>> _CreateChannelPipe;
 };
 

@@ -76,9 +76,7 @@ UdpMuxServer::UdpMuxServer(boost::asio::io_context& ioContext, boost::asio::ip::
 
 UdpMuxServer::~UdpMuxServer() {}
 
-std::string UdpMuxServer::GetName() const {
-  return "UdpMuxServer:" + boost::lexical_cast<std::string>(_Local);
-}
+std::string UdpMuxServer::GetName() const { return "UdpMuxServer:" + boost::lexical_cast<std::string>(_Local); }
 
 Omni::Fiber::Coroutine<ErrorCode> UdpMuxServer::DoStart() {
   try {
@@ -105,15 +103,14 @@ Omni::Fiber::Coroutine<void> UdpMuxServer::DoWork() {
   bool stopped = false;
   while (!stopped) {
     std::optional<std::move_only_function<Omni::Fiber::Coroutine<void>()>> pendingFunc;
-    co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(_Stop.GetFiberCancelEvent(), [&]() { stopped = true; }),
-        Omni::Fiber::SelectPair(_CreateChannelPipe.GetConsumer(), [&](auto data) {
-          if (data.has_value()) {
-            pendingFunc = std::move(data.value());
-          } else {
-            stopped = true;
-          }
-        }));
+    co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(_Stop.GetFiberCancelEvent(), [&]() { stopped = true; }),
+                                 Omni::Fiber::SelectPair(_CreateChannelPipe.GetConsumer(), [&](auto data) {
+                                   if (data.has_value()) {
+                                     pendingFunc = std::move(data.value());
+                                   } else {
+                                     stopped = true;
+                                   }
+                                 }));
     if (pendingFunc.has_value()) {
       co_await pendingFunc.value()();
     }
@@ -121,8 +118,8 @@ Omni::Fiber::Coroutine<void> UdpMuxServer::DoWork() {
 }
 
 Omni::Fiber::Coroutine<ErrorCode> UdpMuxServer::DoGracefulStop() {
-  for (auto& [id, ch_weak] : _Channels) {
-    if (auto ch = ch_weak.lock()) {
+  for (auto& [id, info] : _Channels) {
+    if (auto ch = info.WeakChannel.lock()) {
       co_await ch->Stop();
     }
   }
@@ -133,9 +130,9 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMuxServer::DoGracefulStop() {
 }
 
 Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> UdpMuxServer::CreateChannel(uint8_t id) {
-  assert(!_Channels.contains(id));
   auto ch = std::make_shared<Channel>(std::static_pointer_cast<UdpMuxServer>(shared_from_this()), id);
-  _Channels[id] = ch;
+  auto [it, inserted] = _Channels.try_emplace(id, ChannelInfo{.WeakChannel = ch, .Peer = std::nullopt});
+  assert(inserted);
 
   co_await _CreateChannelPipe.GetProducer().Put([this, id, ch]() -> Omni::Fiber::Coroutine<void> {
     auto err = co_await ch->Start();
@@ -163,8 +160,8 @@ Omni::Fiber::Coroutine<void> UdpMuxServer::ReadLoop() {
         BOOST_LOG_TRIVIAL(info) << "UdpMuxServer(" << this << ") read loop cancelled";
       } else {
         BOOST_LOG_TRIVIAL(error) << "UdpMuxServer(" << this << ") read error: " << err.message();
-        for (auto& [id, ch_weak] : _Channels) {
-          if (auto ch = ch_weak.lock()) {
+        for (auto& [id, info] : _Channels) {
+          if (auto ch = info.WeakChannel.lock()) {
             if (!ch->IsStopped()) {
               co_await ch->Send(std::unexpected(err));
             }
@@ -182,11 +179,11 @@ Omni::Fiber::Coroutine<void> UdpMuxServer::ReadLoop() {
     uint8_t id = p._Data[p._Offset];
     p._Offset += 1;
     p._Length = bytes_transferred - 1;
-    _Peers[id] = peer; // learn peer mapping
 
     auto it = _Channels.find(id);
     if (it != _Channels.end()) {
-      if (auto ch = it->second.lock()) {
+      it->second.Peer = peer; // learn peer mapping
+      if (auto ch = it->second.WeakChannel.lock()) {
         co_await ch->Send(std::move(p));
       } else {
         BOOST_LOG_TRIVIAL(info) << "UdpMuxServer(" << this << ") packet from lost channel ID: " << (int)id;
@@ -202,8 +199,8 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMuxServer::WriteTo(uint8_t id, Packet& p, C
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
 
-  auto peer_iter = _Peers.find(id);
-  if (peer_iter == _Peers.end()) {
+  auto it = _Channels.find(id);
+  if (it == _Channels.end() || !it->second.Peer.has_value()) {
     co_return ErrorCode{AppErrorCategory::kInvalidPacketSession, kAppError};
   }
 
@@ -216,7 +213,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMuxServer::WriteTo(uint8_t id, Packet& p, C
   p._Data[p._Offset] = id;
 
   auto [err, bytes_transferred] = co_await _Socket.async_send_to(
-      boost::asio::const_buffer(p), peer_iter->second,
+      boost::asio::const_buffer(p), it->second.Peer.value(),
       boost::asio::bind_cancellation_slot(c.GetAsioCancelSlot(), Omni::Fiber::AsioUseFiber));
   assert(err || bytes_transferred == p._Length);
   co_return err;
