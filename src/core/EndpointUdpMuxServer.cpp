@@ -113,13 +113,13 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMuxServer::DoStart() {
 }
 
 Omni::Fiber::Coroutine<void> UdpMuxServer::DoWork() {
-  auto& currentFiber = co_await Omni::Fiber::GetCurrentFiber();
-  currentFiber.Spawn("UdpMuxServer ReadLoop:" + boost::lexical_cast<std::string>(LocalEndpoint()) + "@" +
-                         std::to_string(reinterpret_cast<uintptr_t>(this)),
-                     [this]() -> Omni::Fiber::Coroutine<void> {
-                       co_await ReadLoop();
-                       co_return;
-                     });
+  (co_await Omni::Fiber::GetCurrentFiber())
+      .Spawn("UdpMuxServer ReadLoop:" + boost::lexical_cast<std::string>(LocalEndpoint()) + "@" +
+                 std::to_string(reinterpret_cast<uintptr_t>(this)),
+             [this]() -> Omni::Fiber::Coroutine<void> {
+               co_await ReadLoop();
+               co_return;
+             });
 
   bool stopped = false;
   while (!stopped) {
@@ -144,8 +144,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMuxServer::DoGracefulStop() {
       co_await ch->Stop();
     }
   }
-  auto& currentFiber = co_await Omni::Fiber::GetCurrentFiber();
-  co_await currentFiber.WaitAll();
+  co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
   _Socket.close();
   co_return ErrorCode{};
 }
@@ -166,7 +165,8 @@ Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> UdpMuxServer::CreateChannel(ui
   co_return ch;
 }
 
-Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> UdpMuxServer::CreateChannel(uint8_t id, std::shared_ptr<ResolverEndpoint> peer) {
+Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> UdpMuxServer::CreateChannel(uint8_t id,
+                                                                              std::shared_ptr<ResolverEndpoint> peer) {
   auto ch = std::make_shared<Channel>(std::static_pointer_cast<UdpMuxServer>(shared_from_this()), id, peer);
   auto [it, inserted] = _Channels.try_emplace(id, ChannelInfo{.WeakChannel = ch, .Peer = std::nullopt});
   assert(inserted);

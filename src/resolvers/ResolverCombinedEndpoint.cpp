@@ -33,8 +33,7 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverCombinedEndpoint::DoStart() {
 Omni::Fiber::Coroutine<ErrorCode> ResolverCombinedEndpoint::DoGracefulStop() {
   co_await _IpResolver->Stop();
   co_await _PortResolver->Stop();
-  auto& current = co_await Omni::Fiber::GetCurrentFiber();
-  co_await current.WaitAll();
+  co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
   co_return ErrorCode{};
 }
 

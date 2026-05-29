@@ -135,8 +135,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMuxServer::DoGracefulStop() {
       co_await ch->Stop();
     }
   }
-  auto& currentFiber = co_await Omni::Fiber::GetCurrentFiber();
-  co_await currentFiber.WaitAll();
+  co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
   _Socket.close();
   co_return ErrorCode{};
 }

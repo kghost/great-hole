@@ -116,13 +116,13 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::DoStart() {
 }
 
 Omni::Fiber::Coroutine<void> Udp::DoWork() {
-  auto& currentFiber = co_await Omni::Fiber::GetCurrentFiber();
-  currentFiber.Spawn("Udp ReadLoop:" + boost::lexical_cast<std::string>(LocalEndpoint()) + "@" +
-                         std::to_string(reinterpret_cast<uintptr_t>(this)),
-                     [this]() -> Omni::Fiber::Coroutine<void> {
-                       co_await ReadLoop();
-                       co_return;
-                     });
+  (co_await Omni::Fiber::GetCurrentFiber())
+      .Spawn("Udp ReadLoop:" + boost::lexical_cast<std::string>(LocalEndpoint()) + "@" +
+                 std::to_string(reinterpret_cast<uintptr_t>(this)),
+             [this]() -> Omni::Fiber::Coroutine<void> {
+               co_await ReadLoop();
+               co_return;
+             });
 
   bool stopped = false;
   while (!stopped) {
@@ -147,8 +147,7 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::DoGracefulStop() {
       co_await ch->Stop();
     }
   }
-  auto& currentFiber = co_await Omni::Fiber::GetCurrentFiber();
-  co_await currentFiber.WaitAll();
+  co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
   _Socket.close();
   co_return ErrorCode{};
 }

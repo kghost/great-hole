@@ -63,8 +63,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMuxClient::DoStart() {
 Omni::Fiber::Coroutine<ErrorCode> UdpDynMuxClient::DoGracefulStop() {
   co_await _PipielineUsageCounter.WaitAll();
   _Socket.close();
-  auto& currentFiber = co_await Omni::Fiber::GetCurrentFiber();
-  co_await currentFiber.WaitAll();
+  co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
   co_return ErrorCode{};
 }
 
