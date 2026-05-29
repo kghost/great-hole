@@ -6,10 +6,12 @@
 #include <boost/program_options.hpp>
 #include <lua.hpp>
 
-#include "error-code.hpp"
-#include "logging.hpp"
-#include "lua-lib.hpp"
-#include "util-console.hpp"
+#include "Asio.hpp"
+#include "Cancel.hpp"
+#include "Coroutine.hpp"
+#include "GetCurrentFiber.hpp"
+#include "LuaEngine.hpp"
+#include "StackTrace.hpp"
 
 extern const char _binary_init_lua_start[];
 extern const char _binary_init_lua_end[];
@@ -22,7 +24,6 @@ using namespace gh;
 int main(int ac, char** av) {
   po::options_description desc("Options");
   desc.add_options()("help", "print this message")("startlua", po::value<std::string>(), "the lua script run at start");
-  ;
 
   po::positional_options_description pd;
   pd.add("startlua", 1);
@@ -55,38 +56,61 @@ int main(int ac, char** av) {
   }
 
   boost::asio::io_context io_context;
+  Omni::Fiber::AsioExecutor executor(io_context);
+  Omni::Fiber::Manager manager(executor);
 
-  auto cerr = GetCerr(io_context);
-  InitLog(cerr);
+  auto fiber_root = manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    Cancel stop_signal;
 
-  {
-    std::unique_ptr<lua_State, void (*)(lua_State* L)> L(luaL_newstate(), [](lua_State* L) { lua_close(L); });
-    luaL_openlibs(L.get());
-    luaopen_hole(L.get(), io_context);
-
-    if (luaL_loadbuffer(L.get(), _binary_init_lua_start, _binary_init_lua_end - _binary_init_lua_start,
-                        "internal-lua") ||
-        lua_pcall(L.get(), 0, 0, 0)) {
-      std::cout << lua_tostring(L.get(), -1) << std::endl;
-      lua_pop(L.get(), 1); /* pop error message from the stack */
-      return 1;
-    }
-
-    if (luaL_dofile(L.get(), start.c_str())) {
-      std::cout << lua_tostring(L.get(), -1) << std::endl;
-      lua_pop(L.get(), 1); /* pop error message from the stack */
-      return 1;
-    }
-
-    boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
-    signals.async_wait([&io_context](const ErrorCode& ec, int signal_number) {
-      if (!ec) {
-        io_context.stop();
+    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    current.Spawn("LuaEngine", [&io_context, &stop_signal, &start]() mutable -> Omni::Fiber::Coroutine<void> {
+      {
+        LuaEngine engine(io_context, stop_signal.GetFiberCancelEvent());
+        co_await engine.DoFile(start);
       }
+      auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
+      co_await fiber.WaitAll();
     });
 
-    io_context.run();
-  }
+    current.Spawn("signals", [&] -> Omni::Fiber::Coroutine<void> {
+      auto& signals_fiber = co_await Omni::Fiber::GetCurrentFiber();
+      signals_fiber.Spawn("wait", [&io_context, &stop_signal] -> Omni::Fiber::Coroutine<void> {
+        boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
+        while (!stop_signal.IsTriggered()) {
+          auto [err, signal_number] = co_await signals.async_wait(
+              boost::asio::bind_cancellation_slot(stop_signal.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+          if (!err) {
+            stop_signal.Trigger();
+          } else if (err == boost::asio::error::operation_aborted) {
+            continue;
+          } else {
+            throw boost::system::system_error(err, "error on waiting signal");
+          }
+        }
+        signals.clear();
+      });
+
+      // Debug
+      auto timer = boost::asio::steady_timer(io_context, std::chrono::seconds(1));
+      co_await timer.async_wait(Omni::Fiber::AsioUseFiber);
+      co_await Omni::Fiber::StackTraceAllFibers();
+
+      stop_signal.Trigger();
+
+      auto timer2 = boost::asio::steady_timer(io_context, std::chrono::seconds(1));
+      co_await timer2.async_wait(Omni::Fiber::AsioUseFiber);
+      co_await Omni::Fiber::StackTraceAllFibers();
+      // Debug
+
+      co_await stop_signal.GetFiberCancelEvent();
+      co_await signals_fiber.WaitAll();
+    });
+
+    co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
+    co_return;
+  });
+
+  io_context.run();
 
   boost::log::core::get()->remove_all_sinks();
 

@@ -22,21 +22,22 @@ foreach(suffix "" "-asan")
   endif()
 
   add_library(${target_core} STATIC
-      lua-lib.cpp
-      pipeline.cpp
-      endpoint.cpp
-      endpoint-tun.cpp
-      endpoint-udp.cpp
-      endpoint-udp-mux-server.cpp
-      endpoint-udp-mux-client.cpp
-      endpoint-udp-dyn-mux-server.cpp
-      endpoint-udp-dyn-mux-client.cpp
-      filter.cpp
-      util-exec.cpp
-      util-console.cpp
-      logging.cpp
-      error-code.cpp
       ${INIT_LUA_OBJ}
+      LuaLib.cpp
+      LuaInterface.cpp
+      Pipeline.cpp
+      ServiceBase.cpp
+      Endpoint.cpp
+      ErrorCode.cpp
+      Filter.cpp
+      UtilConsole.cpp
+      EndpointTun.cpp
+      EndpointUdp.cpp
+      EndpointUdpMuxServer.cpp
+      EndpointUdpMuxClient.cpp
+      EndpointUdpDynMuxServer.cpp
+      EndpointUdpDynMuxClient.cpp
+      LuaEngine.cpp
   )
 
   add_executable(${target_exe}
