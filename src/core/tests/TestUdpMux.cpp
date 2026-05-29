@@ -481,3 +481,143 @@ TEST(UdpMuxFiberTest, CreateChannelFromResolverEndpoint) {
   RunEventLoop(io);
   EXPECT_TRUE(testPassed);
 }
+
+TEST(UdpMuxFiberTest, DirectServerToServerMux) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::Manager manager(executor);
+
+  auto serverA = std::make_shared<UdpMuxServer>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto serverB = std::make_shared<UdpMuxServer>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+
+    auto errA = co_await serverA->Start();
+    EXPECT_FALSE(errA);
+    auto errB = co_await serverB->Start();
+    EXPECT_FALSE(errB);
+    if (errA || errB) {
+      co_await serverA->Stop();
+      co_await serverB->Stop();
+      co_return;
+    }
+
+    class MockResolveFor : public ResolveFor {
+    public:
+      MockResolveFor(boost::asio::any_io_executor executor, std::string service, Protocol protocol)
+          : _Executor(executor), _Service(service), _Protocol(protocol) {}
+      ~MockResolveFor() override = default;
+
+      boost::asio::any_io_executor GetExecutor() override { return _Executor; }
+      std::string GetService() override { return _Service; }
+      Protocol GetProtocol() override { return _Protocol; }
+
+      boost::asio::any_io_executor _Executor;
+      std::string _Service;
+      Protocol _Protocol;
+    };
+    auto mockedResolveFor = MockResolveFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
+
+    // Server A connects to Server B via resolver
+    std::string resolverInput = "[::1]:" + std::to_string(serverB->LocalEndpoint().port());
+    auto resolverToB = FindResolverEndpoint(resolverInput, mockedResolveFor);
+
+    // Create active channel on Server A
+    auto channelA = co_await serverA->CreateChannel(42, resolverToB);
+    EXPECT_NE(channelA, nullptr);
+
+    // Create passive channel on Server B
+    auto channelB = co_await serverB->CreateChannel(42);
+    EXPECT_NE(channelB, nullptr);
+
+    if (channelA == nullptr || channelB == nullptr) {
+      co_await serverA->Stop();
+      co_await serverB->Stop();
+      co_return;
+    }
+
+    // Ping test: Server A sends to Server B
+    Packet sendPacket;
+    std::string testMsg = "Direct Server-to-Server Mux!";
+    std::copy(testMsg.begin(), testMsg.end(), sendPacket._Data.begin() + sendPacket._Offset);
+    sendPacket._Length = testMsg.size();
+
+    Cancel cancelObj;
+    bool readBCompleted = false;
+    bool writeACompleted = false;
+
+    auto writeFiberA = current.Spawn("writerA", [&]() -> Omni::Fiber::Coroutine<void> {
+      auto writeErr = co_await channelA->Write(sendPacket, cancelObj);
+      EXPECT_FALSE(writeErr);
+      writeACompleted = true;
+      co_return;
+    });
+
+    auto readFiberB = current.Spawn("readerB", [&]() -> Omni::Fiber::Coroutine<void> {
+      Packet receivePacket;
+      auto readErr = co_await channelB->Read(receivePacket, cancelObj);
+      EXPECT_FALSE(readErr);
+
+      std::string receivedMsg(receivePacket._Data.begin() + receivePacket._Offset,
+                              receivePacket._Data.begin() + receivePacket._Offset + receivePacket._Length);
+      EXPECT_EQ(receivedMsg, testMsg);
+      readBCompleted = true;
+      co_return;
+    });
+
+    co_await current.Join(writeFiberA);
+    co_await current.Join(readFiberB);
+
+    EXPECT_TRUE(readBCompleted);
+    EXPECT_TRUE(writeACompleted);
+
+    // Pong test: Server B now has learned the peer endpoint, it sends a reply to Server A
+    Packet replyPacket;
+    std::string replyMsg = "Direct Server-to-Server Mux Reply!";
+    std::copy(replyMsg.begin(), replyMsg.end(), replyPacket._Data.begin() + replyPacket._Offset);
+    replyPacket._Length = replyMsg.size();
+
+    bool readACompleted = false;
+    bool writeBCompleted = false;
+
+    auto writeFiberB = current.Spawn("writerB", [&]() -> Omni::Fiber::Coroutine<void> {
+      auto writeErr = co_await channelB->Write(replyPacket, cancelObj);
+      EXPECT_FALSE(writeErr);
+      writeBCompleted = true;
+      co_return;
+    });
+
+    auto readFiberA = current.Spawn("readerA", [&]() -> Omni::Fiber::Coroutine<void> {
+      Packet receivePacket;
+      auto readErr = co_await channelA->Read(receivePacket, cancelObj);
+      EXPECT_FALSE(readErr);
+
+      std::string receivedMsg(receivePacket._Data.begin() + receivePacket._Offset,
+                              receivePacket._Data.begin() + receivePacket._Offset + receivePacket._Length);
+      EXPECT_EQ(receivedMsg, replyMsg);
+      readACompleted = true;
+      co_return;
+    });
+
+    co_await current.Join(writeFiberB);
+    co_await current.Join(readFiberA);
+
+    EXPECT_TRUE(readACompleted);
+    EXPECT_TRUE(writeBCompleted);
+
+    auto stopErrA = co_await serverA->Stop();
+    EXPECT_FALSE(stopErrA);
+    auto stopErrB = co_await serverB->Stop();
+    EXPECT_FALSE(stopErrB);
+
+    co_await current.WaitAll();
+    testPassed = true;
+    co_return;
+  });
+
+  RunEventLoop(io);
+  EXPECT_TRUE(testPassed);
+}
+
