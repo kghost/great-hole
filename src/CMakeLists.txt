@@ -38,6 +38,8 @@ foreach(suffix "" "-asan")
       EndpointUdpDynMuxServer.cpp
       EndpointUdpDynMuxClient.cpp
       LuaEngine.cpp
+      Resolver.cpp
+      ResolverHelper.cpp
   )
 
   add_executable(${target_exe}
@@ -66,6 +68,7 @@ foreach(suffix "" "-asan")
       Boost::thread
       PkgConfig::LUA
       ${lib_omnifiber}
+      resolv
   )
 
   if (Boost_PROCESS_FOUND)

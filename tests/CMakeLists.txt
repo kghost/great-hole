@@ -17,3 +17,9 @@ target_link_libraries(udp_dyn_mux_fiber_test PRIVATE great-hole-core-asan GTest:
 target_compile_options(udp_dyn_mux_fiber_test PRIVATE -fsanitize=address -fno-omit-frame-pointer)
 target_link_options(udp_dyn_mux_fiber_test PRIVATE -fsanitize=address)
 gtest_discover_tests(udp_dyn_mux_fiber_test)
+
+add_executable(resolver_test TestResolver.cpp)
+target_link_libraries(resolver_test PRIVATE great-hole-core-asan GTest::gtest_main resolv)
+target_compile_options(resolver_test PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+target_link_options(resolver_test PRIVATE -fsanitize=address)
+gtest_discover_tests(resolver_test)
