@@ -4,6 +4,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <variant>
 
 #include <boost/asio.hpp>
 
@@ -12,10 +13,11 @@
 #include "ErrorCode.hpp"
 #include "Pipe.hpp"
 #include "ServiceBase.hpp"
+#include "resolvers/Resolver.hpp"
 
 namespace gh {
 
-class Udp : public ServiceBase {
+class Udp : public ServiceBase, public ResolveFor {
 public:
   class UdpChannel;
 
@@ -28,10 +30,17 @@ public:
   Udp(Udp&&) = delete;
   Udp& operator=(Udp&&) = delete;
 
+  ResolveFor& GetResolveFor() { return *this; };
   Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> CreateChannel(boost::asio::ip::udp::endpoint const& peer);
+  Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> CreateChannel(std::shared_ptr<ResolverEndpoint> resolver);
   void RemoveChannel(boost::asio::ip::udp::endpoint const& peer);
+  void AddChannel(boost::asio::ip::udp::endpoint const& peer, std::shared_ptr<UdpChannel> ch);
   Omni::Fiber::Coroutine<ErrorCode> WriteTo(boost::asio::ip::udp::endpoint const& peer, Packet& p, Cancel& c);
   boost::asio::ip::udp::endpoint LocalEndpoint() const { return _Socket.local_endpoint(); }
+
+  boost::asio::any_io_executor GetExecutor() override { return _Socket.get_executor(); }
+  std::string GetService() override { return "great_hole_udp"; }
+  Protocol GetProtocol() override { return Protocol::Udp; }
 
 protected:
   std::string GetName() const override;
@@ -50,7 +59,9 @@ private:
 
 class Udp::UdpChannel : public Endpoint {
 public:
-  explicit UdpChannel(std::shared_ptr<Udp> parent, boost::asio::ip::udp::endpoint const& peer);
+  using Target = std::variant<std::shared_ptr<ResolverEndpoint>, boost::asio::ip::udp::endpoint>;
+
+  explicit UdpChannel(std::shared_ptr<Udp> parent, Target target);
   ~UdpChannel() override;
 
   UdpChannel(UdpChannel&) = delete;
@@ -73,7 +84,7 @@ public:
 
 private:
   std::shared_ptr<Udp> _Parent;
-  boost::asio::ip::udp::endpoint _Peer;
+  Target _Peer;
   Omni::Fiber::Pipe<std::expected<Packet, ErrorCode>> _Pipe;
 };
 

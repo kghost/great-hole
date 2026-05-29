@@ -14,11 +14,13 @@ foreach(suffix "" "-asan")
   if(suffix STREQUAL "-asan")
     set(target_core "great-hole-core-asan")
     set(target_exe "great-hole-asan")
-    set(lib_omnifiber "omnifiber-asan")
+    set(omnifiber "omni-fiber-asan")
+    set(omniresolver "omni-resolver-asan")
   else()
     set(target_core "great-hole-core")
     set(target_exe "great-hole")
-    set(lib_omnifiber "omnifiber")
+    set(omnifiber "omni-fiber")
+    set(omniresolver "omni-resolver")
   endif()
 
   add_library(${target_core} STATIC
@@ -38,8 +40,6 @@ foreach(suffix "" "-asan")
       EndpointUdpDynMuxServer.cpp
       EndpointUdpDynMuxClient.cpp
       LuaEngine.cpp
-      Resolver.cpp
-      ResolverHelper.cpp
   )
 
   add_executable(${target_exe}
@@ -67,8 +67,8 @@ foreach(suffix "" "-asan")
       Boost::filesystem
       Boost::thread
       PkgConfig::LUA
-      ${lib_omnifiber}
-      resolv
+      ${omnifiber}
+      ${omniresolver}
   )
 
   if (Boost_PROCESS_FOUND)

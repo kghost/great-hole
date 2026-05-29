@@ -9,14 +9,15 @@
 #include "Coroutine.hpp"
 #include "EndpointTun.hpp"
 #include "EndpointUdp.hpp"
-#include "EndpointUdpMuxClient.hpp"
-#include "EndpointUdpMuxServer.hpp"
 #include "EndpointUdpDynMuxClient.hpp"
 #include "EndpointUdpDynMuxServer.hpp"
+#include "EndpointUdpMuxClient.hpp"
+#include "EndpointUdpMuxServer.hpp"
 #include "ErrorCode.hpp"
 #include "FilterXor.hpp"
 #include "LuaInterface.hpp"
 #include "Pipeline.hpp"
+#include "resolvers/ResolverHelper.hpp"
 
 namespace gh {
 
@@ -136,23 +137,35 @@ static const struct luaL_Reg endpoint_metatable[] = {
     {"__gc", safe_call<gc<Endpoint, name_endpoint>>}, {"stop", safe_call<endpoint_stop>}, {NULL, NULL}};
 
 static int udp_create_channel(lua_State* L) {
-  if (lua_gettop(L) != 3) {
-    return luaL_error(L, "udp_create_channel: not enough arguments");
+  auto top = lua_gettop(L);
+  if (top < 2 || top > 3) {
+    return luaL_error(L, "udp_create_channel: invalid number of arguments");
   }
-
-  auto address = lua_tostring(L, 2);
-  auto port = (int)lua_tonumber(L, 3);
-  auto peer = boost::asio::ip::udp::endpoint(get_address(address), port);
 
   auto& u = *(std::shared_ptr<Udp>*)luaL_checkudata(L, 1, name_udp);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  std::shared_ptr<ResolverEndpoint> resolver;
+  if (top == 2) {
+    auto input = luaL_checkstring(L, 2);
+    resolver = FindResolverEndpoint(input, u->GetResolveFor());
+  } else {
+    auto host = luaL_checkstring(L, 2);
+    luaL_checkany(L, 3);
+    auto port = lua_tostring(L, 3);
+    if (!port) {
+      return luaL_error(L, "udp_create_channel: port must be a number or a string");
+    }
+    // TODO: find separate ip port resolver
+    resolver = FindResolverEndpoint(std::string(host) + ":" + port, u->GetResolveFor());
+  }
 
   auto ch = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>();
   luaL_getmetatable(L, name_endpoint);
   lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, u, peer, ch](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    *ch = co_await u->CreateChannel(peer);
+  interface.Schedule([&interface, u, resolver, ch](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    *ch = co_await u->CreateChannel(resolver);
     co_return 1;
   });
 

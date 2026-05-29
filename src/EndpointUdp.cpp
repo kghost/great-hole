@@ -21,16 +21,43 @@ namespace gh {
 
 // ==================== UdpChannel ====================
 
-Udp::UdpChannel::UdpChannel(std::shared_ptr<Udp> parent, boost::asio::ip::udp::endpoint const& peer)
-    : _Parent(parent), _Peer(peer) {}
-Udp::UdpChannel::~UdpChannel() { _Parent->RemoveChannel(_Peer); }
+Udp::UdpChannel::UdpChannel(std::shared_ptr<Udp> parent, UdpChannel::Target target) : _Parent(parent), _Peer(target) {}
+Udp::UdpChannel::~UdpChannel() {
+  if (std::holds_alternative<boost::asio::ip::udp::endpoint>(_Peer)) {
+    _Parent->RemoveChannel(std::get<boost::asio::ip::udp::endpoint>(_Peer));
+  }
+}
 
-std::string Udp::UdpChannel::GetName() const { return "UdpChannel:" + boost::lexical_cast<std::string>(_Peer); }
+std::string Udp::UdpChannel::GetName() const {
+  std::string ret = "UdpChannel:";
+  if (std::holds_alternative<boost::asio::ip::udp::endpoint>(_Peer)) {
+    ret += boost::lexical_cast<std::string>(std::get<boost::asio::ip::udp::endpoint>(_Peer));
+  } else if (std::holds_alternative<std::shared_ptr<ResolverEndpoint>>(_Peer)) {
+    ret += "@" + std::get<std::shared_ptr<ResolverEndpoint>>(_Peer)->GetName();
+  }
+  return ret;
+}
 
-Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::DoStart() { co_return ErrorCode{}; }
+Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::DoStart() {
+  if (std::holds_alternative<std::shared_ptr<ResolverEndpoint>>(_Peer)) {
+    auto resolver = std::get<std::shared_ptr<ResolverEndpoint>>(_Peer);
+    auto err = co_await resolver->Start();
+    if (err) {
+      co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
+      co_return err;
+    }
+    _Peer = resolver->GetEndpoint();
+    co_await resolver->Stop();
+    co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
+  }
+  _Parent->AddChannel(std::get<boost::asio::ip::udp::endpoint>(_Peer),
+                      std::dynamic_pointer_cast<UdpChannel>(shared_from_this()));
+  co_return ErrorCode{};
+}
 
 Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::DoGracefulStop() {
   co_await _PipielineUsageCounter.WaitAll();
+  co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
   co_return ErrorCode{};
 }
 
@@ -63,7 +90,7 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::Read(Packet& p, Cancel& c) {
 }
 
 Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::Write(Packet& p, Cancel& c) {
-  co_return co_await _Parent->WriteTo(_Peer, p, c);
+  co_return co_await _Parent->WriteTo(std::get<boost::asio::ip::udp::endpoint>(_Peer), p, c);
 }
 
 // ==================== Udp ====================
@@ -124,23 +151,46 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::DoGracefulStop() {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> Udp::CreateChannel(boost::asio::ip::udp::endpoint const& peer) {
-  assert(!_Channels.contains(peer));
-  auto ch = std::make_shared<UdpChannel>(std::static_pointer_cast<Udp>(shared_from_this()), peer);
-  _Channels[peer] = ch;
+Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> Udp::CreateChannel(std::shared_ptr<ResolverEndpoint> resolver) {
+  auto ch = std::make_shared<UdpChannel>(std::static_pointer_cast<Udp>(shared_from_this()), resolver);
 
-  co_await _CreateChannelPipe.GetProducer().Put([this, peer, ch]() -> Omni::Fiber::Coroutine<void> {
+  auto event = std::make_shared<Omni::Fiber::Event<ErrorCode>>();
+  co_await _CreateChannelPipe.GetProducer().Put([ch, event]() -> Omni::Fiber::Coroutine<void> {
     auto err = co_await ch->Start();
-    if (err) {
-      BOOST_LOG_TRIVIAL(error) << "UdpChannel start failed: " << err.message();
-    }
+    event->Fire(err);
     co_return;
   });
 
+  auto err = co_await *event;
+  if (err) {
+    co_return nullptr;
+  }
+  co_return ch;
+}
+
+Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> Udp::CreateChannel(boost::asio::ip::udp::endpoint const& peer) {
+  auto ch = std::make_shared<UdpChannel>(std::static_pointer_cast<Udp>(shared_from_this()), peer);
+
+  auto event = std::make_shared<Omni::Fiber::Event<ErrorCode>>();
+  co_await _CreateChannelPipe.GetProducer().Put([ch, event]() -> Omni::Fiber::Coroutine<void> {
+    auto err = co_await ch->Start();
+    event->Fire(err);
+    co_return;
+  });
+
+  auto err = co_await *event;
+  if (err) {
+    co_return nullptr;
+  }
   co_return ch;
 }
 
 void Udp::RemoveChannel(boost::asio::ip::udp::endpoint const& peer) { _Channels.erase(peer); }
+
+void Udp::AddChannel(boost::asio::ip::udp::endpoint const& peer, std::shared_ptr<UdpChannel> ch) {
+  assert(!_Channels.contains(peer));
+  _Channels[peer] = ch;
+}
 
 Omni::Fiber::Coroutine<void> Udp::ReadLoop() {
   auto slotTracker = _Stop.AsioSlot();
