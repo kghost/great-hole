@@ -14,8 +14,12 @@ Omni::Fiber::Coroutine<ErrorCode> ServiceBase::Start() {
                 auto me = shared_from_this(); // Hold me to prevent this from releasing.
                 assert(me && me.get() == this && "failed to dynamic cast shared_from_this to Udp");
                 BOOST_LOG_TRIVIAL(info) << GetName() << " starting";
-                errStart.Fire(co_await DoStart());
-                BOOST_LOG_TRIVIAL(info) << GetName() << " started";
+                auto err = co_await DoStart();
+                errStart.Fire(err);
+                if (!err) {
+                  BOOST_LOG_TRIVIAL(info) << GetName() << " started";
+                  co_await DoWork();
+                }
                 BOOST_LOG_TRIVIAL(info) << GetName() << " stopping";
                 _StopError.Fire(co_await DoGracefulStop());
                 BOOST_LOG_TRIVIAL(info) << GetName() << " stopped";
