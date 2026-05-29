@@ -56,12 +56,15 @@ public:
   UdpChannel(UdpChannel&&) = delete;
   UdpChannel& operator=(UdpChannel&&) = delete;
 
-  Omni::Fiber::Coroutine<ErrorCode> Start() override;
-  Omni::Fiber::Coroutine<ErrorCode> Stop() override;
-
   Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel&) override;
   Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel&) override;
 
+protected:
+  std::string GetName() const override;
+  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
+  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+
+public:
   template <typename... Args> Omni::Fiber::Coroutine<void> Send(Args&&... args) {
     co_return co_await _Pipe.GetProducer().Put(std::forward<Args>(args)...);
   }

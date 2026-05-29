@@ -26,12 +26,15 @@ foreach(suffix "" "-asan")
       LuaLib.cpp
       LuaInterface.cpp
       Pipeline.cpp
+      ServiceBase.cpp
       Endpoint.cpp
       ErrorCode.cpp
       Filter.cpp
       UtilConsole.cpp
       EndpointTun.cpp
       EndpointUdp.cpp
+      EndpointUdpMuxServer.cpp
+      EndpointUdpMuxClient.cpp
       LuaEngine.cpp
   )
 

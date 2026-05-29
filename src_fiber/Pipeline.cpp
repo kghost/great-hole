@@ -2,6 +2,8 @@
 
 #include <memory>
 
+#include "PipielineUsageCounter.hpp"
+
 #include <boost/asio/buffer.hpp>
 #include <boost/log/trivial.hpp>
 
@@ -19,29 +21,22 @@ Pipeline::Pipeline(std::shared_ptr<EndpointInput> in, const std::vector<std::sha
 Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start() {
   auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
   fiber.Spawn(std::format("Pipeline:{:p}", static_cast<void*>(this)), [this]() mutable -> Omni::Fiber::Coroutine<void> {
-    auto me = std::static_pointer_cast<Pipeline>(shared_from_this());
+    auto me = std::static_pointer_cast<Pipeline>(this->shared_from_this());
     BOOST_LOG_TRIVIAL(info) << "Pipeline(" << this << ") started";
 
     struct ActivePipelineGuard {
-      Service* In;
-      Service* Out;
-      ActivePipelineGuard(Service* in, Service* out) : In(in), Out(out) {
-        if (In) {
-          In->AddPipeline();
-        }
-        if (Out && Out != In) {
-          Out->AddPipeline();
-        }
+      PipielineUsageCounter& In;
+      PipielineUsageCounter& Out;
+      ActivePipelineGuard(EndpointInput& in, EndpointOutput& out)
+          : In(in.GetPipielineUsageCounter()), Out(out.GetPipielineUsageCounter()) {
+        In.AddPipeline();
+        Out.AddPipeline();
       }
       ~ActivePipelineGuard() {
-        if (In) {
-          In->RemovePipeline();
-        }
-        if (Out && Out != In) {
-          Out->RemovePipeline();
-        }
+        In.RemovePipeline();
+        Out.RemovePipeline();
       }
-    } guard(_In.get(), _Out.get());
+    } guard(*_In, *_Out);
 
     while (!_Stop.IsTriggered()) {
       Packet p;
