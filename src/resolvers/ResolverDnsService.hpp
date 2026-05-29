@@ -13,7 +13,7 @@ namespace gh {
 
 class ResolverDnsService final : public ResolverEndpoint {
 public:
-  explicit ResolverDnsService(const std::string& serviceName, const ResolveFor& target);
+  explicit ResolverDnsService(const std::string& serviceName, ResolveFor& target);
   ~ResolverDnsService() override = default;
 
   ResolverDnsService(const ResolverDnsService&) = delete;
@@ -30,7 +30,7 @@ protected:
 
 private:
   const std::string _ServiceName;
-  const ResolveFor& _Target;
+  ResolveFor& _Target;
   std::vector<boost::asio::ip::udp::endpoint> _Endpoints;
 };
 

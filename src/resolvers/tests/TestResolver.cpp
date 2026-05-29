@@ -135,7 +135,7 @@ TEST(ResolverTest, StaticPortResolverFailure) {
     auto err1 = co_await r1->Start();
     EXPECT_TRUE(err1);
 
-    auto r2 = std::make_shared<ResolverNumberPort>(99999);
+    auto r2 = std::make_shared<ResolverServicePort>("99999");
     auto err2 = co_await r2->Start();
     EXPECT_TRUE(err2);
 

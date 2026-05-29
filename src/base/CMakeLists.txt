@@ -1,23 +1,15 @@
 foreach(suffix "" "-asan")
   if(suffix STREQUAL "-asan")
-    set(target "omni-resolver-asan")
-    set(omnibase "omni-base-asan")
+    set(target "omni-base-asan")
     set(omnifiber "omni-fiber-asan")
   else()
-    set(target "omni-resolver")
-    set(omnibase "omni-base")
+    set(target "omni-base")
     set(omnifiber "omni-fiber")
   endif()
 
   add_library(${target} STATIC
-    ResolverStaticIp.cpp
-    ResolverIpDns.cpp
-    ResolverNumberPort.cpp
-    ResolverServicePort.cpp
-    ResolverCombinedEndpoint.cpp
-    ResolverDnsService.cpp
-    ResolverStaticEndpoint.cpp
-    ResolverHelper.cpp
+    ServiceBase.cpp
+    ErrorCode.cpp
   )
 
   target_include_directories(${target} PUBLIC
@@ -35,21 +27,12 @@ foreach(suffix "" "-asan")
   )
 
   target_link_libraries(${target} PUBLIC
-    Threads::Threads
     Boost::log
-    ${omnibase}
     ${omnifiber}
-    resolv
   )
-
-  if (Boost_PROCESS_FOUND)
-    target_link_libraries(${target} PUBLIC Boost::process)
-  endif()
 
   if(suffix STREQUAL "-asan")
     target_compile_options(${target} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
     target_link_options(${target} PRIVATE -fsanitize=address)
   endif()
 endforeach()
-
-add_subdirectory(tests)

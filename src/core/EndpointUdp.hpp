@@ -31,16 +31,16 @@ public:
   Udp& operator=(Udp&&) = delete;
 
   ResolveFor& GetResolveFor() { return *this; };
+  boost::asio::any_io_executor GetExecutor() override { return _Socket.get_executor(); }
+  std::string GetService() override { return "great_hole_udp"; }
+  Protocol GetProtocol() override { return Protocol::Udp; }
+
   Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> CreateChannel(boost::asio::ip::udp::endpoint const& peer);
   Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> CreateChannel(std::shared_ptr<ResolverEndpoint> resolver);
   void RemoveChannel(boost::asio::ip::udp::endpoint const& peer);
   void AddChannel(boost::asio::ip::udp::endpoint const& peer, std::shared_ptr<UdpChannel> ch);
   Omni::Fiber::Coroutine<ErrorCode> WriteTo(boost::asio::ip::udp::endpoint const& peer, Packet& p, Cancel& c);
   boost::asio::ip::udp::endpoint LocalEndpoint() const { return _Socket.local_endpoint(); }
-
-  boost::asio::any_io_executor GetExecutor() override { return _Socket.get_executor(); }
-  std::string GetService() override { return "great_hole_udp"; }
-  Protocol GetProtocol() override { return Protocol::Udp; }
 
 protected:
   std::string GetName() const override;

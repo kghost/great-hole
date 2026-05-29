@@ -27,4 +27,3 @@ set(OMNIFIBER_INTERNAL ON CACHE BOOL "" FORCE)
 
 add_subdirectory(libs/omni-fiber)
 add_subdirectory(src)
-add_subdirectory(tests)

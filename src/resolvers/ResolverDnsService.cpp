@@ -22,7 +22,7 @@ struct SRVResult {
   uint16_t port;
 };
 
-ResolverDnsService::ResolverDnsService(const std::string& serviceName, const ResolveFor& target)
+ResolverDnsService::ResolverDnsService(const std::string& serviceName, ResolveFor& target)
     : _ServiceName(serviceName), _Target(target) {}
 
 boost::asio::ip::udp::endpoint ResolverDnsService::GetEndpoint() const {
@@ -40,7 +40,7 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() {
     co_return make_error_code(boost::asio::error::operation_aborted);
   }
   auto eventPtr = std::make_shared<Omni::Fiber::Event<std::pair<ErrorCode, std::vector<SRVResult>>>>();
-  auto workGuard = boost::asio::make_work_guard(_Target.GetContext());
+  auto workGuard = boost::asio::make_work_guard(_Target.GetExecutor());
 
   // Run the blocking res_nsearch query in a separate thread.
   std::thread([this, eventPtr, workGuard]() mutable {
@@ -77,7 +77,7 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() {
     }
     res_nclose(&res);
 
-    boost::asio::post(_Target.GetContext(), [eventPtr, workGuard, queryErr, srvResults]() mutable {
+    boost::asio::post(_Target.GetExecutor(), [eventPtr, workGuard, queryErr, srvResults]() mutable {
       eventPtr->Fire(std::make_pair(queryErr, std::move(srvResults)));
     });
   }).detach();
@@ -99,7 +99,7 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() {
     if (_Stop.IsTriggered()) {
       co_return make_error_code(boost::asio::error::operation_aborted);
     }
-    boost::asio::ip::udp::resolver resolver(_Target.GetContext());
+    boost::asio::ip::udp::resolver resolver(_Target.GetExecutor());
     auto [resolveErr, results] = co_await resolver.async_resolve(
         record.target, "", boost::asio::bind_cancellation_slot(_Stop.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
     if (resolveErr) {

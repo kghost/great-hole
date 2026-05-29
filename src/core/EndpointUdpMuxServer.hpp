@@ -12,11 +12,12 @@
 #include "Endpoint.hpp"
 #include "ErrorCode.hpp"
 #include "Pipe.hpp"
+#include "Resolver.hpp"
 #include "ServiceBase.hpp"
 
 namespace gh {
 
-class UdpMuxServer : public ServiceBase {
+class UdpMuxServer : public ServiceBase, public ResolveFor {
 public:
   class Channel;
 
@@ -29,7 +30,13 @@ public:
   UdpMuxServer(UdpMuxServer&&) = delete;
   UdpMuxServer& operator=(UdpMuxServer&&) = delete;
 
+  ResolveFor& GetResolveFor() { return *this; };
+  boost::asio::any_io_executor GetExecutor() override { return _Socket.get_executor(); }
+  std::string GetService() override { return "great_hole_udp_mux"; }
+  Protocol GetProtocol() override { return Protocol::Udp; }
+
   Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> CreateChannel(uint8_t id);
+  Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> CreateChannel(uint8_t id, std::shared_ptr<ResolverEndpoint> peer);
   void RemoveChannel(uint8_t id);
   Omni::Fiber::Coroutine<ErrorCode> WriteTo(uint8_t id, Packet& p, Cancel& c);
   boost::asio::ip::udp::endpoint LocalEndpoint() const { return _Socket.local_endpoint(); }
@@ -57,6 +64,7 @@ private:
 class UdpMuxServer::Channel : public Endpoint {
 public:
   explicit Channel(std::shared_ptr<UdpMuxServer> parent, uint8_t id);
+  explicit Channel(std::shared_ptr<UdpMuxServer> parent, uint8_t id, std::shared_ptr<ResolverEndpoint> peer);
   ~Channel() override;
 
   Channel(const Channel&) = delete;

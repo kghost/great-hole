@@ -156,8 +156,8 @@ static int udp_create_channel(lua_State* L) {
     if (!port) {
       return luaL_error(L, "udp_create_channel: port must be a number or a string");
     }
-    // TODO: find separate ip port resolver
-    resolver = FindResolverEndpoint(std::string(host) + ":" + port, u->GetResolveFor());
+    resolver = std::make_shared<ResolverCombinedEndpoint>(FindResolverIp(host, u->GetResolveFor()),
+                                                          FindResolverPort(port, u->GetResolveFor()));
   }
 
   auto ch = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>();

@@ -10,6 +10,10 @@ ResolverCombinedEndpoint::ResolverCombinedEndpoint(std::shared_ptr<ResolverIp> i
 
 boost::asio::ip::udp::endpoint ResolverCombinedEndpoint::GetEndpoint() const { return _Endpoint; }
 
+std::string ResolverCombinedEndpoint::GetName() const {
+  return "ResolverCombinedEndpoint:[" + _IpResolver->GetName() + "]:" + _PortResolver->GetName();
+}
+
 Omni::Fiber::Coroutine<ErrorCode> ResolverCombinedEndpoint::DoStart() {
   auto errIp = co_await _IpResolver->Start();
   if (errIp) {

@@ -23,7 +23,7 @@ public:
   boost::asio::ip::address GetAddress() const override;
 
 protected:
-  std::string GetName() const override { return "ResolverStaticIp"; }
+  std::string GetName() const override;
   Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 

@@ -2,7 +2,6 @@
 
 #include <boost/asio.hpp>
 #include <functional>
-#include <lua.hpp>
 #include <set>
 
 #include "Event.hpp"

@@ -1,25 +1,7 @@
 include(GoogleTest)
 
-add_executable(udp_fiber_test TestUdp.cpp)
-target_link_libraries(udp_fiber_test PRIVATE great-hole-core-asan GTest::gtest_main)
-target_compile_options(udp_fiber_test PRIVATE -fsanitize=address -fno-omit-frame-pointer)
-target_link_options(udp_fiber_test PRIVATE -fsanitize=address)
-gtest_discover_tests(udp_fiber_test)
-
-add_executable(udp_mux_fiber_test TestUdpMux.cpp)
-target_link_libraries(udp_mux_fiber_test PRIVATE great-hole-core-asan GTest::gtest_main)
-target_compile_options(udp_mux_fiber_test PRIVATE -fsanitize=address -fno-omit-frame-pointer)
-target_link_options(udp_mux_fiber_test PRIVATE -fsanitize=address)
-gtest_discover_tests(udp_mux_fiber_test)
-
-add_executable(udp_dyn_mux_fiber_test TestUdpDynMux.cpp)
-target_link_libraries(udp_dyn_mux_fiber_test PRIVATE great-hole-core-asan GTest::gtest_main)
-target_compile_options(udp_dyn_mux_fiber_test PRIVATE -fsanitize=address -fno-omit-frame-pointer)
-target_link_options(udp_dyn_mux_fiber_test PRIVATE -fsanitize=address)
-gtest_discover_tests(udp_dyn_mux_fiber_test)
-
-add_executable(resolver_test ../src/resolvers/tests/TestResolver.cpp)
-target_link_libraries(resolver_test PRIVATE great-hole-core-asan GTest::gtest_main resolv)
+add_executable(resolver_test TestResolver.cpp)
+target_link_libraries(resolver_test PRIVATE omni-fiber-asan omni-resolver-asan GTest::gtest_main resolv)
 target_compile_options(resolver_test PRIVATE -fsanitize=address -fno-omit-frame-pointer)
 target_link_options(resolver_test PRIVATE -fsanitize=address)
 gtest_discover_tests(resolver_test)

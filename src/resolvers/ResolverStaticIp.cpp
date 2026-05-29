@@ -1,5 +1,6 @@
 #include "ResolverStaticIp.hpp"
 
+#include <boost/lexical_cast.hpp>
 #include <boost/system/system_error.hpp>
 
 namespace gh {
@@ -7,6 +8,10 @@ namespace gh {
 ResolverStaticIp::ResolverStaticIp(const boost::asio::ip::address& address) : _Address(address) {}
 
 boost::asio::ip::address ResolverStaticIp::GetAddress() const { return _Address; }
+
+std::string ResolverStaticIp::GetName() const {
+  return "ResolverStaticIp:" + boost::lexical_cast<std::string>(_Address);
+}
 
 Omni::Fiber::Coroutine<ErrorCode> ResolverStaticIp::DoStart() { co_return ErrorCode{}; }
 
