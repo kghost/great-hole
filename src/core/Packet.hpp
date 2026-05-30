@@ -23,8 +23,8 @@ public:
   Packet(Packet&&) = default;
   Packet& operator=(Packet&&) = default;
 
-  explicit operator boost::asio::const_buffer() const { return {_Data.data() + _Offset, _Length}; }
-  explicit operator boost::asio::mutable_buffer() { return {_Data.data() + _Offset, _Data.size() - _Offset}; }
+  operator boost::asio::const_buffer() const { return Data(); }
+  operator boost::asio::mutable_buffer() { return Data(); }
 
   std::size_t DataSize() const { return _Length; }
   std::size_t FrontSpace() const { return _Offset; }

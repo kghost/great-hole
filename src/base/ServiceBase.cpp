@@ -19,6 +19,8 @@ Omni::Fiber::Coroutine<ErrorCode> ServiceBase::Start() {
                          if (!err) {
                            BOOST_LOG_TRIVIAL(info) << GetName() << " started";
                            co_await DoWork();
+                         } else {
+                           BOOST_LOG_TRIVIAL(info) << GetName() << " starts failed: " << err;
                          }
                          BOOST_LOG_TRIVIAL(info) << GetName() << " stopping";
                          _StopError.Fire(co_await DoGracefulStop());

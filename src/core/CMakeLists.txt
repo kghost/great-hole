@@ -17,8 +17,7 @@ foreach(suffix "" "-asan")
     EndpointTun.cpp
     EndpointUdp.cpp
     EndpointUdpMux.cpp
-    EndpointUdpDynMuxServer.cpp
-    EndpointUdpDynMuxClient.cpp
+    EndpointUdpDynMux.cpp
   )
 
   target_include_directories(${target_core} PUBLIC

@@ -27,7 +27,7 @@ void RunEventLoop(boost::asio::io_context& io) {
 
 } // namespace
 
-TEST(UdpMuxFiberTest, IgnoresStrayPackets) {
+TEST(UdpMuxTest, IgnoresStrayPackets) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io);
   Omni::Fiber::Manager manager(executor);
@@ -94,7 +94,7 @@ TEST(UdpMuxFiberTest, IgnoresStrayPackets) {
   EXPECT_TRUE(testPassed);
 }
 
-TEST(UdpMuxFiberTest, ReadCancellation) {
+TEST(UdpMuxTest, ReadCancellation) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io);
   Omni::Fiber::Manager manager(executor);
@@ -152,7 +152,7 @@ TEST(UdpMuxFiberTest, ReadCancellation) {
   EXPECT_TRUE(testPassed);
 }
 
-TEST(UdpMuxFiberTest, WriteCancellation) {
+TEST(UdpMuxTest, WriteCancellation) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io);
   Omni::Fiber::Manager manager(executor);
@@ -199,7 +199,7 @@ TEST(UdpMuxFiberTest, WriteCancellation) {
   EXPECT_TRUE(testPassed);
 }
 
-TEST(UdpMuxFiberTest, DirectServerToServerMux) {
+TEST(UdpMuxTest, DirectServerToServerMux) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io);
   Omni::Fiber::Manager manager(executor);

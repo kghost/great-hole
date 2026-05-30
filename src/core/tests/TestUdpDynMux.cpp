@@ -9,13 +9,12 @@
 #include "Asio.hpp"
 #include "Cancel.hpp"
 #include "Coroutine.hpp"
-#include "EndpointUdpDynMuxClient.hpp"
-#include "EndpointUdpDynMuxServer.hpp"
-#include "EndpointUdpDynMuxProtocol.hpp"
+#include "EndpointUdpDynMux.hpp"
 #include "Fiber.hpp"
 #include "GetCurrentFiber.hpp"
 #include "Manager.hpp"
 #include "Packet.hpp"
+#include "resolvers/ResolverStaticEndpoint.hpp"
 
 using boost::asio::ip::udp;
 using namespace gh;
@@ -29,69 +28,61 @@ void RunEventLoop(boost::asio::io_context& io) {
 
 } // namespace
 
-TEST(UdpDynMuxFiberTest, SuccessfulChannelCreationAndDataTransfer) {
+TEST(UdpDynMuxTest, SuccessfulChannelCreationAndDataTransfer) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io);
   Omni::Fiber::Manager manager(executor);
 
-  auto server = std::make_shared<UdpDynMuxServer>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev1 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev2 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
 
-    auto err = co_await server->Start();
-    EXPECT_FALSE(err);
-    if (err) {
-      co_return;
-    }
+    auto err1 = co_await dev1->Start();
+    EXPECT_FALSE(err1);
+    auto err2 = co_await dev2->Start();
+    EXPECT_FALSE(err2);
 
-    auto serverEp = server->LocalEndpoint();
+    UdpDynMux::PskType psk = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
-    auto client = std::make_shared<UdpDynMuxClient>(io, serverEp, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-    auto clientErr = co_await client->Start();
-    EXPECT_FALSE(clientErr);
-    if (clientErr) {
-      co_await server->Stop();
-      co_return;
-    }
+    auto ch1 = co_await dev1->CreateChannel(psk);
+    EXPECT_NE(ch1, nullptr);
 
-    // Server dynamically maps channel ID 1 (which will be negotiated)
-    auto channel = co_await server->CreateChannel(1);
-    EXPECT_NE(channel, nullptr);
-    if (channel == nullptr) {
-      co_await client->Stop();
-      co_await server->Stop();
-      co_return;
-    }
-
-    // Prepare packet to send from client to server channel 1
-    Packet sendPacket;
-    std::string testMsg = "Hello Dyn Mux Fiber!";
-    // Make sure we have space for 2-byte ID
-    sendPacket._Offset = 2;
-    std::copy(testMsg.begin(), testMsg.end(), sendPacket._Data.begin() + sendPacket._Offset);
-    sendPacket._Length = testMsg.size();
+    auto resolver = std::make_shared<ResolverStaticEndpoint>(dev1->LocalEndpoint());
+    auto ch2 = co_await dev2->CreateChannel(psk, resolver);
+    EXPECT_NE(ch2, nullptr);
 
     Cancel cancelObj;
-    bool readCompleted = false;
+    boost::asio::steady_timer waitTimer(io);
+    waitTimer.expires_after(std::chrono::milliseconds(200));
+    co_await waitTimer.async_wait(
+        boost::asio::bind_cancellation_slot(cancelObj.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+
+    Packet p1;
+    std::string msg1 = "Hello Symmetric Mux!";
+    p1._Offset = 2;
+    std::copy(msg1.begin(), msg1.end(), p1._Data.begin() + p1._Offset);
+    p1._Length = msg1.size();
+
     bool writeCompleted = false;
+    bool readCompleted = false;
 
     auto writeFiber = current.Spawn("writer", [&]() -> Omni::Fiber::Coroutine<void> {
-      auto writeErr = co_await client->Write(sendPacket, cancelObj);
+      auto writeErr = co_await ch2->Write(p1, cancelObj);
       EXPECT_FALSE(writeErr);
       writeCompleted = true;
       co_return;
     });
 
     auto readFiber = current.Spawn("reader", [&]() -> Omni::Fiber::Coroutine<void> {
-      Packet receivePacket;
-      auto readErr = co_await channel->Read(receivePacket, cancelObj);
+      Packet rxP;
+      auto readErr = co_await ch1->Read(rxP, cancelObj);
       EXPECT_FALSE(readErr);
-
-      std::string receivedMsg(receivePacket._Data.begin() + receivePacket._Offset,
-                              receivePacket._Data.begin() + receivePacket._Offset + receivePacket._Length);
-      EXPECT_EQ(receivedMsg, testMsg);
+      std::string rxMsg(rxP._Data.begin() + rxP._Offset, rxP._Data.begin() + rxP._Offset + rxP._Length);
+      EXPECT_EQ(rxMsg, msg1);
       readCompleted = true;
       co_return;
     });
@@ -99,34 +90,31 @@ TEST(UdpDynMuxFiberTest, SuccessfulChannelCreationAndDataTransfer) {
     co_await current.Join(writeFiber);
     co_await current.Join(readFiber);
 
-    EXPECT_TRUE(readCompleted);
     EXPECT_TRUE(writeCompleted);
+    EXPECT_TRUE(readCompleted);
 
-    // Now test write from server channel 1 back to client
-    Packet replyPacket;
-    std::string replyMsg = "Reply Dyn Mux Fiber!";
-    replyPacket._Offset = 2;
-    std::copy(replyMsg.begin(), replyMsg.end(), replyPacket._Data.begin() + replyPacket._Offset);
-    replyPacket._Length = replyMsg.size();
+    Packet p2;
+    std::string msg2 = "Reply Symmetric!";
+    p2._Offset = 2;
+    std::copy(msg2.begin(), msg2.end(), p2._Data.begin() + p2._Offset);
+    p2._Length = msg2.size();
 
-    bool replyReadCompleted = false;
     bool replyWriteCompleted = false;
+    bool replyReadCompleted = false;
 
     auto replyWriteFiber = current.Spawn("reply_writer", [&]() -> Omni::Fiber::Coroutine<void> {
-      auto writeErr = co_await channel->Write(replyPacket, cancelObj);
+      auto writeErr = co_await ch1->Write(p2, cancelObj);
       EXPECT_FALSE(writeErr);
       replyWriteCompleted = true;
       co_return;
     });
 
     auto replyReadFiber = current.Spawn("reply_reader", [&]() -> Omni::Fiber::Coroutine<void> {
-      Packet receivePacket;
-      auto readErr = co_await client->Read(receivePacket, cancelObj);
+      Packet rxP;
+      auto readErr = co_await ch2->Read(rxP, cancelObj);
       EXPECT_FALSE(readErr);
-
-      std::string receivedMsg(receivePacket._Data.begin() + receivePacket._Offset,
-                              receivePacket._Data.begin() + receivePacket._Offset + receivePacket._Length);
-      EXPECT_EQ(receivedMsg, replyMsg);
+      std::string rxMsg(rxP._Data.begin() + rxP._Offset, rxP._Data.begin() + rxP._Offset + rxP._Length);
+      EXPECT_EQ(rxMsg, msg2);
       replyReadCompleted = true;
       co_return;
     });
@@ -134,13 +122,11 @@ TEST(UdpDynMuxFiberTest, SuccessfulChannelCreationAndDataTransfer) {
     co_await current.Join(replyWriteFiber);
     co_await current.Join(replyReadFiber);
 
-    EXPECT_TRUE(replyReadCompleted);
     EXPECT_TRUE(replyWriteCompleted);
+    EXPECT_TRUE(replyReadCompleted);
 
-    auto stopErr1 = co_await client->Stop();
-    EXPECT_FALSE(stopErr1);
-    auto stopErr2 = co_await server->Stop();
-    EXPECT_FALSE(stopErr2);
+    co_await dev1->Stop();
+    co_await dev2->Stop();
 
     co_await current.WaitAll();
     testPassed = true;
@@ -151,60 +137,63 @@ TEST(UdpDynMuxFiberTest, SuccessfulChannelCreationAndDataTransfer) {
   EXPECT_TRUE(testPassed);
 }
 
-TEST(UdpDynMuxFiberTest, PacketQueueingDuringNegotiation) {
+TEST(UdpDynMuxTest, SimultaneousConnectionStart) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io);
   Omni::Fiber::Manager manager(executor);
 
-  auto server = std::make_shared<UdpDynMuxServer>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev1 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev2 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
 
-    auto err = co_await server->Start();
-    EXPECT_FALSE(err);
-    if (err) {
-      co_return;
-    }
+    auto err1 = co_await dev1->Start();
+    EXPECT_FALSE(err1);
+    auto err2 = co_await dev2->Start();
+    EXPECT_FALSE(err2);
 
-    auto serverEp = server->LocalEndpoint();
+    UdpDynMux::PskType psk = {9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9};
 
-    auto client = std::make_shared<UdpDynMuxClient>(io, serverEp, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-    
-    // Create server dynamic channel
-    auto channel = co_await server->CreateChannel(1);
-    EXPECT_NE(channel, nullptr);
+    auto res1 = std::make_shared<ResolverStaticEndpoint>(dev2->LocalEndpoint());
+    auto res2 = std::make_shared<ResolverStaticEndpoint>(dev1->LocalEndpoint());
 
-    // Call Start on client, which triggers negotiation loop in background
-    auto clientErr = co_await client->Start();
-    EXPECT_FALSE(clientErr);
+    auto ch1 = co_await dev1->CreateChannel(psk, res1);
+    auto ch2 = co_await dev2->CreateChannel(psk, res2);
 
-    // Write a packet immediately (will be queued / suspended while client negotiates)
-    Packet sendPacket;
-    std::string testMsg = "Queued Dynamic!";
-    sendPacket._Offset = 2;
-    std::copy(testMsg.begin(), testMsg.end(), sendPacket._Data.begin() + sendPacket._Offset);
-    sendPacket._Length = testMsg.size();
+    EXPECT_NE(ch1, nullptr);
+    EXPECT_NE(ch2, nullptr);
 
     Cancel cancelObj;
+    boost::asio::steady_timer waitTimer(io);
+    waitTimer.expires_after(std::chrono::milliseconds(200));
+    co_await waitTimer.async_wait(
+        boost::asio::bind_cancellation_slot(cancelObj.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+
+    Packet p1;
+    std::string msg1 = "Simultaneous!";
+    p1._Offset = 2;
+    std::copy(msg1.begin(), msg1.end(), p1._Data.begin() + p1._Offset);
+    p1._Length = msg1.size();
+
     bool writeCompleted = false;
     bool readCompleted = false;
 
     auto writeFiber = current.Spawn("writer", [&]() -> Omni::Fiber::Coroutine<void> {
-      auto writeErr = co_await client->Write(sendPacket, cancelObj);
+      auto writeErr = co_await ch1->Write(p1, cancelObj);
       EXPECT_FALSE(writeErr);
       writeCompleted = true;
       co_return;
     });
 
     auto readFiber = current.Spawn("reader", [&]() -> Omni::Fiber::Coroutine<void> {
-      Packet receivePacket;
-      auto readErr = co_await channel->Read(receivePacket, cancelObj);
+      Packet rxP;
+      auto readErr = co_await ch2->Read(rxP, cancelObj);
       EXPECT_FALSE(readErr);
-      std::string receivedMsg(receivePacket._Data.begin() + receivePacket._Offset,
-                              receivePacket._Data.begin() + receivePacket._Offset + receivePacket._Length);
-      EXPECT_EQ(receivedMsg, testMsg);
+      std::string rxMsg(rxP._Data.begin() + rxP._Offset, rxP._Data.begin() + rxP._Offset + rxP._Length);
+      EXPECT_EQ(rxMsg, msg1);
       readCompleted = true;
       co_return;
     });
@@ -215,10 +204,8 @@ TEST(UdpDynMuxFiberTest, PacketQueueingDuringNegotiation) {
     EXPECT_TRUE(writeCompleted);
     EXPECT_TRUE(readCompleted);
 
-    auto stopErr1 = co_await client->Stop();
-    EXPECT_FALSE(stopErr1);
-    auto stopErr2 = co_await server->Stop();
-    EXPECT_FALSE(stopErr2);
+    co_await dev1->Stop();
+    co_await dev2->Stop();
 
     co_await current.WaitAll();
     testPassed = true;
@@ -229,79 +216,94 @@ TEST(UdpDynMuxFiberTest, PacketQueueingDuringNegotiation) {
   EXPECT_TRUE(testPassed);
 }
 
-TEST(UdpDynMuxFiberTest, ServerHandlesMigration) {
+TEST(UdpDynMuxTest, AddressMigration) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io);
   Omni::Fiber::Manager manager(executor);
 
-  auto server = std::make_shared<UdpDynMuxServer>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev1 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev2 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
 
-    auto err = co_await server->Start();
-    EXPECT_FALSE(err);
-    if (err) {
+    auto err1 = co_await dev1->Start();
+    EXPECT_FALSE(err1);
+    auto err2 = co_await dev2->Start();
+    EXPECT_FALSE(err2);
+
+    UdpDynMux::PskType psk = {7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7};
+
+    auto ch1 = co_await dev1->CreateChannel(psk);
+    auto res2 = std::make_shared<ResolverStaticEndpoint>(dev1->LocalEndpoint());
+    auto ch2 = co_await dev2->CreateChannel(psk, res2);
+
+    Cancel cancelObj;
+    boost::asio::steady_timer waitTimer(io);
+    waitTimer.expires_after(std::chrono::milliseconds(200));
+    co_await waitTimer.async_wait(
+        boost::asio::bind_cancellation_slot(cancelObj.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+
+    Packet p1;
+    std::string msg1 = "Init Migration!";
+    p1._Offset = 2;
+    std::copy(msg1.begin(), msg1.end(), p1._Data.begin() + p1._Offset);
+    p1._Length = msg1.size();
+
+    auto initialWriter = current.Spawn("writer", [&]() -> Omni::Fiber::Coroutine<void> {
+      auto writeErr = co_await ch2->Write(p1, cancelObj);
+      EXPECT_FALSE(writeErr);
       co_return;
-    }
+    });
 
-    auto serverEp = server->LocalEndpoint();
-    auto channel = co_await server->CreateChannel(1);
-    EXPECT_NE(channel, nullptr);
+    Packet rxP;
+    auto readErr = co_await ch1->Read(rxP, cancelObj);
+    EXPECT_FALSE(readErr);
+    co_await current.Join(initialWriter);
 
-    // Mock client socket 1
-    udp::socket client1(io, udp::endpoint(udp::v6(), 0));
-    uint32_t cookie = 0x12345678;
+    auto dev2New = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+    auto err3 = co_await dev2New->Start();
+    EXPECT_FALSE(err3);
 
-    uint8_t txBuf[2048];
-    UdpDynMux::ClientReqId{cookie}.Serialize(txBuf);
+    auto ch2New = co_await dev2New->CreateChannel(psk, res2);
 
-    // Send negotiation
-    auto [sendErr1, n1] = co_await client1.async_send_to(
-        boost::asio::buffer(txBuf, UdpDynMux::ClientReqId::kSize), serverEp, Omni::Fiber::AsioUseFiber);
-    EXPECT_FALSE(sendErr1);
+    boost::asio::steady_timer waitTimer2(io);
+    waitTimer2.expires_after(std::chrono::milliseconds(200));
+    co_await waitTimer2.async_wait(
+        boost::asio::bind_cancellation_slot(cancelObj.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
 
-    // Receive assignment on client 1
-    uint8_t rxBuf[2048];
-    udp::endpoint senderEp;
-    auto [recvErr1, n2] = co_await client1.async_receive_from(
-        boost::asio::mutable_buffer(rxBuf, sizeof(rxBuf)), senderEp, Omni::Fiber::AsioUseFiber);
-    EXPECT_FALSE(recvErr1);
+    Packet p2;
+    std::string msg2 = "Migrated Packet!";
+    p2._Offset = 2;
+    std::copy(msg2.begin(), msg2.end(), p2._Data.begin() + p2._Offset);
+    p2._Length = msg2.size();
 
-    auto assign = UdpDynMux::ServerAssignId::Deserialize(rxBuf, n2);
-    EXPECT_TRUE(assign.has_value());
-    if (!assign.has_value()) {
-      co_await server->Stop();
+    bool migrateReadPassed = false;
+    auto readFiber = current.Spawn("mig_reader", [&]() -> Omni::Fiber::Coroutine<void> {
+      Packet rxP2;
+      auto readErr2 = co_await ch1->Read(rxP2, cancelObj);
+      EXPECT_FALSE(readErr2);
+      std::string rxMsg2(rxP2._Data.begin() + rxP2._Offset, rxP2._Data.begin() + rxP2._Offset + rxP2._Length);
+      EXPECT_EQ(rxMsg2, msg2);
+      migrateReadPassed = true;
       co_return;
-    }
-    EXPECT_EQ(assign->Cookie, cookie);
-    uint16_t id = assign->AssignedId;
-    EXPECT_EQ(id, 1);
+    });
 
-    // Now migrate to client socket 2
-    udp::socket client2(io, udp::endpoint(udp::v6(), 0));
-    UdpDynMux::ClientAddrMigrate{id, cookie}.Serialize(txBuf);
-
-    auto [sendErr2, n3] = co_await client2.async_send_to(
-        boost::asio::buffer(txBuf, UdpDynMux::ClientAddrMigrate::kSize), serverEp, Omni::Fiber::AsioUseFiber);
-    EXPECT_FALSE(sendErr2);
-
-    // Receive migration ACK on client 2
-    auto [recvErr2, n4] = co_await client2.async_receive_from(
-        boost::asio::mutable_buffer(rxBuf, sizeof(rxBuf)), senderEp, Omni::Fiber::AsioUseFiber);
-    EXPECT_FALSE(recvErr2);
-
-    auto migrateAck = UdpDynMux::ServerMigrateAck::Deserialize(rxBuf, n4);
-    EXPECT_TRUE(migrateAck.has_value());
-    if (!migrateAck.has_value()) {
-      co_await server->Stop();
+    auto migrateWriter = current.Spawn("mig_writer", [&]() -> Omni::Fiber::Coroutine<void> {
+      auto writeErr = co_await ch2New->Write(p2, cancelObj);
+      EXPECT_FALSE(writeErr);
       co_return;
-    }
-    EXPECT_EQ(migrateAck->Id, id);
+    });
 
-    auto stopErr = co_await server->Stop();
-    EXPECT_FALSE(stopErr);
+    co_await current.Join(readFiber);
+    co_await current.Join(migrateWriter);
+    EXPECT_TRUE(migrateReadPassed);
+
+    co_await dev1->Stop();
+    co_await dev2->Stop();
+    co_await dev2New->Stop();
 
     co_await current.WaitAll();
     testPassed = true;
@@ -312,12 +314,12 @@ TEST(UdpDynMuxFiberTest, ServerHandlesMigration) {
   EXPECT_TRUE(testPassed);
 }
 
-TEST(UdpDynMuxFiberTest, ReadCancellation) {
+TEST(UdpDynMuxTest, ReadCancellation) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io);
   Omni::Fiber::Manager manager(executor);
 
-  auto server = std::make_shared<UdpDynMuxServer>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto server = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -325,16 +327,10 @@ TEST(UdpDynMuxFiberTest, ReadCancellation) {
 
     auto err = co_await server->Start();
     EXPECT_FALSE(err);
-    if (err) {
-      co_return;
-    }
 
-    auto channel = co_await server->CreateChannel(1);
+    UdpDynMux::PskType psk = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
+    auto channel = co_await server->CreateChannel(psk);
     EXPECT_NE(channel, nullptr);
-    if (channel == nullptr) {
-      co_await server->Stop();
-      co_return;
-    }
 
     Cancel cancelObj;
     bool readCompleted = false;
@@ -370,12 +366,12 @@ TEST(UdpDynMuxFiberTest, ReadCancellation) {
   EXPECT_TRUE(testPassed);
 }
 
-TEST(UdpDynMuxFiberTest, WriteCancellation) {
+TEST(UdpDynMuxTest, WriteCancellation) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io);
   Omni::Fiber::Manager manager(executor);
 
-  auto server = std::make_shared<UdpDynMuxServer>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto server = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -383,19 +379,13 @@ TEST(UdpDynMuxFiberTest, WriteCancellation) {
 
     auto err = co_await server->Start();
     EXPECT_FALSE(err);
-    if (err) {
-      co_return;
-    }
 
-    auto channel = co_await server->CreateChannel(1);
+    UdpDynMux::PskType psk = {6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6};
+    auto channel = co_await server->CreateChannel(psk);
     EXPECT_NE(channel, nullptr);
-    if (channel == nullptr) {
-      co_await server->Stop();
-      co_return;
-    }
 
     Cancel cancelObj;
-    cancelObj.Trigger(); // Cancel beforehand
+    cancelObj.Trigger();
 
     Packet sendPacket;
     std::string testMsg = "Cancel dynamic write";
@@ -408,6 +398,107 @@ TEST(UdpDynMuxFiberTest, WriteCancellation) {
 
     auto stopErr = co_await server->Stop();
     EXPECT_FALSE(stopErr);
+
+    co_await current.WaitAll();
+    testPassed = true;
+    co_return;
+  });
+
+  RunEventLoop(io);
+  EXPECT_TRUE(testPassed);
+}
+
+TEST(UdpDynMuxTest, InvalidChannelAndRenegotiation) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::Manager manager(executor);
+
+  auto dev1 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev2 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+
+    auto err1 = co_await dev1->Start();
+    EXPECT_FALSE(err1);
+    auto err2 = co_await dev2->Start();
+    EXPECT_FALSE(err2);
+
+    UdpDynMux::PskType psk = {8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8};
+
+    auto ch1 = co_await dev1->CreateChannel(psk);
+    EXPECT_NE(ch1, nullptr);
+
+    auto resolver = std::make_shared<ResolverStaticEndpoint>(dev1->LocalEndpoint());
+    auto ch2 = co_await dev2->CreateChannel(psk, resolver);
+    EXPECT_NE(ch2, nullptr);
+
+    Cancel cancelObj;
+    boost::asio::steady_timer waitTimer(io);
+    waitTimer.expires_after(std::chrono::milliseconds(200));
+    co_await waitTimer.async_wait(
+        boost::asio::bind_cancellation_slot(cancelObj.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+
+    Packet p1;
+    std::string msg1 = "Hello Symmetric Mux!";
+    p1._Offset = 2;
+    std::copy(msg1.begin(), msg1.end(), p1._Data.begin() + p1._Offset);
+    p1._Length = msg1.size();
+    auto writeFiber = current.Spawn("writer", [&]() -> Omni::Fiber::Coroutine<void> {
+      auto writeErr = co_await ch2->Write(p1, cancelObj);
+      EXPECT_FALSE(writeErr);
+      co_return;
+    });
+
+    Packet rxP;
+    auto readErr = co_await ch1->Read(rxP, cancelObj);
+    EXPECT_FALSE(readErr);
+    co_await current.Join(writeFiber);
+
+    auto dev1Port = dev1->LocalEndpoint().port();
+    co_await dev1->Stop();
+
+    auto dev1New = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), dev1Port));
+    auto err3 = co_await dev1New->Start();
+    EXPECT_FALSE(err3);
+
+    auto ch1New = co_await dev1New->CreateChannel(psk);
+    EXPECT_NE(ch1New, nullptr);
+
+    Packet p_dummy;
+    p_dummy._Offset = 2;
+    p_dummy._Length = 0;
+    co_await ch2->Write(p_dummy, cancelObj);
+
+    boost::asio::steady_timer waitTimer2(io);
+    waitTimer2.expires_after(std::chrono::milliseconds(200));
+    co_await waitTimer2.async_wait(
+        boost::asio::bind_cancellation_slot(cancelObj.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+
+    Packet p2;
+    std::string msg2 = "Renegotiated Data!";
+    p2._Offset = 2;
+    std::copy(msg2.begin(), msg2.end(), p2._Data.begin() + p2._Offset);
+    p2._Length = msg2.size();
+
+    auto renegWriter = current.Spawn("reneg_writer", [&]() -> Omni::Fiber::Coroutine<void> {
+      auto writeErr2 = co_await ch2->Write(p2, cancelObj);
+      EXPECT_FALSE(writeErr2);
+      co_return;
+    });
+
+    Packet rxP2;
+    auto readErr2 = co_await ch1New->Read(rxP2, cancelObj);
+    EXPECT_FALSE(readErr2);
+    std::string rxMsg(rxP2._Data.begin() + rxP2._Offset, rxP2._Data.begin() + rxP2._Offset + rxP2._Length);
+    EXPECT_EQ(rxMsg, msg2);
+
+    co_await current.Join(renegWriter);
+
+    co_await dev1New->Stop();
+    co_await dev2->Stop();
 
     co_await current.WaitAll();
     testPassed = true;

@@ -9,8 +9,7 @@
 #include "Coroutine.hpp"
 #include "EndpointTun.hpp"
 #include "EndpointUdp.hpp"
-#include "EndpointUdpDynMuxClient.hpp"
-#include "EndpointUdpDynMuxServer.hpp"
+#include "EndpointUdpDynMux.hpp"
 #include "EndpointUdpMux.hpp"
 #include "ErrorCode.hpp"
 #include "FilterXor.hpp"
@@ -57,7 +56,7 @@ constexpr const char name_endpoint[] = "Hole.endpoint";
 constexpr const char name_filter[] = "Hole.filter";
 constexpr const char name_udp[] = "Hole.udp";
 constexpr const char name_udp_mux_server[] = "Hole.udp-mux-server";
-constexpr const char name_udp_dyn_mux_server[] = "Hole.udp-dyn-mux-server";
+constexpr const char name_udp_dyn_mux[] = "Hole.udp-dyn-mux";
 
 template <typename T, const char N[]> static int gc(lua_State* L) {
   typedef std::shared_ptr<T> P;
@@ -310,28 +309,56 @@ static void udp_mux_server_new(lua_State* L) {
   });
 }
 
-// udp-dyn-mux-server
-static void udp_dyn_mux_server_create_channel(lua_State* L) {
-  if (lua_gettop(L) != 2) {
-    throw std::runtime_error("udp_dyn_mux_server_create_channel: not enough arguments");
+// udp-dyn-mux
+static void udp_dyn_mux_create_channel(lua_State* L) {
+  auto top = lua_gettop(L);
+  if (top < 2 || top > 4) {
+    throw std::runtime_error("udp_dyn_mux_create_channel: invalid number of arguments");
   }
 
-  auto id = (uint16_t)lua_tonumber(L, 2);
-  auto& u = *(std::shared_ptr<UdpDynMuxServer>*)luaL_checkudata(L, 1, name_udp_dyn_mux_server);
+  size_t len;
+  auto s = luaL_checklstring(L, 2, &len);
+  if (len != 16) {
+    throw std::runtime_error("udp_dyn_mux_create_channel: psk must be exactly 16 bytes");
+  }
+  UdpDynMux::PskType psk;
+  std::copy_n(reinterpret_cast<const uint8_t*>(s), 16, psk.begin());
+
+  auto& u = *(std::shared_ptr<UdpDynMux>*)luaL_checkudata(L, 1, name_udp_dyn_mux);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  std::shared_ptr<ResolverEndpoint> resolver = nullptr;
+  if (top == 3) {
+    auto input = luaL_checkstring(L, 3);
+    resolver = FindResolverEndpoint(input, u->GetResolveFor());
+  } else if (top == 4) {
+    auto host = luaL_checkstring(L, 3);
+    luaL_checkany(L, 4);
+    auto port = lua_tostring(L, 4);
+    if (!port) {
+      throw std::runtime_error("udp_dyn_mux_create_channel: port must be a number or a string");
+    }
+    resolver = std::make_shared<ResolverCombinedEndpoint>(FindResolverIp(host, u->GetResolveFor()),
+                                                          FindResolverPort(port, u->GetResolveFor()));
+  }
 
   auto ch = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>();
   luaL_getmetatable(L, name_endpoint);
   lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, u, id, ch](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    *ch = co_await u->CreateChannel(id);
+  interface.Schedule([&interface, u, psk, resolver = std::move(resolver), ch](this auto self, lua_State* L,
+                                                                         int nres) -> Omni::Fiber::Coroutine<int> {
+    if (resolver) {
+      *ch = co_await u->CreateChannel(psk, resolver);
+    } else {
+      *ch = co_await u->CreateChannel(psk);
+    }
     co_return 1;
   });
 }
 
-static void udp_dyn_mux_server_stop(lua_State* L) {
-  auto& u = *(std::shared_ptr<UdpDynMuxServer>*)luaL_checkudata(L, 1, name_udp_dyn_mux_server);
+static void udp_dyn_mux_stop(lua_State* L) {
+  auto& u = *(std::shared_ptr<UdpDynMux>*)luaL_checkudata(L, 1, name_udp_dyn_mux);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   interface.Schedule([&interface, u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
@@ -340,78 +367,37 @@ static void udp_dyn_mux_server_stop(lua_State* L) {
   });
 }
 
-static const struct luaL_Reg udp_dyn_mux_server_metatable[] = {
-    {"__gc", safe_call<gc<UdpDynMuxServer, name_udp_dyn_mux_server>>},
-    {"create_channel", safe_yield<udp_dyn_mux_server_create_channel>},
-    {"stop", safe_yield<udp_dyn_mux_server_stop>},
+static const struct luaL_Reg udp_dyn_mux_metatable[] = {
+    {"__gc", safe_call<gc<UdpDynMux, name_udp_dyn_mux>>},
+    {"create_channel", safe_yield<udp_dyn_mux_create_channel>},
+    {"stop", safe_yield<udp_dyn_mux_stop>},
     {NULL, NULL}};
 
-static void udp_dyn_mux_server_new(lua_State* L) {
+static void udp_dyn_mux_new(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
-  std::shared_ptr<UdpDynMuxServer>* udp;
+  std::shared_ptr<UdpDynMux>* udp;
   switch (lua_gettop(L)) {
   case 0:
-    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpDynMuxServer>)))
-        std::shared_ptr<UdpDynMuxServer>(new UdpDynMuxServer(interface.GetContext()));
+    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpDynMux>)))
+        std::shared_ptr<UdpDynMux>(new UdpDynMux(interface.GetContext()));
     break;
   case 1: {
     auto bind = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
-    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpDynMuxServer>)))
-        std::shared_ptr<UdpDynMuxServer>(new UdpDynMuxServer(interface.GetContext(), bind));
+    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpDynMux>)))
+        std::shared_ptr<UdpDynMux>(new UdpDynMux(interface.GetContext(), bind));
     break;
   }
   default:
-    throw std::runtime_error("udp_dyn_mux_server: not enough arguments");
+    throw std::runtime_error("udp_dyn_mux: not enough arguments");
   }
 
-  luaL_getmetatable(L, name_udp_dyn_mux_server);
+  luaL_getmetatable(L, name_udp_dyn_mux);
   lua_setmetatable(L, -2);
 
   interface.Schedule([&interface, udp](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await (*udp)->Start();
     if (err) {
-      throw boost::system::system_error(err, "udp_dyn_mux_server start error");
-    }
-    co_return 1;
-  });
-}
-
-// udp-dyn-mux-client
-static void udp_dyn_mux_client_new(lua_State* L) {
-  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
-  std::shared_ptr<Endpoint>* client;
-
-  switch (lua_gettop(L)) {
-  case 2: {
-    auto peer_address = lua_tostring(L, 1);
-    auto peer_port = (int)lua_tonumber(L, 2);
-    auto peer = boost::asio::ip::udp::endpoint(get_address(peer_address), peer_port);
-    client = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>)))
-        std::shared_ptr<Endpoint>(new UdpDynMuxClient(interface.GetContext(), peer));
-    break;
-  }
-  case 4: {
-    auto peer_address = lua_tostring(L, 1);
-    auto peer_port = (int)lua_tonumber(L, 2);
-    auto peer = boost::asio::ip::udp::endpoint(get_address(peer_address), peer_port);
-    auto local_address = lua_tostring(L, 3);
-    auto local_port = (int)lua_tonumber(L, 4);
-    auto local = boost::asio::ip::udp::endpoint(get_address(local_address), local_port);
-    client = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>)))
-        std::shared_ptr<Endpoint>(new UdpDynMuxClient(interface.GetContext(), peer, local));
-    break;
-  }
-  default:
-    throw std::runtime_error("udp_dyn_mux_client: not enough arguments");
-  }
-
-  luaL_getmetatable(L, name_endpoint);
-  lua_setmetatable(L, -2);
-
-  interface.Schedule([&interface, client](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    ErrorCode err = co_await (*client)->Start();
-    if (err) {
-      throw boost::system::system_error(err, "udp_dyn_mux_client start error");
+      throw boost::system::system_error(err, "udp_dyn_mux start error");
     }
     co_return 1;
   });
@@ -461,8 +447,7 @@ static auto hole_io_object = std::to_array<const struct luaL_Reg>({
     {.name = "tun", .func = safe_yield<tun_new>},
     {.name = "udp", .func = safe_yield<udp_new>},
     {.name = "udp_mux_server", .func = safe_yield<udp_mux_server_new>},
-    {.name = "udp_dyn_mux_server", .func = safe_yield<udp_dyn_mux_server_new>},
-    {.name = "udp_dyn_mux_client", .func = safe_yield<udp_dyn_mux_client_new>},
+    {.name = "udp_dyn_mux", .func = safe_yield<udp_dyn_mux_new>},
     {.name = NULL, .func = NULL},
 });
 
@@ -490,11 +475,11 @@ static int hole_open(lua_State* L) {
   luaL_setfuncs(L, udp_mux_server_metatable, 1);
   lua_pop(L, 1);
 
-  luaL_newmetatable(L, name_udp_dyn_mux_server);
+  luaL_newmetatable(L, name_udp_dyn_mux);
   lua_pushvalue(L, -1);           /* push metatable */
   lua_setfield(L, -2, "__index"); /* metatable.__index = metatable */
   lua_pushlightuserdata(L, &interface);
-  luaL_setfuncs(L, udp_dyn_mux_server_metatable, 1);
+  luaL_setfuncs(L, udp_dyn_mux_metatable, 1);
   lua_pop(L, 1);
 
   luaL_newmetatable(L, name_endpoint);
