@@ -6,6 +6,7 @@
 #include <format>
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include <boost/asio/buffer.hpp>
@@ -20,35 +21,185 @@
 
 namespace gh {
 
-// ==================== UdpMux::Channel ====================
+// ==================== UdpMux ====================
+UdpMux::UdpMux(boost::asio::io_context& ioContext) : _Socket(ioContext), _Local(boost::asio::ip::udp::v6(), 0) {}
 
-UdpMux::Channel::Channel(std::shared_ptr<UdpMux> parent, uint8_t id) : _Parent(parent), _Id(id) {}
+UdpMux::UdpMux(boost::asio::io_context& ioContext, boost::asio::ip::udp::endpoint bind)
+    : _Socket(ioContext), _Local(bind) {}
 
-UdpMux::Channel::Channel(std::shared_ptr<UdpMux> parent, uint8_t id, std::shared_ptr<ResolverEndpoint> peer)
-    : _Parent(parent), _Id(id), _PeerResolver(peer) {}
+UdpMux::~UdpMux() { assert(_Channels.empty()); }
 
-UdpMux::Channel::~Channel() { _Parent->RemoveChannel(_Id); }
+std::string UdpMux::GetName() const { return "UdpMux:" + boost::lexical_cast<std::string>(_Local); }
 
-std::string UdpMux::Channel::GetName() const { return std::format("UdpMuxChannel:[{}]", _Id); }
-
-Omni::Fiber::Coroutine<ErrorCode> UdpMux::Channel::DoStart() {
-  if (_PeerResolver) {
-    auto err = co_await _PeerResolver->Start();
-    if (err) {
-      co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
-      co_return err;
-    }
-    auto peerEp = _PeerResolver->GetEndpoint();
-    co_await _PeerResolver->Stop();
-    co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
-
-    auto it = _Parent->_Channels.find(_Id);
-    if (it != _Parent->_Channels.end()) {
-      it->second.Peer = peerEp;
-    }
+Omni::Fiber::Coroutine<ErrorCode> UdpMux::DoStart() {
+  try {
+    _Socket.open(boost::asio::ip::udp::v6());
+    _Socket.set_option(boost::asio::ip::v6_only(false));
+    _Socket.bind(_Local);
+    BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") bound at " << _Socket.local_endpoint();
+  } catch (const SystemError& e) {
+    BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") start failed: " << e.what();
+    co_return e.code();
   }
   co_return ErrorCode{};
 }
+
+Omni::Fiber::Coroutine<void> UdpMux::DoWork() {
+  (co_await Omni::Fiber::GetCurrentFiber())
+      .Spawn("UdpMux ReadLoop:" + boost::lexical_cast<std::string>(LocalEndpoint()) + "@" +
+                 std::to_string(reinterpret_cast<uintptr_t>(this)),
+             [this]() -> Omni::Fiber::Coroutine<void> {
+               co_await ReadLoop();
+               co_return;
+             });
+
+  bool stopped = false;
+  while (!stopped) {
+    co_await Omni::Fiber::Select(
+        Omni::Fiber::SelectPair(_Stop.GetFiberCancelEvent(), [&]() { stopped = true; }),
+        Omni::Fiber::SelectPair(_ChannelRpc.GetServiceAwaitor(), [&](auto req) -> Omni::Fiber::Coroutine<void> {
+          bool ok = co_await Omni::Fiber::RemoteCall::HandleRequest(std::move(req));
+          assert(ok);
+          co_return;
+        }));
+  }
+}
+
+Omni::Fiber::Coroutine<ErrorCode> UdpMux::DoGracefulStop() {
+  for (auto& [id, channel] : std::exchange(_Channels, {})) {
+    co_await channel->Stop();
+    co_await channel->WaitService();
+  }
+  co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
+  _Socket.close();
+  co_return ErrorCode{};
+}
+
+Omni::Fiber::Coroutine<std::shared_ptr<UdpMux::Channel>> UdpMux::CreateChannel(uint8_t id) {
+  co_return co_await CreateChannel(id, nullptr);
+}
+
+Omni::Fiber::Coroutine<std::shared_ptr<UdpMux::Channel>>
+UdpMux::CreateChannel(uint8_t id, std::shared_ptr<ResolverEndpoint> resolver) {
+  co_return co_await _ChannelRpc.Call(
+      [this, id, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
+        std::shared_ptr<Channel> channel;
+        if (resolver) {
+          auto peer = co_await resolver->Resolve();
+          if (!peer.has_value()) {
+            co_return nullptr;
+          }
+
+          channel = std::make_shared<Channel>(*this, id, peer.value());
+        } else {
+          channel = std::make_shared<Channel>(*this, id);
+        }
+
+        auto [it, inserted] = _Channels.try_emplace(id, channel);
+        assert(inserted);
+        auto err = co_await channel->Start();
+        if (err) {
+          co_return nullptr;
+        }
+        co_return channel;
+      });
+}
+
+Omni::Fiber::Coroutine<void> UdpMux::RemoveChannel(uint8_t id) {
+  co_await _ChannelRpc.Call([this, id]() -> Omni::Fiber::Coroutine<void> {
+    auto it = _Channels.find(id);
+    assert(it != _Channels.end());
+
+    auto channel = std::move(it->second);
+    _Channels.erase(it);
+    co_await channel->Stop();
+    co_await channel->WaitService();
+  });
+}
+
+Omni::Fiber::Coroutine<void> UdpMux::ReadLoop() {
+  auto slotTracker = _Stop.AsioSlot();
+  while (!_Stop.IsTriggered()) {
+    Packet p;
+    boost::asio::ip::udp::endpoint peer;
+
+    auto [err, bytes_transferred] = co_await _Socket.async_receive_from(
+        boost::asio::mutable_buffer(p), peer,
+        boost::asio::bind_cancellation_slot(slotTracker.Slot(), Omni::Fiber::AsioUseFiber));
+    if (err) {
+      if (err == boost::asio::error::operation_aborted) {
+        BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") read loop cancelled";
+      } else {
+        BOOST_LOG_TRIVIAL(error) << "UdpMux(" << this << ") read error: " << err.message();
+        for (auto& [id, channel] : _Channels) {
+          if (!channel->IsStopped()) {
+            co_await channel->Send(std::unexpected(err));
+          }
+        }
+      }
+      break;
+    }
+    p._Length = bytes_transferred;
+
+    if (p.DataSize() < 1) {
+      BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") ignored empty packet from " << peer;
+      continue;
+    }
+
+    uint8_t id = p.PopFront(1)[0];
+    auto it = _Channels.find(id);
+    if (it != _Channels.end()) {
+      if (it->second->GetPeer().has_value()) {
+        if (it->second->GetPeer().value() != peer) {
+          BOOST_LOG_TRIVIAL(info) << GetName() << " remaps peer " << it->second->GetPeer().value() << " to " << peer
+                                  << " for channel " << (int)id;
+          it->second->GetPeer() = peer;
+        }
+      } else {
+        BOOST_LOG_TRIVIAL(info) << GetName() << " learns peer " << peer << " for channel " << (int)id;
+        it->second->GetPeer() = peer;
+      }
+
+      co_await it->second->Send(std::move(p));
+    } else {
+      BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") packet from unknown channel ID: " << (int)id;
+    }
+  }
+}
+
+Omni::Fiber::Coroutine<ErrorCode> UdpMux::WriteTo(uint8_t id, Packet& p, Cancel& c) {
+  if (c.IsTriggered()) {
+    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+  }
+
+  auto it = _Channels.find(id);
+  if (it == _Channels.end() || !it->second->GetPeer().has_value()) {
+    co_return ErrorCode{AppErrorCategory::kInvalidPacketSession, kAppError};
+  }
+
+  if (p.FrontSpace() < 1) {
+    co_return ErrorCode{AppErrorCategory::kInvalidPacketReserved, kAppError};
+  }
+
+  p.PushFront(std::span<uint8_t, 1>(&id, 1));
+
+  auto [err, bytes_transferred] = co_await _Socket.async_send_to(
+      boost::asio::const_buffer(p), it->second->GetPeer().value(),
+      boost::asio::bind_cancellation_slot(c.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+  assert(err || bytes_transferred == p._Length);
+  co_return err;
+}
+
+// ==================== UdpMux::Channel ====================
+UdpMux::Channel::Channel(UdpMux& parent, uint8_t id) : _Parent(parent), _Id(id), _Peer(std::nullopt) {}
+UdpMux::Channel::Channel(UdpMux& parent, uint8_t id, boost::asio::ip::udp::endpoint peer)
+    : _Parent(parent), _Id(id), _Peer(peer) {}
+
+UdpMux::Channel::~Channel() {}
+
+std::string UdpMux::Channel::GetName() const { return std::format("UdpMuxChannel:[{}]", _Id); }
+
+Omni::Fiber::Coroutine<ErrorCode> UdpMux::Channel::DoStart() { co_return ErrorCode{}; }
 
 Omni::Fiber::Coroutine<ErrorCode> UdpMux::Channel::DoGracefulStop() {
   co_await _PipielineUsageCounter.WaitAll();
@@ -84,185 +235,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMux::Channel::Read(Packet& p, Cancel& c) {
 }
 
 Omni::Fiber::Coroutine<ErrorCode> UdpMux::Channel::Write(Packet& p, Cancel& c) {
-  co_return co_await _Parent->WriteTo(_Id, p, c);
-}
-
-// ==================== UdpMux ====================
-
-UdpMux::UdpMux(boost::asio::io_context& ioContext) : _Socket(ioContext), _Local(boost::asio::ip::udp::v6(), 0) {}
-
-UdpMux::UdpMux(boost::asio::io_context& ioContext, boost::asio::ip::udp::endpoint bind)
-    : _Socket(ioContext), _Local(bind) {}
-
-UdpMux::~UdpMux() {}
-
-std::string UdpMux::GetName() const { return "UdpMux:" + boost::lexical_cast<std::string>(_Local); }
-
-Omni::Fiber::Coroutine<ErrorCode> UdpMux::DoStart() {
-  try {
-    _Socket.open(boost::asio::ip::udp::v6());
-    _Socket.set_option(boost::asio::ip::v6_only(false));
-    _Socket.bind(_Local);
-    BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") bound at " << _Socket.local_endpoint();
-  } catch (const SystemError& e) {
-    BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") start failed: " << e.what();
-    co_return e.code();
-  }
-  co_return ErrorCode{};
-}
-
-Omni::Fiber::Coroutine<void> UdpMux::DoWork() {
-  (co_await Omni::Fiber::GetCurrentFiber())
-      .Spawn("UdpMux ReadLoop:" + boost::lexical_cast<std::string>(LocalEndpoint()) + "@" +
-                 std::to_string(reinterpret_cast<uintptr_t>(this)),
-             [this]() -> Omni::Fiber::Coroutine<void> {
-               co_await ReadLoop();
-               co_return;
-             });
-
-  bool stopped = false;
-  while (!stopped) {
-    std::optional<std::move_only_function<Omni::Fiber::Coroutine<void>()>> pendingFunc;
-    co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(_Stop.GetFiberCancelEvent(), [&]() { stopped = true; }),
-                                 Omni::Fiber::SelectPair(_CreateChannelPipe.GetConsumer(), [&](auto data) {
-                                   if (data.has_value()) {
-                                     pendingFunc = std::move(data.value());
-                                   } else {
-                                     stopped = true;
-                                   }
-                                 }));
-    if (pendingFunc.has_value()) {
-      co_await pendingFunc.value()();
-    }
-  }
-}
-
-Omni::Fiber::Coroutine<ErrorCode> UdpMux::DoGracefulStop() {
-  for (auto& [id, info] : _Channels) {
-    if (auto ch = info.WeakChannel.lock()) {
-      co_await ch->Stop();
-    }
-  }
-  co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
-  _Socket.close();
-  co_return ErrorCode{};
-}
-
-Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> UdpMux::CreateChannel(uint8_t id) {
-  auto ch = std::make_shared<Channel>(std::static_pointer_cast<UdpMux>(shared_from_this()), id);
-  auto [it, inserted] = _Channels.try_emplace(id, ChannelInfo{.WeakChannel = ch, .Peer = std::nullopt});
-  assert(inserted);
-
-  co_await _CreateChannelPipe.GetProducer().Put([this, id, ch]() -> Omni::Fiber::Coroutine<void> {
-    auto err = co_await ch->Start();
-    if (err) {
-      BOOST_LOG_TRIVIAL(error) << "UdpMux Channel start failed: " << err.message();
-    }
-    co_return;
-  });
-
-  co_return ch;
-}
-
-Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> UdpMux::CreateChannel(uint8_t id,
-                                                                        std::shared_ptr<ResolverEndpoint> peer) {
-  auto ch = std::make_shared<Channel>(std::static_pointer_cast<UdpMux>(shared_from_this()), id, peer);
-  auto [it, inserted] = _Channels.try_emplace(id, ChannelInfo{.WeakChannel = ch, .Peer = std::nullopt});
-  assert(inserted);
-
-  auto event = std::make_shared<Omni::Fiber::Event<ErrorCode>>();
-  co_await _CreateChannelPipe.GetProducer().Put([ch, event]() -> Omni::Fiber::Coroutine<void> {
-    auto err = co_await ch->Start();
-    event->Fire(err);
-    co_return;
-  });
-
-  auto err = co_await *event;
-  if (err) {
-    co_return nullptr;
-  }
-  co_return ch;
-}
-
-void UdpMux::RemoveChannel(uint8_t id) { _Channels.erase(id); }
-
-Omni::Fiber::Coroutine<void> UdpMux::ReadLoop() {
-  auto slotTracker = _Stop.AsioSlot();
-  while (!_Stop.IsTriggered()) {
-    Packet p;
-    boost::asio::ip::udp::endpoint peer;
-
-    auto [err, bytes_transferred] = co_await _Socket.async_receive_from(
-        boost::asio::mutable_buffer(p), peer,
-        boost::asio::bind_cancellation_slot(slotTracker.Slot(), Omni::Fiber::AsioUseFiber));
-    if (err) {
-      if (err == boost::asio::error::operation_aborted) {
-        BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") read loop cancelled";
-      } else {
-        BOOST_LOG_TRIVIAL(error) << "UdpMux(" << this << ") read error: " << err.message();
-        for (auto& [id, info] : _Channels) {
-          if (auto ch = info.WeakChannel.lock()) {
-            if (!ch->IsStopped()) {
-              co_await ch->Send(std::unexpected(err));
-            }
-          }
-        }
-      }
-      break;
-    }
-    p._Length = bytes_transferred;
-
-    if (p.DataSize() < 1) {
-      BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") ignored empty packet from " << peer;
-      continue;
-    }
-
-    uint8_t id = p.PopFront(1)[0];
-    auto it = _Channels.find(id);
-    if (it != _Channels.end()) {
-      if (it->second.Peer.has_value()) {
-        if (it->second.Peer.value() != peer) {
-          BOOST_LOG_TRIVIAL(info) << GetName() << " remaps peer " << it->second.Peer.value() << " to " << peer
-                                  << " for channel " << (int)id;
-          it->second.Peer = peer;
-        }
-      } else {
-        BOOST_LOG_TRIVIAL(info) << GetName() << " learns peer " << peer << " for channel " << (int)id;
-        it->second.Peer = peer;
-      }
-
-      if (auto ch = it->second.WeakChannel.lock()) {
-        co_await ch->Send(std::move(p));
-      } else {
-        BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") packet from lost channel ID: " << (int)id;
-      }
-    } else {
-      BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") packet from unknown channel ID: " << (int)id;
-    }
-  }
-}
-
-Omni::Fiber::Coroutine<ErrorCode> UdpMux::WriteTo(uint8_t id, Packet& p, Cancel& c) {
-  if (c.IsTriggered()) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
-  }
-
-  auto it = _Channels.find(id);
-  if (it == _Channels.end() || !it->second.Peer.has_value()) {
-    co_return ErrorCode{AppErrorCategory::kInvalidPacketSession, kAppError};
-  }
-
-  if (p.FrontSpace() < 1) {
-    co_return ErrorCode{AppErrorCategory::kInvalidPacketReserved, kAppError};
-  }
-
-  p.PushFront(std::span<uint8_t, 1>(&id, 1));
-
-  auto [err, bytes_transferred] = co_await _Socket.async_send_to(
-      boost::asio::const_buffer(p), it->second.Peer.value(),
-      boost::asio::bind_cancellation_slot(c.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
-  assert(err || bytes_transferred == p._Length);
-  co_return err;
+  co_return co_await _Parent.WriteTo(_Id, p, c);
 }
 
 } // namespace gh

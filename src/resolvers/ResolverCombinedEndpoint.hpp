@@ -20,7 +20,7 @@ public:
   ResolverCombinedEndpoint(ResolverCombinedEndpoint&&) = delete;
   ResolverCombinedEndpoint& operator=(ResolverCombinedEndpoint&&) = delete;
 
-  boost::asio::ip::udp::endpoint GetEndpoint() const override;
+  boost::asio::ip::udp::endpoint GetResolverResult() const override;
 
 protected:
   std::string GetName() const override;

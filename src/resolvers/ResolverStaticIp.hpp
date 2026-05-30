@@ -20,7 +20,7 @@ public:
   ResolverStaticIp(ResolverStaticIp&&) = delete;
   ResolverStaticIp& operator=(ResolverStaticIp&&) = delete;
 
-  boost::asio::ip::address GetAddress() const override;
+  boost::asio::ip::address GetResolverResult() const override;
 
 protected:
   std::string GetName() const override;

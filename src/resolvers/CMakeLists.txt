@@ -10,6 +10,7 @@ foreach(suffix "" "-asan")
   endif()
 
   add_library(${target} STATIC
+    Resolver.cpp
     ResolverStaticIp.cpp
     ResolverIpDns.cpp
     ResolverNumberPort.cpp

@@ -21,10 +21,12 @@ public:
 
   virtual std::string GetName() const = 0;
   bool IsStopped() const { return _Stop.IsTriggered(); }
+  Omni::Fiber::Coroutine<void> WaitService();
 
 protected:
   Cancel _Stop;
   Omni::Fiber::Event<ErrorCode> _StopError;
+  std::shared_ptr<Omni::Fiber::Fiber> _Fiber;
 
   virtual Omni::Fiber::Coroutine<ErrorCode> DoStart() = 0;
   virtual Omni::Fiber::Coroutine<void> DoWork();

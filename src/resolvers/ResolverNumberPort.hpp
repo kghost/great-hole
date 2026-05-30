@@ -18,7 +18,7 @@ public:
   ResolverNumberPort(ResolverNumberPort&&) = delete;
   ResolverNumberPort& operator=(ResolverNumberPort&&) = delete;
 
-  uint16_t GetPort() const override;
+  uint16_t GetResolverResult() const override;
 
 protected:
   std::string GetName() const override;

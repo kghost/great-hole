@@ -7,8 +7,8 @@
         {
             "type": "lldb-dap",
             "request": "launch",
-            "name": "launch great-hole-fiber",
-            "program": "${workspaceFolder}/build/src_fiber/great-hole-fiber",
+            "name": "launch great-hole",
+            "program": "${workspaceFolder}/build/src/great-hole",
             "console": "integratedTerminal",
             "initCommands": [
                 "process handle SIGINT --stop false --notify false --pass true"

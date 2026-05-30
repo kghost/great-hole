@@ -1,10 +1,8 @@
 #pragma once
 
 #include <expected>
-#include <functional>
 #include <map>
 #include <memory>
-#include <variant>
 
 #include <boost/asio.hpp>
 
@@ -12,6 +10,7 @@
 #include "Endpoint.hpp"
 #include "ErrorCode.hpp"
 #include "Pipe.hpp"
+#include "RemoteCall.hpp"
 #include "ServiceBase.hpp"
 #include "resolvers/Resolver.hpp"
 
@@ -35,10 +34,9 @@ public:
   std::string GetService() override { return "great_hole_udp"; }
   Protocol GetProtocol() override { return Protocol::Udp; }
 
-  Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> CreateChannel(boost::asio::ip::udp::endpoint const& peer);
-  Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> CreateChannel(std::shared_ptr<ResolverEndpoint> resolver);
-  void RemoveChannel(boost::asio::ip::udp::endpoint const& peer);
-  void AddChannel(boost::asio::ip::udp::endpoint const& peer, std::shared_ptr<UdpChannel> ch);
+  Omni::Fiber::Coroutine<std::shared_ptr<UdpChannel>> CreateChannel(boost::asio::ip::udp::endpoint const& peer);
+  Omni::Fiber::Coroutine<std::shared_ptr<UdpChannel>> CreateChannel(std::shared_ptr<ResolverEndpoint> resolver);
+  Omni::Fiber::Coroutine<void> RemoveChannel(boost::asio::ip::udp::endpoint const& peer);
   Omni::Fiber::Coroutine<ErrorCode> WriteTo(boost::asio::ip::udp::endpoint const& peer, Packet& p, Cancel& c);
   boost::asio::ip::udp::endpoint LocalEndpoint() const { return _Socket.local_endpoint(); }
 
@@ -53,15 +51,13 @@ private:
 
   boost::asio::ip::udp::socket _Socket;
   boost::asio::ip::udp::endpoint _Local;
-  std::map<boost::asio::ip::udp::endpoint, std::weak_ptr<UdpChannel>> _Channels;
-  Omni::Fiber::Pipe<std::move_only_function<Omni::Fiber::Coroutine<void>()>> _CreateChannelPipe;
+  std::map<boost::asio::ip::udp::endpoint, std::shared_ptr<UdpChannel>> _Channels;
+  Omni::Fiber::RemoteCall _ChannelRpc;
 };
 
 class Udp::UdpChannel : public Endpoint {
 public:
-  using Target = std::variant<std::shared_ptr<ResolverEndpoint>, boost::asio::ip::udp::endpoint>;
-
-  explicit UdpChannel(std::shared_ptr<Udp> parent, Target target);
+  explicit UdpChannel(Udp& parent, boost::asio::ip::udp::endpoint peer);
   ~UdpChannel() override;
 
   UdpChannel(UdpChannel&) = delete;
@@ -83,8 +79,8 @@ public:
   }
 
 private:
-  std::shared_ptr<Udp> _Parent;
-  Target _Peer;
+  Udp& _Parent;
+  boost::asio::ip::udp::endpoint _Peer;
   Omni::Fiber::Pipe<std::expected<Packet, ErrorCode>> _Pipe;
 };
 

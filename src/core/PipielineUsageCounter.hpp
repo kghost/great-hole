@@ -3,7 +3,7 @@
 #include <boost/log/trivial.hpp>
 
 #include "Coroutine.hpp"
-#include "Signal.hpp"
+#include "OneshotEvent.hpp"
 
 namespace gh {
 
@@ -31,7 +31,7 @@ public:
 
 protected:
   int _PipelineCount = 0;
-  Omni::Fiber::Signal _AllPipelineStopped;
+  Omni::Fiber::OneshotEvent<void> _AllPipelineStopped;
 };
 
 } // namespace gh

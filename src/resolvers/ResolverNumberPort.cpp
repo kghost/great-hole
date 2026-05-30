@@ -11,7 +11,7 @@ std::string ResolverNumberPort::GetName() const {
   return "ResolverNumberPort:" + boost::lexical_cast<std::string>(_Port);
 }
 
-uint16_t ResolverNumberPort::GetPort() const { return _Port; }
+uint16_t ResolverNumberPort::GetResolverResult() const { return _Port; }
 
 Omni::Fiber::Coroutine<ErrorCode> ResolverNumberPort::DoStart() { co_return ErrorCode{}; }
 

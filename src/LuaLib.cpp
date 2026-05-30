@@ -19,6 +19,11 @@
 #include "ResolverCombinedEndpoint.hpp"
 #include "ResolverHelper.hpp"
 
+// IMPORTANT NOTE:
+// Stack-Unwinding Yield Leak: C++ local variables (like std::shared_ptr<ResolverEndpoint>) inside yielding Lua C API
+// functions. Since lua_yield uses a longjmp mechanism to suspend the Lua thread, standard C++ stack unwinding is
+// bypassed, leaking any active local C++ objects in the function.
+
 namespace gh {
 
 static boost::asio::ip::address_v6 get_address(const char* str) {
@@ -33,6 +38,15 @@ static boost::asio::ip::address_v6 get_address(const char* str) {
 template <int f(lua_State* L)> static int safe_call(lua_State* L) {
   try {
     return f(L);
+  } catch (std::exception const& e) {
+    return luaL_error(L, e.what());
+  }
+}
+
+template <void f(lua_State* L)> static int safe_yield(lua_State* L) {
+  try {
+    f(L);
+    return lua_yield(L, 0);
   } catch (std::exception const& e) {
     return luaL_error(L, e.what());
   }
@@ -72,28 +86,26 @@ static int filter_xor_new(lua_State* L) {
   return 1;
 }
 
-static int pipeline_stop(lua_State* L) {
+static void pipeline_stop(lua_State* L) {
   auto& pipe = *(std::shared_ptr<Pipeline>*)luaL_checkudata(L, 1, name_pipeline);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, pipe](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface, pipe](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     co_await pipe->Stop();
     co_return 0;
   });
-
-  return lua_yield(L, 0);
 }
 
 static auto pipeline_metatable = std::to_array<const struct luaL_Reg>({
     {.name = "__gc", .func = safe_call<gc<Pipeline, name_pipeline>>},
-    {.name = "stop", .func = safe_call<pipeline_stop>},
+    {.name = "stop", .func = safe_yield<pipeline_stop>},
     {.name = NULL, .func = NULL},
 });
 
-static int pipeline_new(lua_State* L) {
+static void pipeline_new(lua_State* L) {
   auto c = lua_gettop(L);
   if (c < 2) {
-    return luaL_error(L, "pipeline: not enough arguments");
+    throw std::runtime_error("pipeline: not enough arguments");
   }
 
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
@@ -110,36 +122,32 @@ static int pipeline_new(lua_State* L) {
   luaL_getmetatable(L, name_pipeline);
   lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, pipe](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface, pipe](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await (*pipe)->Start();
     if (err) {
-      throw boost::system::system_error(err, "udp start error");
+      throw boost::system::system_error(err, "pipeline start error");
     }
     co_return 1;
   });
-
-  return lua_yield(L, 0);
 }
 
-static int endpoint_stop(lua_State* L) {
+static void endpoint_stop(lua_State* L) {
   auto& ep = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, 1, name_endpoint);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, ep](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface, ep](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     co_await ep->Stop();
     co_return 0;
   });
-
-  return lua_yield(L, 0);
 }
 
 static const struct luaL_Reg endpoint_metatable[] = {
-    {"__gc", safe_call<gc<Endpoint, name_endpoint>>}, {"stop", safe_call<endpoint_stop>}, {NULL, NULL}};
+    {"__gc", safe_call<gc<Endpoint, name_endpoint>>}, {"stop", safe_yield<endpoint_stop>}, {NULL, NULL}};
 
-static int udp_create_channel(lua_State* L) {
+static void udp_create_channel(lua_State* L) {
   auto top = lua_gettop(L);
   if (top < 2 || top > 3) {
-    return luaL_error(L, "udp_create_channel: invalid number of arguments");
+    throw std::runtime_error("udp_create_channel: invalid number of arguments");
   }
 
   auto& u = *(std::shared_ptr<Udp>*)luaL_checkudata(L, 1, name_udp);
@@ -154,7 +162,7 @@ static int udp_create_channel(lua_State* L) {
     luaL_checkany(L, 3);
     auto port = lua_tostring(L, 3);
     if (!port) {
-      return luaL_error(L, "udp_create_channel: port must be a number or a string");
+      throw std::runtime_error("udp_create_channel: port must be a number or a string");
     }
     resolver = std::make_shared<ResolverCombinedEndpoint>(FindResolverIp(host, u->GetResolveFor()),
                                                           FindResolverPort(port, u->GetResolveFor()));
@@ -164,32 +172,29 @@ static int udp_create_channel(lua_State* L) {
   luaL_getmetatable(L, name_endpoint);
   lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, u, resolver, ch](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface, u, resolver = std::move(resolver), ch](this auto self, lua_State* L,
+                                                                         int nres) -> Omni::Fiber::Coroutine<int> {
     *ch = co_await u->CreateChannel(resolver);
     co_return 1;
   });
-
-  return lua_yield(L, 0);
 }
 
-static int udp_stop(lua_State* L) {
+static void udp_stop(lua_State* L) {
   auto& u = *(std::shared_ptr<Udp>*)luaL_checkudata(L, 1, name_udp);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, u](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface, u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     co_await u->Stop();
     co_return 0;
   });
-
-  return lua_yield(L, 0);
 }
 
 static const struct luaL_Reg udp_metatable[] = {{"__gc", safe_call<gc<Udp, name_udp>>},
-                                                {"create_channel", safe_call<udp_create_channel>},
-                                                {"stop", safe_call<udp_stop>},
+                                                {"create_channel", safe_yield<udp_create_channel>},
+                                                {"stop", safe_yield<udp_stop>},
                                                 {NULL, NULL}};
 
-static int udp_new(lua_State* L) {
+static void udp_new(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
   std::shared_ptr<Udp>* udp;
   switch (lua_gettop(L)) {
@@ -203,28 +208,26 @@ static int udp_new(lua_State* L) {
     break;
   }
   default:
-    return luaL_error(L, "udp: not enough arguments");
+    throw std::runtime_error("udp: not enough arguments");
   }
 
   luaL_getmetatable(L, name_udp);
   lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, udp](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface, udp](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await (*udp)->Start();
     if (err) {
       throw boost::system::system_error(err, "udp start error");
     }
     co_return 1;
   });
-
-  return lua_yield(L, 0);
 }
 
 // udp-mux-server
-static int udp_mux_server_create_channel(lua_State* L) {
+static void udp_mux_server_create_channel(lua_State* L) {
   auto top = lua_gettop(L);
   if (top < 2 || top > 4) {
-    return luaL_error(L, "udp_mux_server_create_channel: invalid number of arguments");
+    throw std::runtime_error("udp_mux_server_create_channel: invalid number of arguments");
   }
 
   auto id = (uint8_t)luaL_checknumber(L, 2);
@@ -240,13 +243,14 @@ static int udp_mux_server_create_channel(lua_State* L) {
     luaL_checkany(L, 4);
     auto port = lua_tostring(L, 4);
     if (!port) {
-      return luaL_error(L, "udp_mux_server_create_channel: port must be a number or a string");
+      throw std::runtime_error("udp_mux_server_create_channel: port must be a number or a string");
     }
     resolver = std::make_shared<ResolverCombinedEndpoint>(FindResolverIp(host, u->GetResolveFor()),
                                                           FindResolverPort(port, u->GetResolveFor()));
   }
 
-  interface.Schedule([&interface, u, id, resolver](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface, u, id, resolver = std::move(resolver)](this auto self, lua_State* L,
+                                                                         int nres) -> Omni::Fiber::Coroutine<int> {
     auto ch = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>();
     luaL_getmetatable(L, name_endpoint);
     lua_setmetatable(L, -2);
@@ -258,28 +262,25 @@ static int udp_mux_server_create_channel(lua_State* L) {
     }
     co_return 1;
   });
-
-  return lua_yield(L, 0);
 }
 
-static int udp_mux_server_stop(lua_State* L) {
+static void udp_mux_server_stop(lua_State* L) {
   auto& u = *(std::shared_ptr<UdpMux>*)luaL_checkudata(L, 1, name_udp_mux_server);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, u](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface, u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     co_await u->Stop();
     co_return 0;
   });
-
-  return lua_yield(L, 0);
 }
 
-static const struct luaL_Reg udp_mux_server_metatable[] = {{"__gc", safe_call<gc<UdpMux, name_udp_mux_server>>},
-                                                           {"create_channel", safe_call<udp_mux_server_create_channel>},
-                                                           {"stop", safe_call<udp_mux_server_stop>},
-                                                           {NULL, NULL}};
+static const struct luaL_Reg udp_mux_server_metatable[] = {
+    {"__gc", safe_call<gc<UdpMux, name_udp_mux_server>>},
+    {"create_channel", safe_yield<udp_mux_server_create_channel>},
+    {"stop", safe_yield<udp_mux_server_stop>},
+    {NULL, NULL}};
 
-static int udp_mux_server_new(lua_State* L) {
+static void udp_mux_server_new(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
   std::shared_ptr<UdpMux>* udp;
   switch (lua_gettop(L)) {
@@ -294,27 +295,25 @@ static int udp_mux_server_new(lua_State* L) {
     break;
   }
   default:
-    return luaL_error(L, "udp_mux_server: not enough arguments");
+    throw std::runtime_error("udp_mux_server: not enough arguments");
   }
 
   luaL_getmetatable(L, name_udp_mux_server);
   lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, udp](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface, udp](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await (*udp)->Start();
     if (err) {
       throw boost::system::system_error(err, "udp_mux_server start error");
     }
     co_return 1;
   });
-
-  return lua_yield(L, 0);
 }
 
 // udp-dyn-mux-server
-static int udp_dyn_mux_server_create_channel(lua_State* L) {
+static void udp_dyn_mux_server_create_channel(lua_State* L) {
   if (lua_gettop(L) != 2) {
-    return luaL_error(L, "udp_dyn_mux_server_create_channel: not enough arguments");
+    throw std::runtime_error("udp_dyn_mux_server_create_channel: not enough arguments");
   }
 
   auto id = (uint16_t)lua_tonumber(L, 2);
@@ -325,33 +324,29 @@ static int udp_dyn_mux_server_create_channel(lua_State* L) {
   luaL_getmetatable(L, name_endpoint);
   lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, u, id, ch](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface, u, id, ch](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     *ch = co_await u->CreateChannel(id);
     co_return 1;
   });
-
-  return lua_yield(L, 0);
 }
 
-static int udp_dyn_mux_server_stop(lua_State* L) {
+static void udp_dyn_mux_server_stop(lua_State* L) {
   auto& u = *(std::shared_ptr<UdpDynMuxServer>*)luaL_checkudata(L, 1, name_udp_dyn_mux_server);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, u](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface, u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     co_await u->Stop();
     co_return 0;
   });
-
-  return lua_yield(L, 0);
 }
 
 static const struct luaL_Reg udp_dyn_mux_server_metatable[] = {
     {"__gc", safe_call<gc<UdpDynMuxServer, name_udp_dyn_mux_server>>},
-    {"create_channel", safe_call<udp_dyn_mux_server_create_channel>},
-    {"stop", safe_call<udp_dyn_mux_server_stop>},
+    {"create_channel", safe_yield<udp_dyn_mux_server_create_channel>},
+    {"stop", safe_yield<udp_dyn_mux_server_stop>},
     {NULL, NULL}};
 
-static int udp_dyn_mux_server_new(lua_State* L) {
+static void udp_dyn_mux_server_new(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
   std::shared_ptr<UdpDynMuxServer>* udp;
   switch (lua_gettop(L)) {
@@ -366,25 +361,23 @@ static int udp_dyn_mux_server_new(lua_State* L) {
     break;
   }
   default:
-    return luaL_error(L, "udp_dyn_mux_server: not enough arguments");
+    throw std::runtime_error("udp_dyn_mux_server: not enough arguments");
   }
 
   luaL_getmetatable(L, name_udp_dyn_mux_server);
   lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, udp](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface, udp](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await (*udp)->Start();
     if (err) {
       throw boost::system::system_error(err, "udp_dyn_mux_server start error");
     }
     co_return 1;
   });
-
-  return lua_yield(L, 0);
 }
 
 // udp-dyn-mux-client
-static int udp_dyn_mux_client_new(lua_State* L) {
+static void udp_dyn_mux_client_new(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
   std::shared_ptr<Endpoint>* client;
 
@@ -409,29 +402,27 @@ static int udp_dyn_mux_client_new(lua_State* L) {
     break;
   }
   default:
-    return luaL_error(L, "udp_dyn_mux_client: not enough arguments");
+    throw std::runtime_error("udp_dyn_mux_client: not enough arguments");
   }
 
   luaL_getmetatable(L, name_endpoint);
   lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, client](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface, client](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await (*client)->Start();
     if (err) {
       throw boost::system::system_error(err, "udp_dyn_mux_client start error");
     }
     co_return 1;
   });
-
-  return lua_yield(L, 0);
 }
 
 // =========================== tun ===========================
-static int tun_new(lua_State* L) {
+static void tun_new(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   if (lua_gettop(L) != 1) {
-    return luaL_error(L, "tun: not enough arguments");
+    throw std::runtime_error("tun: not enough arguments");
   }
 
   auto tun = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>)))
@@ -439,26 +430,22 @@ static int tun_new(lua_State* L) {
   luaL_getmetatable(L, name_endpoint);
   lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, tun](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface, tun](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await (*tun)->Start();
     if (err) {
       throw boost::system::system_error(err, "tun start error");
     }
     co_return 1;
   });
-
-  return lua_yield(L, 0);
 }
 
-static int hole_wait_for_exit(lua_State* L) {
+static void hole_wait_for_exit(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface](lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([&interface](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     co_await interface.GetStopSignal();
     co_return 0;
   });
-
-  return lua_yield(L, 0);
 }
 
 // =========================== pipeline ===========================
@@ -469,13 +456,13 @@ static auto hole = std::to_array<const struct luaL_Reg>({
 
 // =========================== pipe io object ===========================
 static auto hole_io_object = std::to_array<const struct luaL_Reg>({
-    {.name = "wait_for_exit", .func = safe_call<hole_wait_for_exit>},
-    {.name = "pipeline", .func = safe_call<pipeline_new>},
-    {.name = "tun", .func = safe_call<tun_new>},
-    {.name = "udp", .func = safe_call<udp_new>},
-    {.name = "udp_mux_server", .func = safe_call<udp_mux_server_new>},
-    {.name = "udp_dyn_mux_server", .func = safe_call<udp_dyn_mux_server_new>},
-    {.name = "udp_dyn_mux_client", .func = safe_call<udp_dyn_mux_client_new>},
+    {.name = "wait_for_exit", .func = safe_yield<hole_wait_for_exit>},
+    {.name = "pipeline", .func = safe_yield<pipeline_new>},
+    {.name = "tun", .func = safe_yield<tun_new>},
+    {.name = "udp", .func = safe_yield<udp_new>},
+    {.name = "udp_mux_server", .func = safe_yield<udp_mux_server_new>},
+    {.name = "udp_dyn_mux_server", .func = safe_yield<udp_dyn_mux_server_new>},
+    {.name = "udp_dyn_mux_client", .func = safe_yield<udp_dyn_mux_client_new>},
     {.name = NULL, .func = NULL},
 });
 

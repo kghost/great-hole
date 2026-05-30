@@ -1,7 +1,6 @@
 #pragma once
 
 #include <expected>
-#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -12,8 +11,8 @@
 #include "Endpoint.hpp"
 #include "ErrorCode.hpp"
 #include "Pipe.hpp"
+#include "RemoteCall.hpp"
 #include "Resolver.hpp"
-#include "ServiceBase.hpp"
 
 namespace gh {
 
@@ -35,9 +34,9 @@ public:
   std::string GetService() override { return "great_hole_udp_mux"; }
   Protocol GetProtocol() override { return Protocol::Udp; }
 
-  Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> CreateChannel(uint8_t id);
-  Omni::Fiber::Coroutine<std::shared_ptr<Endpoint>> CreateChannel(uint8_t id, std::shared_ptr<ResolverEndpoint> peer);
-  void RemoveChannel(uint8_t id);
+  Omni::Fiber::Coroutine<std::shared_ptr<Channel>> CreateChannel(uint8_t id);
+  Omni::Fiber::Coroutine<std::shared_ptr<Channel>> CreateChannel(uint8_t id, std::shared_ptr<ResolverEndpoint> peer);
+  Omni::Fiber::Coroutine<void> RemoveChannel(uint8_t id);
   Omni::Fiber::Coroutine<ErrorCode> WriteTo(uint8_t id, Packet& p, Cancel& c);
   boost::asio::ip::udp::endpoint LocalEndpoint() const { return _Socket.local_endpoint(); }
 
@@ -50,21 +49,16 @@ protected:
 private:
   Omni::Fiber::Coroutine<void> ReadLoop();
 
-  struct ChannelInfo {
-    std::weak_ptr<Channel> WeakChannel;
-    std::optional<boost::asio::ip::udp::endpoint> Peer;
-  };
-
   boost::asio::ip::udp::socket _Socket;
   boost::asio::ip::udp::endpoint _Local;
-  std::map<uint8_t, ChannelInfo> _Channels;
-  Omni::Fiber::Pipe<std::move_only_function<Omni::Fiber::Coroutine<void>()>> _CreateChannelPipe;
+  std::map<uint8_t, std::shared_ptr<Channel>> _Channels;
+  Omni::Fiber::RemoteCall _ChannelRpc;
 };
 
 class UdpMux::Channel : public Endpoint {
 public:
-  explicit Channel(std::shared_ptr<UdpMux> parent, uint8_t id);
-  explicit Channel(std::shared_ptr<UdpMux> parent, uint8_t id, std::shared_ptr<ResolverEndpoint> peer);
+  explicit Channel(UdpMux& parent, uint8_t id);
+  explicit Channel(UdpMux& parent, uint8_t id, boost::asio::ip::udp::endpoint peer);
   ~Channel() override;
 
   Channel(const Channel&) = delete;
@@ -85,11 +79,13 @@ public:
     co_return co_await _Pipe.GetProducer().Put(std::forward<Args>(args)...);
   }
 
+  std::optional<boost::asio::ip::udp::endpoint>& GetPeer() { return _Peer; }
+
 private:
-  std::shared_ptr<UdpMux> _Parent;
+  UdpMux& _Parent;
   uint8_t _Id;
   Omni::Fiber::Pipe<std::expected<Packet, ErrorCode>> _Pipe;
-  std::shared_ptr<ResolverEndpoint> _PeerResolver = nullptr;
+  std::optional<boost::asio::ip::udp::endpoint> _Peer;
 };
 
 } // namespace gh

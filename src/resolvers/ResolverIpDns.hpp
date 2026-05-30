@@ -21,7 +21,7 @@ public:
   ResolverIpDns(ResolverIpDns&&) = delete;
   ResolverIpDns& operator=(ResolverIpDns&&) = delete;
 
-  boost::asio::ip::address GetAddress() const override;
+  boost::asio::ip::address GetResolverResult() const override;
 
 protected:
   std::string GetName() const override { return "ResolverIpDns"; }

@@ -9,7 +9,7 @@ namespace gh {
 ResolverIpDns::ResolverIpDns(boost::asio::any_io_executor executor, std::string const& host)
     : _Executor(executor), _Host(host) {}
 
-boost::asio::ip::address ResolverIpDns::GetAddress() const {
+boost::asio::ip::address ResolverIpDns::GetResolverResult() const {
   if (_Addresses.empty()) {
     return boost::asio::ip::address{};
   }

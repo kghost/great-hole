@@ -11,7 +11,7 @@ ResolverServicePort::ResolverServicePort(std::string const& portStr) : _PortStr(
 
 std::string ResolverServicePort::GetName() const { return "ResolverServicePort:" + _PortStr; }
 
-uint16_t ResolverServicePort::GetPort() const { return _Port; }
+uint16_t ResolverServicePort::GetResolverResult() const { return _Port; }
 
 Omni::Fiber::Coroutine<ErrorCode> ResolverServicePort::DoStart() {
   struct servent* s = getservbyname(_PortStr.c_str(), nullptr);

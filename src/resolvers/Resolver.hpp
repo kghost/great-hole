@@ -1,7 +1,10 @@
 #pragma once
 
 #include <boost/asio.hpp>
+#include <expected>
 
+#include "Coroutine.hpp"
+#include "ErrorCode.hpp"
 #include "ServiceBase.hpp"
 
 namespace gh {
@@ -16,28 +19,44 @@ public:
   virtual Protocol GetProtocol() = 0;
 };
 
+class ResolverBase : public ServiceBase {
+public:
+  virtual ~ResolverBase() override = default;
+
+protected:
+  Omni::Fiber::Coroutine<ErrorCode> DoResolve();
+};
+
+template <typename ResultType> class Resolver : public ResolverBase {
+public:
+  virtual ~Resolver() override = default;
+
+  virtual ResultType GetResolverResult() const = 0;
+
+  Omni::Fiber::Coroutine<std::expected<ResultType, ErrorCode>> Resolve() {
+    if (auto err = co_await DoResolve()) {
+      co_return std::unexpected(err);
+    }
+    co_return GetResolverResult();
+  }
+};
+
 // ==================== ResolverIp ====================
-class ResolverIp : public ServiceBase {
+class ResolverIp : public Resolver<boost::asio::ip::address> {
 public:
   virtual ~ResolverIp() override = default;
-
-  virtual boost::asio::ip::address GetAddress() const = 0;
 };
 
 // ==================== ResolverPort ====================
-class ResolverPort : public ServiceBase {
+class ResolverPort : public Resolver<uint16_t> {
 public:
   virtual ~ResolverPort() override = default;
-
-  virtual uint16_t GetPort() const = 0;
 };
 
 // ==================== ResolverEndpoint ====================
-class ResolverEndpoint : public ServiceBase {
+class ResolverEndpoint : public Resolver<boost::asio::ip::udp::endpoint> {
 public:
   virtual ~ResolverEndpoint() override = default;
-
-  virtual boost::asio::ip::udp::endpoint GetEndpoint() const = 0;
 };
 
 } // namespace gh

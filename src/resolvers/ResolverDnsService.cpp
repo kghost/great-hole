@@ -25,7 +25,7 @@ struct SRVResult {
 ResolverDnsService::ResolverDnsService(const std::string& serviceName, ResolveFor& target)
     : _ServiceName(serviceName), _Target(target) {}
 
-boost::asio::ip::udp::endpoint ResolverDnsService::GetEndpoint() const {
+boost::asio::ip::udp::endpoint ResolverDnsService::GetResolverResult() const {
   if (_Endpoints.empty()) {
     return boost::asio::ip::udp::endpoint{};
   }

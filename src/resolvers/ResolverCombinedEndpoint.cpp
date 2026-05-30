@@ -8,7 +8,7 @@ ResolverCombinedEndpoint::ResolverCombinedEndpoint(std::shared_ptr<ResolverIp> i
                                                    std::shared_ptr<ResolverPort> portResolver)
     : _IpResolver(ipResolver), _PortResolver(portResolver) {}
 
-boost::asio::ip::udp::endpoint ResolverCombinedEndpoint::GetEndpoint() const { return _Endpoint; }
+boost::asio::ip::udp::endpoint ResolverCombinedEndpoint::GetResolverResult() const { return _Endpoint; }
 
 std::string ResolverCombinedEndpoint::GetName() const {
   return "ResolverCombinedEndpoint:[" + _IpResolver->GetName() + "]:" + _PortResolver->GetName();
@@ -24,8 +24,8 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverCombinedEndpoint::DoStart() {
     co_return errPort;
   }
 
-  auto addr = _IpResolver->GetAddress();
-  auto port = _PortResolver->GetPort();
+  auto addr = _IpResolver->GetResolverResult();
+  auto port = _PortResolver->GetResolverResult();
   _Endpoint = boost::asio::ip::udp::endpoint(addr, port);
   co_return ErrorCode{};
 }
