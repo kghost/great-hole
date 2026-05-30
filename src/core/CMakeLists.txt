@@ -16,8 +16,7 @@ foreach(suffix "" "-asan")
     UtilConsole.cpp
     EndpointTun.cpp
     EndpointUdp.cpp
-    EndpointUdpMuxServer.cpp
-    EndpointUdpMuxClient.cpp
+    EndpointUdpMux.cpp
     EndpointUdpDynMuxServer.cpp
     EndpointUdpDynMuxClient.cpp
   )

@@ -17,18 +17,18 @@
 
 namespace gh {
 
-class UdpMuxServer : public ServiceBase, public ResolveFor {
+class UdpMux : public ServiceBase, public ResolveFor {
 public:
   class Channel;
 
-  explicit UdpMuxServer(boost::asio::io_context& ioContext);
-  explicit UdpMuxServer(boost::asio::io_context& ioContext, boost::asio::ip::udp::endpoint bind);
-  ~UdpMuxServer() override;
+  explicit UdpMux(boost::asio::io_context& ioContext);
+  explicit UdpMux(boost::asio::io_context& ioContext, boost::asio::ip::udp::endpoint bind);
+  ~UdpMux() override;
 
-  UdpMuxServer(const UdpMuxServer&) = delete;
-  UdpMuxServer& operator=(const UdpMuxServer&) = delete;
-  UdpMuxServer(UdpMuxServer&&) = delete;
-  UdpMuxServer& operator=(UdpMuxServer&&) = delete;
+  UdpMux(const UdpMux&) = delete;
+  UdpMux& operator=(const UdpMux&) = delete;
+  UdpMux(UdpMux&&) = delete;
+  UdpMux& operator=(UdpMux&&) = delete;
 
   ResolveFor& GetResolveFor() { return *this; };
   boost::asio::any_io_executor GetExecutor() override { return _Socket.get_executor(); }
@@ -61,10 +61,10 @@ private:
   Omni::Fiber::Pipe<std::move_only_function<Omni::Fiber::Coroutine<void>()>> _CreateChannelPipe;
 };
 
-class UdpMuxServer::Channel : public Endpoint {
+class UdpMux::Channel : public Endpoint {
 public:
-  explicit Channel(std::shared_ptr<UdpMuxServer> parent, uint8_t id);
-  explicit Channel(std::shared_ptr<UdpMuxServer> parent, uint8_t id, std::shared_ptr<ResolverEndpoint> peer);
+  explicit Channel(std::shared_ptr<UdpMux> parent, uint8_t id);
+  explicit Channel(std::shared_ptr<UdpMux> parent, uint8_t id, std::shared_ptr<ResolverEndpoint> peer);
   ~Channel() override;
 
   Channel(const Channel&) = delete;
@@ -86,7 +86,7 @@ public:
   }
 
 private:
-  std::shared_ptr<UdpMuxServer> _Parent;
+  std::shared_ptr<UdpMux> _Parent;
   uint8_t _Id;
   Omni::Fiber::Pipe<std::expected<Packet, ErrorCode>> _Pipe;
   std::shared_ptr<ResolverEndpoint> _PeerResolver = nullptr;
