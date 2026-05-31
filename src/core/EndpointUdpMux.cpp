@@ -181,7 +181,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMux::WriteTo(uint8_t id, Packet& p, Cancel&
     co_return ErrorCode{AppErrorCategory::kInvalidPacketReserved, kAppError};
   }
 
-  p.PushFront(std::span<uint8_t, 1>(&id, 1));
+  p.PushFront(id);
 
   auto [err, bytes_transferred] = co_await _Socket.async_send_to(
       boost::asio::const_buffer(p), it->second->GetPeer().value(),

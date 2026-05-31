@@ -55,7 +55,6 @@ protected:
 
 private:
   Omni::Fiber::Coroutine<void> ReadLoop();
-  Omni::Fiber::Coroutine<void> ControlLoop();
 
   bool CheckRateLimit(const boost::asio::ip::udp::endpoint& peer);
   uint16_t AllocateUniqueRxId();
@@ -105,6 +104,7 @@ public:
 protected:
   std::string GetName() const override;
   Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
+  Omni::Fiber::Coroutine<void> DoWork() override;
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 
 public:

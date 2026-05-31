@@ -4,6 +4,7 @@
 #include <array>
 #include <cassert>
 #include <chrono>
+#include <cstdint>
 #include <expected>
 #include <format>
 #include <map>
@@ -34,22 +35,68 @@ UdpDynMux::Channel::~Channel() {}
 
 std::string UdpDynMux::Channel::GetName() const { return std::format("UdpDynMuxChannel:[psk_hash:{:02x}]", _Psk[0]); }
 
-Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::DoStart() {
-  if (_PeerResolver) {
-    auto res = co_await _PeerResolver->Resolve();
-    if (res.has_value()) {
-      BOOST_LOG_TRIVIAL(info) << "(" << _Parent.GetName() << "):(" << GetName()
-                              << ") resolved peer endpoint immediately: " << res.value();
-      if (!_Peer.has_value()) {
-        _Peer = res.value();
-        co_await _Parent.SendControlInitiate(*_Peer, _Psk, _LocalRxId, _RemoteRxId);
+Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::DoStart() { co_return ErrorCode{}; }
+
+Omni::Fiber::Coroutine<void> UdpDynMux::Channel::DoWork() {
+  while (!_Stop.IsTriggered()) {
+    auto now = std::chrono::steady_clock::now();
+    switch (_State) {
+    case kNegotiating: {
+      if (_PeerResolver && !_Peer.has_value()) {
+        auto res = co_await _PeerResolver->Resolve();
+        if (res.has_value()) {
+          BOOST_LOG_TRIVIAL(info) << "(" << _Parent.GetName() << "):(" << GetName()
+                                  << ") resolved peer endpoint: " << res.value();
+          if (!_Peer.has_value()) {
+            _Peer = res.value();
+            co_await _Parent.SendControlInitiate(*_Peer, _Psk, _LocalRxId, _RemoteRxId);
+          }
+        } else {
+          BOOST_LOG_TRIVIAL(warning) << "(" << _Parent.GetName() << "):(" << GetName()
+                                     << ") peer resolution failed: " << res.error().message();
+        }
       }
-    } else {
-      BOOST_LOG_TRIVIAL(warning) << "(" << _Parent.GetName() << "):(" << GetName()
-                                 << ") initial peer resolution failed: " << res.error().message();
+
+      if (_Peer.has_value()) {
+        auto peer = *_Peer;
+        co_await _Parent.SendControlInitiate(peer, _Psk, _LocalRxId, _RemoteRxId);
+      }
+
+      auto slotTracker = _Stop.AsioSlot();
+      boost::asio::steady_timer timer(_Parent._Socket.get_executor());
+      timer.expires_after(std::chrono::seconds(1));
+      auto [err] =
+          co_await timer.async_wait(boost::asio::bind_cancellation_slot(slotTracker.Slot(), Omni::Fiber::AsioUseFiber));
+      if (err) {
+        break;
+      }
+
+      break;
+    }
+    case kRunning: {
+      assert(_Peer.has_value() && _RemoteRxId != 0);
+      if (now - _LastSeen > std::chrono::seconds(15)) {
+        BOOST_LOG_TRIVIAL(warning) << "(" << _Parent.GetName() << "):(" << GetName()
+                                   << ") session timeout, resetting to negotiating";
+        _State = kNegotiating;
+        _MissingAcks = 0;
+        if (!_PeerResolver) {
+          _Peer = std::nullopt;
+        }
+        _RemoteRxId = 0;
+      } else {
+        if (now >= _NextKeepaliveTime) {
+          co_await _Parent.SendControlKeepalive(_Peer.value(), _Psk);
+          _MissingAcks++;
+
+          std::uniform_int_distribution<int> dist(5000, 10000);
+          _NextKeepaliveTime = now + std::chrono::milliseconds(dist(_Parent._Prng));
+        }
+      }
+      break;
+    }
     }
   }
-  co_return ErrorCode{};
 }
 
 Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::DoGracefulStop() {
@@ -135,11 +182,6 @@ Omni::Fiber::Coroutine<void> UdpDynMux::DoWork() {
   auto& currentFiber = co_await Omni::Fiber::GetCurrentFiber();
   currentFiber.Spawn(GetName() + " ReadLoop", [this]() -> Omni::Fiber::Coroutine<void> {
     co_await ReadLoop();
-    co_return;
-  });
-
-  currentFiber.Spawn(GetName() + " ControlLoop", [this]() -> Omni::Fiber::Coroutine<void> {
-    co_await ControlLoop();
     co_return;
   });
 
@@ -350,68 +392,12 @@ Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
   }
 }
 
-Omni::Fiber::Coroutine<void> UdpDynMux::ControlLoop() {
-  // TODO: move this into channel fiber
-  auto slotTracker = _Stop.AsioSlot();
-  boost::asio::steady_timer timer(_Socket.get_executor());
-
-  while (!_Stop.IsTriggered()) {
-    auto now = std::chrono::steady_clock::now();
-    for (auto& [psk, ch] : _Channels) {
-      if (ch->_PeerResolver && !ch->_Peer.has_value()) {
-        auto res = co_await ch->_PeerResolver->Resolve();
-        if (res.has_value()) {
-          ch->_Peer = res.value();
-          BOOST_LOG_TRIVIAL(info) << GetName() << ": resolved peer endpoint: " << *ch->_Peer;
-        } else {
-          BOOST_LOG_TRIVIAL(warning) << GetName() << ": peer resolution failed: " << res.error().message();
-          continue;
-        }
-      }
-
-      if (ch->_Peer.has_value()) {
-        auto peer = *ch->_Peer;
-        if (ch->_State == Channel::kNegotiating) {
-          co_await SendControlInitiate(peer, psk, ch->_LocalRxId, ch->_RemoteRxId);
-        } else if (ch->_State == Channel::kRunning) {
-          if (now - ch->_LastSeen > std::chrono::seconds(15)) {
-            BOOST_LOG_TRIVIAL(warning) << "UdpDynMux session timeout, resetting to negotiating";
-            ch->_State = Channel::kNegotiating;
-            ch->_MissingAcks = 0;
-            if (!ch->_PeerResolver) {
-              ch->_Peer = std::nullopt;
-            }
-            ch->_RemoteRxId = 0;
-          } else {
-            if (now >= ch->_NextKeepaliveTime) {
-              co_await SendControlKeepalive(peer, psk);
-              ch->_MissingAcks++;
-
-              std::uniform_int_distribution<int> dist(5000, 10000);
-              ch->_NextKeepaliveTime = now + std::chrono::milliseconds(dist(_Prng));
-            }
-          }
-        }
-      }
-    }
-
-    timer.expires_after(std::chrono::seconds(1));
-    auto [err] =
-        co_await timer.async_wait(boost::asio::bind_cancellation_slot(slotTracker.Slot(), Omni::Fiber::AsioUseFiber));
-    if (err) {
-      break;
-    }
-  }
-}
-
 Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::WriteTo(Channel& ch, Packet& p, Cancel& c) {
   if (p._Offset < 2) {
     co_return ErrorCode{AppErrorCategory::kInvalidPacketReserved, kAppError};
   }
 
-  p._Offset -= 2;
-  p._Length += 2;
-  UdpDynMuxProto::WriteUint16Be(p._Data.data() + p._Offset, ch._RemoteRxId);
+  p.PushFront(ch._RemoteRxId);
 
   auto [err, bytes_transferred] = co_await _Socket.async_send_to(
       boost::asio::const_buffer(p), *ch._Peer,
