@@ -14,6 +14,7 @@
 #include "GetCurrentFiber.hpp"
 #include "Manager.hpp"
 #include "Packet.hpp"
+#include "Yield.hpp"
 #include "resolvers/ResolverStaticEndpoint.hpp"
 
 using boost::asio::ip::udp;
@@ -56,10 +57,11 @@ TEST(UdpDynMuxTest, SuccessfulChannelCreationAndDataTransfer) {
     EXPECT_NE(ch2, nullptr);
 
     Cancel cancelObj;
+    co_await Omni::Fiber::Yield();
     boost::asio::steady_timer waitTimer(io);
-    waitTimer.expires_after(std::chrono::milliseconds(200));
-    co_await waitTimer.async_wait(
-        boost::asio::bind_cancellation_slot(cancelObj.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+    waitTimer.expires_after(std::chrono::milliseconds(20));
+    co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    co_await Omni::Fiber::Yield();
 
     Packet p1;
     std::string msg1 = "Hello Symmetric Mux!";
@@ -167,10 +169,11 @@ TEST(UdpDynMuxTest, SimultaneousConnectionStart) {
     EXPECT_NE(ch2, nullptr);
 
     Cancel cancelObj;
-    boost::asio::steady_timer waitTimer(io);
-    waitTimer.expires_after(std::chrono::milliseconds(200));
-    co_await waitTimer.async_wait(
-        boost::asio::bind_cancellation_slot(cancelObj.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+    co_await Omni::Fiber::Yield();
+    boost::asio::steady_timer timer(io);
+    timer.expires_after(std::chrono::milliseconds(20));
+    co_await timer.async_wait(Omni::Fiber::AsioUseFiber);
+    co_await Omni::Fiber::Yield();
 
     Packet p1;
     std::string msg1 = "Simultaneous!";
@@ -241,10 +244,11 @@ TEST(UdpDynMuxTest, AddressMigration) {
     auto ch2 = co_await dev2->CreateChannel(psk, res2);
 
     Cancel cancelObj;
+    co_await Omni::Fiber::Yield();
     boost::asio::steady_timer waitTimer(io);
-    waitTimer.expires_after(std::chrono::milliseconds(200));
-    co_await waitTimer.async_wait(
-        boost::asio::bind_cancellation_slot(cancelObj.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+    waitTimer.expires_after(std::chrono::milliseconds(20));
+    co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    co_await Omni::Fiber::Yield();
 
     Packet p1;
     std::string msg1 = "Init Migration!";
@@ -269,10 +273,11 @@ TEST(UdpDynMuxTest, AddressMigration) {
 
     auto ch2New = co_await dev2New->CreateChannel(psk, res2);
 
+    co_await Omni::Fiber::Yield();
     boost::asio::steady_timer waitTimer2(io);
-    waitTimer2.expires_after(std::chrono::milliseconds(200));
-    co_await waitTimer2.async_wait(
-        boost::asio::bind_cancellation_slot(cancelObj.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+    waitTimer2.expires_after(std::chrono::milliseconds(20));
+    co_await waitTimer2.async_wait(Omni::Fiber::AsioUseFiber);
+    co_await Omni::Fiber::Yield();
 
     Packet p2;
     std::string msg2 = "Migrated Packet!";
@@ -436,10 +441,11 @@ TEST(UdpDynMuxTest, InvalidChannelAndRenegotiation) {
     EXPECT_NE(ch2, nullptr);
 
     Cancel cancelObj;
+    co_await Omni::Fiber::Yield();
     boost::asio::steady_timer waitTimer(io);
-    waitTimer.expires_after(std::chrono::milliseconds(200));
-    co_await waitTimer.async_wait(
-        boost::asio::bind_cancellation_slot(cancelObj.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+    waitTimer.expires_after(std::chrono::milliseconds(20));
+    co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    co_await Omni::Fiber::Yield();
 
     Packet p1;
     std::string msg1 = "Hello Symmetric Mux!";
@@ -472,29 +478,41 @@ TEST(UdpDynMuxTest, InvalidChannelAndRenegotiation) {
     p_dummy._Length = 0;
     co_await ch2->Write(p_dummy, cancelObj);
 
+    co_await Omni::Fiber::Yield();
     boost::asio::steady_timer waitTimer2(io);
     waitTimer2.expires_after(std::chrono::milliseconds(200));
-    co_await waitTimer2.async_wait(
-        boost::asio::bind_cancellation_slot(cancelObj.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+    co_await waitTimer2.async_wait(Omni::Fiber::AsioUseFiber);
+    co_await Omni::Fiber::Yield();
 
     Packet p2;
     std::string msg2 = "Renegotiated Data!";
     p2._Offset = 2;
     std::copy(msg2.begin(), msg2.end(), p2._Data.begin() + p2._Offset);
     p2._Length = msg2.size();
+    Cancel cancelObj2;
 
     auto renegWriter = current.Spawn("reneg_writer", [&]() -> Omni::Fiber::Coroutine<void> {
-      auto writeErr2 = co_await ch2->Write(p2, cancelObj);
+      auto writeErr2 = co_await ch2->Write(p2, cancelObj2);
       EXPECT_FALSE(writeErr2);
       co_return;
     });
 
-    Packet rxP2;
-    auto readErr2 = co_await ch1New->Read(rxP2, cancelObj);
-    EXPECT_FALSE(readErr2);
-    std::string rxMsg(rxP2._Data.begin() + rxP2._Offset, rxP2._Data.begin() + rxP2._Offset + rxP2._Length);
-    EXPECT_EQ(rxMsg, msg2);
+    auto renegReader = current.Spawn("reneg_reader", [&]() -> Omni::Fiber::Coroutine<void> {
+      Packet rxP2;
+      auto readErr2 = co_await ch1New->Read(rxP2, cancelObj2);
+      EXPECT_FALSE(readErr2);
+      std::string rxMsg(rxP2._Data.begin() + rxP2._Offset, rxP2._Data.begin() + rxP2._Offset + rxP2._Length);
+      EXPECT_EQ(rxMsg, msg2);
+    });
 
+    co_await Omni::Fiber::Yield();
+    boost::asio::steady_timer waitTimer3(io);
+    waitTimer3.expires_after(std::chrono::milliseconds(20));
+    co_await waitTimer3.async_wait(Omni::Fiber::AsioUseFiber);
+    cancelObj2.Trigger();
+    co_await Omni::Fiber::Yield();
+
+    co_await current.Join(renegReader);
     co_await current.Join(renegWriter);
 
     co_await dev1New->Stop();

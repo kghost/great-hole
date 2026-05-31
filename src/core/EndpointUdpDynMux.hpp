@@ -1,7 +1,6 @@
 #pragma once
 
 #include <chrono>
-#include <expected>
 #include <map>
 #include <memory>
 #include <optional>
@@ -13,6 +12,7 @@
 #include "Endpoint.hpp"
 #include "EndpointUdpDynMuxProtocol.hpp"
 #include "ErrorCode.hpp"
+#include "Packet.hpp"
 #include "Pipe.hpp"
 #include "RemoteCall.hpp"
 #include "Resolver.hpp"
@@ -44,7 +44,7 @@ public:
   Omni::Fiber::Coroutine<std::shared_ptr<Channel>> CreateChannel(const UdpDynMux::PskType& psk,
                                                                  std::shared_ptr<ResolverEndpoint> resolver);
   Omni::Fiber::Coroutine<void> RemoveChannel(const UdpDynMux::PskType& psk);
-  Omni::Fiber::Coroutine<ErrorCode> WriteTo(Channel& ch, Packet& p, Cancel& c);
+  Omni::Fiber::Coroutine<ErrorCode> WriteTo(boost::asio::ip::udp::endpoint peer, Packet& p, Cancel& c);
   boost::asio::ip::udp::endpoint LocalEndpoint() const { return _Socket.local_endpoint(); }
 
 protected:
@@ -60,8 +60,7 @@ private:
   uint16_t AllocateUniqueRxId();
 
   Omni::Fiber::Coroutine<void> SendControlInitiate(const boost::asio::ip::udp::endpoint& peer,
-                                                   const UdpDynMux::PskType& psk, uint16_t rxId,
-                                                   uint16_t peerRxId);
+                                                   const UdpDynMux::PskType& psk, uint16_t rxId, uint16_t peerRxId);
   Omni::Fiber::Coroutine<void> SendControlKeepalive(const boost::asio::ip::udp::endpoint& peer,
                                                     const UdpDynMux::PskType& psk);
   Omni::Fiber::Coroutine<void> SendControlKeepaliveAck(const boost::asio::ip::udp::endpoint& peer,
@@ -87,7 +86,7 @@ class UdpDynMux::Channel : public Endpoint {
   friend class UdpDynMux;
 
 public:
-  enum State { kNegotiating, kRunning };
+  enum class State { kResolving, kNegotiating, kRunning, kStopping };
 
   explicit Channel(UdpDynMux& parent, const UdpDynMux::PskType& psk, uint16_t rxId,
                    std::shared_ptr<ResolverEndpoint> resolver = nullptr);
@@ -107,11 +106,6 @@ protected:
   Omni::Fiber::Coroutine<void> DoWork() override;
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 
-public:
-  template <typename... Args> Omni::Fiber::Coroutine<void> Send(Args&&... args) {
-    co_return co_await _Pipe.GetProducer().Put(std::forward<Args>(args)...);
-  }
-
 private:
   UdpDynMux& _Parent;
   const UdpDynMux::PskType _Psk;
@@ -119,12 +113,17 @@ private:
   uint16_t _RemoteRxId = 0;
   std::shared_ptr<ResolverEndpoint> _PeerResolver;
 
-  State _State = kNegotiating;
+  State _State = State::kResolving;
   std::optional<boost::asio::ip::udp::endpoint> _Peer;
   std::chrono::steady_clock::time_point _LastSeen;
-  int _MissingAcks = 0;
   std::chrono::steady_clock::time_point _NextKeepaliveTime;
-  Omni::Fiber::Pipe<std::expected<Packet, ErrorCode>> _Pipe;
+  Omni::Fiber::Pipe<Packet> _DataPacket;
+  Omni::Fiber::Pipe<std::tuple<boost::asio::ip::udp::endpoint, Packet>> _ControlPacket;
+
+  Omni::Fiber::Coroutine<State> DoWorkResolving();
+  Omni::Fiber::Coroutine<State> DoWorkNegotiating();
+  Omni::Fiber::Coroutine<State> DoWorkRunning();
+  Omni::Fiber::Coroutine<UdpDynMux::Channel::State> HandleControlPacket(boost::asio::ip::udp::endpoint, Packet&);
 };
 
 } // namespace gh

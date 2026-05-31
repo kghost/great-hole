@@ -40,9 +40,7 @@ inline PskType ReadPsk(const uint8_t* data) {
   return psk;
 }
 
-inline void WritePsk(uint8_t* data, const PskType& psk) {
-  std::copy(psk.begin(), psk.end(), data);
-}
+inline void WritePsk(uint8_t* data, const PskType& psk) { std::copy(psk.begin(), psk.end(), data); }
 
 // Structures representing symmetric control messages
 
@@ -54,11 +52,11 @@ struct Initiate {
   uint16_t RxId;
   uint16_t PeerRxId;
 
-  static std::optional<Initiate> Deserialize(const uint8_t* data, size_t len) {
-    if (len < kSize || ReadUint16Be(data) != 0 || data[2] != static_cast<uint8_t>(kType)) {
+  static std::optional<Initiate> Deserialize(std::span<const uint8_t> data) {
+    if (data.size() < kSize || ReadUint16Be(data.data()) != 0 || data[2] != static_cast<uint8_t>(kType)) {
       return std::nullopt;
     }
-    return Initiate{ReadPsk(data + 3), ReadUint16Be(data + 19), ReadUint16Be(data + 21)};
+    return Initiate{ReadPsk(data.data() + 3), ReadUint16Be(data.data() + 19), ReadUint16Be(data.data() + 21)};
   }
 
   void Serialize(std::span<uint8_t> out) const {
@@ -77,11 +75,11 @@ struct InvalidChannel {
 
   uint16_t ChannelId;
 
-  static std::optional<InvalidChannel> Deserialize(const uint8_t* data, size_t len) {
-    if (len < kSize || ReadUint16Be(data) != 0 || data[2] != static_cast<uint8_t>(kType)) {
+  static std::optional<InvalidChannel> Deserialize(std::span<const uint8_t> data) {
+    if (data.size() < kSize || ReadUint16Be(data.data()) != 0 || data[2] != static_cast<uint8_t>(kType)) {
       return std::nullopt;
     }
-    return InvalidChannel{ReadUint16Be(data + 3)};
+    return InvalidChannel{ReadUint16Be(data.data() + 3)};
   }
 
   void Serialize(std::span<uint8_t> out) const {
@@ -99,11 +97,11 @@ template <MsgType T> struct ControlPskPacket {
 
   PskType Psk;
 
-  static std::optional<ControlPskPacket> Deserialize(const uint8_t* data, size_t len) {
-    if (len < kSize || ReadUint16Be(data) != 0 || data[2] != static_cast<uint8_t>(kType)) {
+  static std::optional<ControlPskPacket> Deserialize(std::span<const uint8_t> data) {
+    if (data.size() < kSize || ReadUint16Be(data.data()) != 0 || data[2] != static_cast<uint8_t>(kType)) {
       return std::nullopt;
     }
-    return ControlPskPacket{ReadPsk(data + 3)};
+    return ControlPskPacket{ReadPsk(data.data() + 3)};
   }
 
   void Serialize(std::span<uint8_t> out) const {

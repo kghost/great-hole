@@ -10,6 +10,7 @@ foreach(suffix "" "-asan")
   endif()
 
   add_library(${target_core} STATIC
+    BackoffTimer.cpp
     Pipeline.cpp
     Endpoint.cpp
     Filter.cpp
@@ -44,7 +45,7 @@ foreach(suffix "" "-asan")
     ${omniresolver}
   )
 
-  if (Boost_PROCESS_FOUND)
+  if(Boost_PROCESS_FOUND)
     target_link_libraries(${target_core} PUBLIC Boost::process)
   endif()
 

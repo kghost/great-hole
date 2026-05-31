@@ -21,7 +21,7 @@ public:
   boost::asio::ip::udp::endpoint GetResolverResult() const override;
 
 protected:
-  std::string GetName() const override { return "ResolverStaticEndpoint"; }
+  std::string GetName() const override;
   Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 
