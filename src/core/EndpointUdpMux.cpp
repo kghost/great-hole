@@ -82,7 +82,7 @@ Omni::Fiber::Coroutine<std::shared_ptr<UdpMux::Channel>> UdpMux::CreateChannel(u
 Omni::Fiber::Coroutine<std::shared_ptr<UdpMux::Channel>>
 UdpMux::CreateChannel(uint8_t id, std::shared_ptr<ResolverEndpoint> resolver) {
   co_return co_await _ChannelRpc.Call(
-      [this, id, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
+      [&udp = *this, id, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
         std::shared_ptr<Channel> channel;
         if (resolver) {
           auto peer = co_await resolver->Resolve();
@@ -90,12 +90,12 @@ UdpMux::CreateChannel(uint8_t id, std::shared_ptr<ResolverEndpoint> resolver) {
             co_return nullptr;
           }
 
-          channel = std::make_shared<Channel>(*this, id, peer.value());
+          channel = std::make_shared<Channel>(udp, id, peer.value());
         } else {
-          channel = std::make_shared<Channel>(*this, id);
+          channel = std::make_shared<Channel>(udp, id);
         }
 
-        auto [it, inserted] = _Channels.try_emplace(id, channel);
+        auto [it, inserted] = udp._Channels.try_emplace(id, channel);
         assert(inserted);
         auto err = co_await channel->Start();
         if (err) {

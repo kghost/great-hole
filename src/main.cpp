@@ -93,13 +93,17 @@ int main(int ac, char** av) {
       // Debug
       auto timer = boost::asio::steady_timer(io_context, std::chrono::seconds(1));
       co_await timer.async_wait(Omni::Fiber::AsioUseFiber);
+#ifndef NDEBUG
       co_await Omni::Fiber::StackTraceAllFibers();
+#endif
 
       stop_signal.Trigger();
 
       auto timer2 = boost::asio::steady_timer(io_context, std::chrono::seconds(1));
       co_await timer2.async_wait(Omni::Fiber::AsioUseFiber);
+#ifndef NDEBUG
       co_await Omni::Fiber::StackTraceAllFibers();
+#endif
       // Debug
 
       co_await stop_signal.GetFiberCancelEvent();

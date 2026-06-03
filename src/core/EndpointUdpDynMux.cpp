@@ -100,6 +100,7 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNego
                                   [&](auto info) -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                                     assert(info.has_value() && "Pipe should never ends");
                                     auto [peer, packet] = std::move(info.value());
+                                    // FIXME: there are gcc bugs which causes packet object leaks
                                     co_return co_await HandleControlPacket(peer, packet);
                                   }),
           Omni::Fiber::SelectPair(
@@ -119,6 +120,7 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNego
                                   [&](auto info) -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                                     assert(info.has_value() && "Pipe should never ends");
                                     auto [peer, packet] = std::move(info.value());
+                                    // FIXME: there are gcc bugs which causes packet object leaks
                                     co_return co_await HandleControlPacket(peer, packet);
                                   }));
       if (state.has_value()) {
@@ -157,6 +159,7 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkRunn
                                 [&](auto info) -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                                   assert(info.has_value() && "Pipe should never ends");
                                   auto [peer, packet] = std::move(info.value());
+                                  // FIXME: there are gcc bugs which causes packet object leaks
                                   co_return co_await HandleControlPacket(peer, packet);
                                 }),
         Omni::Fiber::SelectPair(
@@ -346,20 +349,20 @@ Omni::Fiber::Coroutine<std::shared_ptr<UdpDynMux::Channel>> UdpDynMux::CreateCha
 Omni::Fiber::Coroutine<std::shared_ptr<UdpDynMux::Channel>>
 UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver) {
   co_return co_await _ChannelRpc.Call(
-      [this, psk, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
-        auto channel = std::make_shared<Channel>(*this, psk, AllocateUniqueRxId(), resolver);
+      [&udp = *this, psk, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
+        auto channel = std::make_shared<Channel>(udp, psk, udp.AllocateUniqueRxId(), resolver);
         channel->_LastSeen = std::chrono::steady_clock::now();
         channel->_NextKeepaliveTime = std::chrono::steady_clock::now() + std::chrono::seconds(5);
 
-        auto [it, inserted] = _Channels.try_emplace(psk, channel);
+        auto [it, inserted] = udp._Channels.try_emplace(psk, channel);
         assert(inserted);
-        auto [it2, inserted2] = _RxIdToChannel.try_emplace(channel->_LocalRxId, channel);
+        auto [it2, inserted2] = udp._RxIdToChannel.try_emplace(channel->_LocalRxId, channel);
         assert(inserted2);
 
         auto err = co_await channel->Start();
         if (err) {
-          _RxIdToChannel.erase(channel->_LocalRxId);
-          _Channels.erase(psk);
+          udp._RxIdToChannel.erase(channel->_LocalRxId);
+          udp._Channels.erase(psk);
           co_await channel->WaitService();
           co_return nullptr;
         }
@@ -441,7 +444,7 @@ Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
             // whether it's for them or not, which is not efficient but should be fine since this should be a rare event
             for (auto& [psk, channel] : _Channels) {
               if (channel->_RemoteRxId == err->ChannelId && channel->_Peer == peer) {
-                channel->_ControlPacket.GetProducer().Put(std::make_tuple(peer, std::move(packet)));
+                co_await channel->_ControlPacket.GetProducer().Put(std::make_tuple(peer, std::move(packet)));
               }
             }
           }

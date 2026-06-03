@@ -11,21 +11,22 @@
 
 namespace gh {
 
-class Packet {
+class Packet final {
 public:
   static constexpr const std::size_t kCapacity = 2048;
   static constexpr const std::size_t kReservedFront = 2;
 
   explicit Packet(const std::size_t length = kCapacity, const std::size_t offset = kReservedFront)
       : _Data(length + offset), _Offset(offset), _Length(length) {}
+  ~Packet() {}
 
   Packet(const Packet&) = delete;
   Packet& operator=(const Packet&) = delete;
   Packet(Packet&&) = default;
   Packet& operator=(Packet&&) = default;
 
-  operator boost::asio::const_buffer() const { return Data(); }
-  operator boost::asio::mutable_buffer() { return Data(); }
+  operator boost::asio::const_buffer() const { return {_Data.data() + _Offset, _Length}; }
+  operator boost::asio::mutable_buffer() { return {_Data.data() + _Offset, _Length}; }
 
   std::size_t DataSize() const { return _Length; }
   std::size_t FrontSpace() const { return _Offset; }

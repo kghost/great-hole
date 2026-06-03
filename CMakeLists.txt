@@ -1,9 +1,10 @@
-cmake_minimum_required(VERSION 4.3)
+cmake_minimum_required(VERSION 3.10)
 project(great-hole VERSION 0.1.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
 # set(GREAT_HOLE_PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(CMAKE_THREAD_LIBS_INIT "-lpthread")
 
@@ -22,7 +23,6 @@ enable_testing()
 find_package(GTest REQUIRED)
 
 # add_compile_options("-fdebug-prefix-map=${GREAT_HOLE_PROJECT_ROOT}=.")
-
 set(OMNIFIBER_INTERNAL ON CACHE BOOL "" FORCE)
 
 add_subdirectory(libs/omni-fiber)

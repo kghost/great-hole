@@ -37,9 +37,7 @@ Omni::Fiber::Coroutine<ErrorCode> ServiceBase::Stop() {
 }
 
 Omni::Fiber::Coroutine<void> ServiceBase::WaitService() {
-  auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
-  co_return co_await fiber.Join(_Fiber);
-  _Fiber.reset();
+  co_return co_await (co_await Omni::Fiber::GetCurrentFiber()).Join(_Fiber);
 }
 
 } // namespace gh

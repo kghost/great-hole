@@ -77,15 +77,15 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::DoGracefulStop() {
 Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>>
 Udp::CreateChannel(std::shared_ptr<ResolverEndpoint> resolver) {
   co_return co_await _ChannelRpc.Call(
-      [this, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>> {
+      [&udp = *this, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>> {
         auto peer = co_await resolver->Resolve();
         if (!peer.has_value()) {
           co_return nullptr;
         }
 
         auto ep = peer.value();
-        auto channel = std::make_shared<UdpChannel>(*this, ep);
-        auto [it, inserted] = _Channels.try_emplace(ep, channel);
+        auto channel = std::make_shared<UdpChannel>(udp, ep);
+        auto [it, inserted] = udp._Channels.try_emplace(ep, channel);
         assert(inserted);
         auto err = co_await channel->Start();
         if (err) {
