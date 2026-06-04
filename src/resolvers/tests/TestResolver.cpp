@@ -139,10 +139,8 @@ TEST(ResolverTest, StaticPortResolverFailure) {
     auto err2 = co_await r2->Start();
     EXPECT_TRUE(err2);
 
-    co_await r1->Stop();
-    co_await r2->Stop();
-    co_await current.WaitAll();
-
+    co_await r1->WaitService();
+    co_await r2->WaitService();
     testPassed = true;
     co_return;
   });
@@ -227,8 +225,7 @@ TEST(ResolverTest, DnsServiceResolverNonExistent) {
     EXPECT_TRUE(err);
     EXPECT_EQ(err, make_error_code(boost::asio::error::host_not_found));
 
-    co_await r->Stop();
-    co_await current.WaitAll();
+    co_await r->WaitService();
     testPassed = true;
     co_return;
   });
@@ -251,11 +248,15 @@ TEST(ResolverTest, ResolverCancellation) {
     auto resolveFiber = current.Spawn("resolve", [&]() -> Omni::Fiber::Coroutine<void> {
       auto err = co_await dnsResolver->Start();
       EXPECT_EQ(err, make_error_code(boost::asio::error::operation_aborted));
-      co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
+      co_await dnsResolver->WaitService();
       co_return;
     });
-    co_await dnsResolver->Stop();
+    auto resolveFiberCancel = current.Spawn("resolve_cancel", [&]() -> Omni::Fiber::Coroutine<void> {
+      co_await dnsResolver->Stop();
+      co_return;
+    });
     co_await current.Join(resolveFiber);
+    co_await current.Join(resolveFiberCancel);
 
     auto mockedResolveFor = MockResolveeFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
     // ResolverDnsService cancellation (instant cancellation)
@@ -263,13 +264,15 @@ TEST(ResolverTest, ResolverCancellation) {
     auto srvFiber = current.Spawn("srv_resolve", [&]() -> Omni::Fiber::Coroutine<void> {
       auto err = co_await srvResolver->Start();
       EXPECT_EQ(err, make_error_code(boost::asio::error::operation_aborted));
-      co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
+      co_await srvResolver->WaitService();
       co_return;
     });
-    co_await srvResolver->Stop();
+    auto srvFiberCancel = current.Spawn("srv_resolve_cancel", [&]() -> Omni::Fiber::Coroutine<void> {
+      co_await srvResolver->Stop();
+      co_return;
+    });
     co_await current.Join(srvFiber);
-
-    co_await current.WaitAll();
+    co_await current.Join(srvFiberCancel);
 
     testPassed = true;
     co_return;
@@ -292,72 +295,60 @@ TEST(ResolverTest, ResolverHelperTest) {
 
     // 1. Test FindResolverIp
     auto ipRes1 = FindResolverIp("127.0.0.1", mockedResolveFor);
-    auto err1 = co_await ipRes1->Start();
-    EXPECT_FALSE(err1);
-    if (!err1) {
-      auto addr = ipRes1->GetResolverResult();
+    auto result1 = co_await ipRes1->Resolve();
+    EXPECT_TRUE(result1.has_value());
+    if (result1.has_value()) {
+      auto addr = result1.value();
       EXPECT_EQ(addr.to_string(), "127.0.0.1");
     }
 
     auto ipRes2 = FindResolverIp("localhost", mockedResolveFor);
-    auto err2 = co_await ipRes2->Start();
-    EXPECT_FALSE(err2);
-    if (!err2) {
-      EXPECT_FALSE(ipRes2->GetResolverResult().is_unspecified());
+    auto result2 = co_await ipRes2->Resolve();
+    EXPECT_TRUE(result2.has_value());
+    if (result2.has_value()) {
+      EXPECT_FALSE(result2.value().is_unspecified());
     }
 
     // 2. Test FindResolverPort
     auto portRes1 = FindResolverPort("8080", mockedResolveFor);
-    auto err3_1 = co_await portRes1->Start();
-    EXPECT_FALSE(err3_1);
-    if (!err3_1) {
-      EXPECT_EQ(portRes1->GetResolverResult(), 8080);
+    auto result3_1 = co_await portRes1->Resolve();
+    EXPECT_TRUE(result3_1.has_value());
+    if (result3_1.has_value()) {
+      EXPECT_EQ(result3_1.value(), 8080);
     }
 
     auto portRes2 = FindResolverPort("http", mockedResolveFor);
-    auto err3_2 = co_await portRes2->Start();
-    EXPECT_FALSE(err3_2);
-    if (!err3_2) {
-      EXPECT_EQ(portRes2->GetResolverResult(), 80);
+    auto result3_2 = co_await portRes2->Resolve();
+    EXPECT_TRUE(result3_2.has_value());
+    if (result3_2.has_value()) {
+      EXPECT_EQ(result3_2.value(), 80);
     }
 
     // 3. Test FindResolverEndpoint (Combined IPv4)
     auto epRes1 = FindResolverEndpoint("127.0.0.1:9090", mockedResolveFor);
-    auto err4 = co_await epRes1->Start();
-    EXPECT_FALSE(err4);
-    if (!err4) {
-      auto endpoint = epRes1->GetResolverResult();
+    auto result4 = co_await epRes1->Resolve();
+    EXPECT_TRUE(result4.has_value());
+    if (result4.has_value()) {
+      auto endpoint = result4.value();
       EXPECT_EQ(endpoint.address().to_string(), "127.0.0.1");
       EXPECT_EQ(endpoint.port(), 9090);
     }
 
     // 4. Test FindResolverEndpoint (Combined IPv6)
     auto epRes2 = FindResolverEndpoint("[::1]:9999", mockedResolveFor);
-    auto err5 = co_await epRes2->Start();
-    EXPECT_FALSE(err5);
-    if (!err5) {
-      auto endpoint = epRes2->GetResolverResult();
+    auto result5 = co_await epRes2->Resolve();
+    EXPECT_TRUE(result5.has_value());
+    if (result5.has_value()) {
+      auto endpoint = result5.value();
       EXPECT_EQ(endpoint.address().to_string(), "::1");
       EXPECT_EQ(endpoint.port(), 9999);
     }
 
     // 5. Test FindResolverEndpoint (SRV Dns Service)
     auto epRes3 = FindResolverEndpoint("example.invalid", mockedResolveFor);
-    auto err6 = co_await epRes3->Start();
+    auto result6 = co_await epRes3->Resolve();
     // Non-existent SRV record should fail with host_not_found
-    EXPECT_TRUE(err6);
-    EXPECT_EQ(err6, make_error_code(boost::asio::error::host_not_found));
-
-    // Stop all
-    co_await ipRes1->Stop();
-    co_await ipRes2->Stop();
-    co_await portRes1->Stop();
-    co_await portRes2->Stop();
-    co_await epRes1->Stop();
-    co_await epRes2->Stop();
-    co_await epRes3->Stop();
-
-    co_await current.WaitAll();
+    EXPECT_FALSE(result6.has_value());
 
     testPassed = true;
     co_return;

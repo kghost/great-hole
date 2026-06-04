@@ -20,6 +20,7 @@
 #include "RemoteCall.hpp"
 #include "ResolverStaticEndpoint.hpp"
 #include "Select.hpp"
+#include "ServiceBase.hpp"
 
 namespace gh {
 
@@ -55,7 +56,7 @@ Omni::Fiber::Coroutine<void> Udp::DoWork() {
   bool stopped = false;
   while (!stopped) {
     co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(_Stop.GetFiberCancelEvent(), [&]() { stopped = true; }),
+        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [&]() { stopped = true; }),
         Omni::Fiber::SelectPair(_ChannelRpc.GetServiceAwaitor(), [&](auto req) -> Omni::Fiber::Coroutine<void> {
           bool ok = co_await Omni::Fiber::RemoteCall::HandleRequest(std::move(req));
           assert(ok);
@@ -113,8 +114,8 @@ Omni::Fiber::Coroutine<void> Udp::RemoveChannel(const boost::asio::ip::udp::endp
 }
 
 Omni::Fiber::Coroutine<void> Udp::ReadLoop() {
-  auto slotTracker = _Stop.AsioSlot();
-  while (!_Stop.IsTriggered()) {
+  auto slotTracker = _Service.value()._Stop.AsioSlot();
+  while (!_Service.value()._Stop.IsTriggered()) {
     Packet p;
     boost::asio::ip::udp::endpoint peer;
 
@@ -127,7 +128,7 @@ Omni::Fiber::Coroutine<void> Udp::ReadLoop() {
       } else {
         BOOST_LOG_TRIVIAL(error) << "udp(" << this << ") read error: " << err.message();
         for (auto& [endpoint, channel] : _Channels) {
-          if (!channel->IsStopped()) {
+          if (channel->GetState() == ServiceBase::State::kRunning) {
             co_await channel->Send(std::unexpected(err));
           }
         }

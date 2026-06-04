@@ -24,6 +24,7 @@
 #include "ErrorCode.hpp"
 #include "GetCurrentFiber.hpp"
 #include "Select.hpp"
+#include "ServiceBase.hpp"
 
 namespace gh {
 
@@ -42,12 +43,8 @@ std::string UdpDynMux::Channel::GetName() const {
 Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::DoStart() { co_return ErrorCode{}; }
 
 Omni::Fiber::Coroutine<void> UdpDynMux::Channel::DoWork() {
-  while (!_Stop.IsTriggered()) {
+  while (!_Service.value()._Stop.IsTriggered()) {
     switch (_State) {
-    case State::kResolving: {
-      _State = co_await DoWorkResolving();
-      break;
-    }
     case State::kNegotiating: {
       _State = co_await DoWorkNegotiating();
       break;
@@ -68,33 +65,17 @@ Omni::Fiber::Coroutine<void> UdpDynMux::Channel::DoWork() {
   _State = State::kStopping;
 }
 
-Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkResolving() {
-  if (_PeerResolver && !_Peer.has_value()) {
-    auto res = co_await _PeerResolver->Resolve();
-    if (res.has_value()) {
-      BOOST_LOG_TRIVIAL(info) << GetName() << " resolved peer endpoint: " << res.value();
-      if (!_Peer.has_value()) {
-        _Peer = res.value();
-      }
-    } else {
-      BOOST_LOG_TRIVIAL(warning) << GetName() << " peer resolution failed: " << res.error().message();
-    }
-  }
-
-  co_return State::kNegotiating;
-}
-
 Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNegotiating() {
   auto duration = BackoffTimerDuration(50, std::chrono::milliseconds(1000), std::chrono::milliseconds(2000),
                                        std::chrono::milliseconds(30000));
-  while (!_Stop.IsTriggered()) {
+  while (!_Service.value()._Stop.IsTriggered()) {
     if (_Peer.has_value()) {
       BOOST_LOG_TRIVIAL(info) << GetName() << " negotiating sending initiate to " << *_Peer;
       co_await _Parent.SendControlInitiate(_Peer.value(), _Psk, _LocalRxId, _RemoteRxId);
       boost::asio::steady_timer timer(_Parent._Socket.get_executor());
       timer.expires_after(duration());
       auto [stopped, state, ec] = co_await Omni::Fiber::Select(
-          Omni::Fiber::SelectPair(_Stop.GetFiberCancelEvent(),
+          Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(),
                                   [&]() { return ErrorCode{AppErrorCategory::kOperationAborted, kAppError}; }),
           Omni::Fiber::SelectPair(_ControlPacket.GetConsumer(),
                                   [&](auto info) -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
@@ -103,18 +84,28 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNego
                                     // FIXME: there are gcc bugs which causes packet object leaks
                                     co_return co_await HandleControlPacket(peer, packet);
                                   }),
-          Omni::Fiber::SelectPair(
-              timer.async_wait(boost::asio::bind_cancellation_slot(_Stop.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber)),
-              Omni::Fiber::AsioApply([](auto ec) { return ec; })));
+          Omni::Fiber::SelectPair(timer.async_wait(boost::asio::bind_cancellation_slot(
+                                      _Service.value()._Stop.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber)),
+                                  Omni::Fiber::AsioApply([](auto ec) { return ec; })));
       if (state.has_value()) {
         if (state.value() != State::kNegotiating) {
           co_return state.value();
         }
       }
+    } else if (_PeerResolver) {
+      // TODO: resolver need to be cancellable
+      BOOST_LOG_TRIVIAL(info) << GetName() << " resolving peer";
+      auto res = co_await _PeerResolver->Resolve();
+      if (res.has_value()) {
+        BOOST_LOG_TRIVIAL(info) << GetName() << " resolved peer endpoint: " << res.value();
+        _Peer = res.value();
+      } else {
+        BOOST_LOG_TRIVIAL(warning) << GetName() << " peer resolution failed: " << res.error().message();
+      }
     } else {
       BOOST_LOG_TRIVIAL(info) << GetName() << " negotiating waiting for peer endpoint initiate";
       auto [stopped, state] = co_await Omni::Fiber::Select(
-          Omni::Fiber::SelectPair(_Stop.GetFiberCancelEvent(),
+          Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(),
                                   [&]() { return ErrorCode{AppErrorCategory::kOperationAborted, kAppError}; }),
           Omni::Fiber::SelectPair(_ControlPacket.GetConsumer(),
                                   [&](auto info) -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
@@ -134,13 +125,13 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNego
 }
 
 Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkRunning() {
-  while (!_Stop.IsTriggered()) {
+  while (!_Service.value()._Stop.IsTriggered()) {
     auto now = std::chrono::steady_clock::now();
     if (now - _LastSeen > std::chrono::seconds(180)) {
-      BOOST_LOG_TRIVIAL(warning) << GetName() << " session timeout, resetting to kResolving";
+      BOOST_LOG_TRIVIAL(warning) << GetName() << " session timeout, resetting to negotiating";
       _Peer = std::nullopt;
       _RemoteRxId = 0;
-      co_return State::kResolving;
+      co_return State::kNegotiating;
     }
 
     if (now >= _NextKeepaliveTime) {
@@ -153,7 +144,7 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkRunn
     timer.expires_at(_NextKeepaliveTime);
 
     auto [stopped, state, ec] = co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(_Stop.GetFiberCancelEvent(),
+        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(),
                                 [&]() { return ErrorCode{AppErrorCategory::kOperationAborted, kAppError}; }),
         Omni::Fiber::SelectPair(_ControlPacket.GetConsumer(),
                                 [&](auto info) -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
@@ -162,9 +153,9 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkRunn
                                   // FIXME: there are gcc bugs which causes packet object leaks
                                   co_return co_await HandleControlPacket(peer, packet);
                                 }),
-        Omni::Fiber::SelectPair(
-            timer.async_wait(boost::asio::bind_cancellation_slot(_Stop.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber)),
-            Omni::Fiber::AsioApply([](auto ec) { return ec; })));
+        Omni::Fiber::SelectPair(timer.async_wait(boost::asio::bind_cancellation_slot(
+                                    _Service.value()._Stop.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber)),
+                                Omni::Fiber::AsioApply([](auto ec) { return ec; })));
     if (state.has_value() && state.value() != State::kRunning) {
       co_return state.value();
     }
@@ -203,7 +194,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::Read(Packet& p, Cancel& c)
 }
 
 Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::Write(Packet& p, Cancel& c) {
-  if (c.IsTriggered() || IsStopped()) {
+  if (c.IsTriggered() || ServiceBase::_State != ServiceBase::State::kRunning) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
 
@@ -271,10 +262,10 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
     if (auto err = UdpDynMuxProto::InvalidChannel::Deserialize(packet.Data())) {
       if (_Peer == peer) {
         // upon receiving INVALID_CHANNEL, if peer id and address matches, re kResolving, if not match silent drop
-        BOOST_LOG_TRIVIAL(warning) << GetName() << " received INVALID_CHANNEL, resetting state to resolving";
+        BOOST_LOG_TRIVIAL(warning) << GetName() << " received INVALID_CHANNEL, resetting state to negotiating";
         _Peer = std::nullopt;
         _RemoteRxId = 0;
-        co_return State::kResolving;
+        co_return State::kNegotiating;
       }
     }
   }
@@ -322,7 +313,7 @@ Omni::Fiber::Coroutine<void> UdpDynMux::DoWork() {
   bool stopped = false;
   while (!stopped) {
     co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(_Stop.GetFiberCancelEvent(), [&]() { stopped = true; }),
+        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [&]() { stopped = true; }),
         Omni::Fiber::SelectPair(_ChannelRpc.GetServiceAwaitor(), [](auto req) -> Omni::Fiber::Coroutine<void> {
           bool ok = co_await Omni::Fiber::RemoteCall::HandleRequest(std::move(req));
           assert(ok);
@@ -385,8 +376,8 @@ Omni::Fiber::Coroutine<void> UdpDynMux::RemoveChannel(const UdpDynMux::PskType& 
 }
 
 Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
-  auto slotTracker = _Stop.AsioSlot();
-  while (!_Stop.IsTriggered()) {
+  auto slotTracker = _Service.value()._Stop.AsioSlot();
+  while (!_Service.value()._Stop.IsTriggered()) {
     Packet packet;
     boost::asio::ip::udp::endpoint peer;
 
@@ -399,7 +390,7 @@ Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
       } else {
         BOOST_LOG_TRIVIAL(error) << GetName() << ": read error: " << err.message();
         for (auto& [psk, channel] : _Channels) {
-          if (!channel->IsStopped()) {
+          if (channel->_State == Channel::State::kRunning) {
             // TODO: UDP read error, should we notify channels? currently just stop all channels, which will cause all
             // pending operations to fail with operation_aborted, and upper layer can decide how to handle it (e.g. try
             // to re-establish channel, or just give up)

@@ -36,7 +36,7 @@ boost::asio::ip::udp::endpoint ResolverDnsService::GetResolverResult() const {
 }
 
 Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() {
-  if (_Stop.IsTriggered()) {
+  if (_Service.value()._Stop.IsTriggered()) {
     co_return make_error_code(boost::asio::error::operation_aborted);
   }
   auto eventPtr = std::make_shared<Omni::Fiber::Event<std::pair<ErrorCode, std::vector<SRVResult>>>>();
@@ -85,7 +85,7 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() {
   bool cancelled = false;
   std::pair<ErrorCode, std::vector<SRVResult>> srvResponse;
   co_await Omni::Fiber::Select(
-      Omni::Fiber::SelectPair(_Stop.GetFiberCancelEvent(), [&]() { cancelled = true; }),
+      Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [&]() { cancelled = true; }),
       Omni::Fiber::SelectPair(*eventPtr, [&](auto const& response) { srvResponse = response; }));
 
   if (cancelled) {
@@ -96,12 +96,13 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() {
   }
 
   for (auto const& record : srvResponse.second) {
-    if (_Stop.IsTriggered()) {
+    if (_Service.value()._Stop.IsTriggered()) {
       co_return make_error_code(boost::asio::error::operation_aborted);
     }
     boost::asio::ip::udp::resolver resolver(_Target.GetExecutor());
     auto [resolveErr, results] = co_await resolver.async_resolve(
-        record.target, "", boost::asio::bind_cancellation_slot(_Stop.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+        record.target, "",
+        boost::asio::bind_cancellation_slot(_Service.value()._Stop.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
     if (resolveErr) {
       BOOST_LOG_TRIVIAL(warning) << "Failed to resolve SRV target: " << record.target << " " << resolveErr.message();
       continue;

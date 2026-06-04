@@ -86,7 +86,7 @@ class UdpDynMux::Channel : public Endpoint {
   friend class UdpDynMux;
 
 public:
-  enum class State { kResolving, kNegotiating, kRunning, kStopping };
+  enum class State { kNegotiating, kRunning, kStopping };
 
   explicit Channel(UdpDynMux& parent, const UdpDynMux::PskType& psk, uint16_t rxId,
                    std::shared_ptr<ResolverEndpoint> resolver = nullptr);
@@ -113,14 +113,13 @@ private:
   uint16_t _RemoteRxId = 0;
   std::shared_ptr<ResolverEndpoint> _PeerResolver;
 
-  State _State = State::kResolving;
+  State _State = State::kNegotiating;
   std::optional<boost::asio::ip::udp::endpoint> _Peer;
   std::chrono::steady_clock::time_point _LastSeen;
   std::chrono::steady_clock::time_point _NextKeepaliveTime;
   Omni::Fiber::Pipe<Packet> _DataPacket;
   Omni::Fiber::Pipe<std::tuple<boost::asio::ip::udp::endpoint, Packet>> _ControlPacket;
 
-  Omni::Fiber::Coroutine<State> DoWorkResolving();
   Omni::Fiber::Coroutine<State> DoWorkNegotiating();
   Omni::Fiber::Coroutine<State> DoWorkRunning();
   Omni::Fiber::Coroutine<UdpDynMux::Channel::State> HandleControlPacket(boost::asio::ip::udp::endpoint, Packet&);
