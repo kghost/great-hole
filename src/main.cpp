@@ -1,3 +1,4 @@
+#include <csignal>
 #include <filesystem>
 #include <iostream>
 
@@ -75,12 +76,24 @@ int main(int ac, char** av) {
     current.Spawn("signals", [&] -> Omni::Fiber::Coroutine<void> {
       auto& signals_fiber = co_await Omni::Fiber::GetCurrentFiber();
       signals_fiber.Spawn("wait", [&io_context, &stop_signal] -> Omni::Fiber::Coroutine<void> {
-        boost::asio::signal_set signals(io_context, SIGINT, SIGTERM);
+        boost::asio::signal_set signals(io_context, SIGINT, SIGTERM, SIGUSR2);
         while (!stop_signal.IsTriggered()) {
           auto [err, signal_number] = co_await signals.async_wait(
               boost::asio::bind_cancellation_slot(stop_signal.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
           if (!err) {
-            stop_signal.Trigger();
+            switch (signal_number) {
+            case SIGINT:
+              stop_signal.Trigger();
+              break;
+            case SIGTERM:
+              stop_signal.Trigger();
+              break;
+#ifndef NDEBUG
+            case SIGUSR2:
+              co_await Omni::Fiber::StackTraceAllFibers();
+              break;
+#endif
+            }
           } else if (err == boost::asio::error::operation_aborted) {
             continue;
           } else {
