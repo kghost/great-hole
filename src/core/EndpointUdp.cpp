@@ -32,6 +32,7 @@ Udp::~Udp() { assert(_Channels.empty()); }
 std::string Udp::GetName() const { return "Udp:" + boost::lexical_cast<std::string>(_Local); }
 
 Omni::Fiber::Coroutine<ErrorCode> Udp::DoStart() {
+  ErrorCode ec;
   try {
     _Socket.open(boost::asio::ip::udp::v6());
     _Socket.set_option(boost::asio::ip::v6_only(false));
@@ -39,7 +40,12 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::DoStart() {
     BOOST_LOG_TRIVIAL(info) << "udp(" << this << ") bound at " << _Socket.local_endpoint();
   } catch (const SystemError& e) {
     BOOST_LOG_TRIVIAL(info) << "udp(" << this << ") start failed: " << e.what();
-    co_return e.code();
+    ec = e.code();
+  }
+
+  if (ec) {
+    co_await _ChannelRpc.Close();
+    co_return ec;
   }
   co_return ErrorCode{};
 }
@@ -59,13 +65,16 @@ Omni::Fiber::Coroutine<void> Udp::DoWork() {
         Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [&]() { stopped = true; }),
         Omni::Fiber::SelectPair(_ChannelRpc.GetServiceAwaitor(), [&](auto req) -> Omni::Fiber::Coroutine<void> {
           bool ok = co_await Omni::Fiber::RemoteCall::HandleRequest(std::move(req));
-          assert(ok);
+          if (!ok) {
+            stopped = true;
+          }
           co_return;
         }));
   }
 }
 
 Omni::Fiber::Coroutine<ErrorCode> Udp::DoGracefulStop() {
+  co_await _ChannelRpc.Close();
   for (auto& [peer, channel] : std::exchange(_Channels, {})) {
     co_await channel->Stop();
     co_await channel->WaitService();
@@ -77,7 +86,7 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::DoGracefulStop() {
 
 Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>>
 Udp::CreateChannel(std::shared_ptr<ResolverEndpoint> resolver) {
-  co_return co_await _ChannelRpc.Call(
+  auto result = co_await _ChannelRpc.Call(
       [&udp = *this, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>> {
         auto peer = co_await resolver->Resolve();
         if (!peer.has_value()) {
@@ -94,6 +103,7 @@ Udp::CreateChannel(std::shared_ptr<ResolverEndpoint> resolver) {
         }
         co_return channel;
       });
+  co_return result.value();
 }
 
 Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>>
@@ -171,6 +181,7 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::DoStart() { co_return ErrorCo
 
 Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::DoGracefulStop() {
   co_await _PipielineUsageCounter.WaitAll();
+  co_await _Pipe.GetProducer().Close();
   co_return ErrorCode{};
 }
 

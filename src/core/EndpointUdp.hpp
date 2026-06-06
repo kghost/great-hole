@@ -75,7 +75,9 @@ protected:
 
 public:
   template <typename... Args> Omni::Fiber::Coroutine<void> Send(Args&&... args) {
-    co_return co_await _Pipe.GetProducer().Put(std::forward<Args>(args)...);
+    auto reply = co_await _Pipe.GetProducer().Put(std::forward<Args>(args)...);
+    assert(reply.has_value());
+    co_return;
   }
 
 private:

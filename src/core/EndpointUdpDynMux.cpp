@@ -166,6 +166,8 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkRunn
 
 Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::DoGracefulStop() {
   co_await _PipielineUsageCounter.WaitAll();
+  co_await _DataPacket.GetProducer().Close();
+  co_await _ControlPacket.GetProducer().Close();
   co_return ErrorCode{};
 }
 
@@ -290,6 +292,7 @@ UdpDynMux::~UdpDynMux() { assert(_Channels.empty()); }
 std::string UdpDynMux::GetName() const { return "UdpDynMux:" + boost::lexical_cast<std::string>(_Local); }
 
 Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoStart() {
+  ErrorCode ec;
   try {
     _Socket.open(boost::asio::ip::udp::v6());
     _Socket.set_option(boost::asio::ip::v6_only(false));
@@ -298,7 +301,12 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoStart() {
     BOOST_LOG_TRIVIAL(info) << GetName() << " bound at " << _Local;
   } catch (const SystemError& e) {
     BOOST_LOG_TRIVIAL(info) << GetName() << " start failed: " << e.what();
-    co_return e.code();
+    ec = e.code();
+  }
+
+  if (ec) {
+    co_await _ChannelRpc.Close();
+    co_return ec;
   }
   co_return ErrorCode{};
 }
@@ -314,15 +322,18 @@ Omni::Fiber::Coroutine<void> UdpDynMux::DoWork() {
   while (!stopped) {
     co_await Omni::Fiber::Select(
         Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [&]() { stopped = true; }),
-        Omni::Fiber::SelectPair(_ChannelRpc.GetServiceAwaitor(), [](auto req) -> Omni::Fiber::Coroutine<void> {
+        Omni::Fiber::SelectPair(_ChannelRpc.GetServiceAwaitor(), [&](auto req) -> Omni::Fiber::Coroutine<void> {
           bool ok = co_await Omni::Fiber::RemoteCall::HandleRequest(std::move(req));
-          assert(ok);
+          if (!ok) {
+            stopped = true;
+          }
           co_return;
         }));
   }
 }
 
 Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoGracefulStop() {
+  co_await _ChannelRpc.Close();
   for (auto& [psk, channel] : std::exchange(_Channels, {})) {
     co_await channel->Stop();
     co_await channel->WaitService();
@@ -339,7 +350,7 @@ Omni::Fiber::Coroutine<std::shared_ptr<UdpDynMux::Channel>> UdpDynMux::CreateCha
 
 Omni::Fiber::Coroutine<std::shared_ptr<UdpDynMux::Channel>>
 UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver) {
-  co_return co_await _ChannelRpc.Call(
+  auto reply = co_await _ChannelRpc.Call(
       [&udp = *this, psk, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
         auto channel = std::make_shared<Channel>(udp, psk, udp.AllocateUniqueRxId(), resolver);
         channel->_LastSeen = std::chrono::steady_clock::now();
@@ -360,6 +371,8 @@ UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, std::shared_ptr<Resolver
 
         co_return channel;
       });
+  assert(reply.has_value());
+  co_return reply.value();
 }
 
 Omni::Fiber::Coroutine<void> UdpDynMux::RemoveChannel(const UdpDynMux::PskType& psk) {

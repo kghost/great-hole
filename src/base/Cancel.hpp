@@ -30,7 +30,7 @@ public:
     }
   }
 
-  Omni::Fiber::Event<>& GetFiberCancelEvent() { return _CancelEvent; }
+  Omni::Fiber::Event<void>& GetFiberCancelEvent() { return _CancelEvent; }
 
   class SlotTracker {
   public:
@@ -63,7 +63,7 @@ private:
 
   void Unregister(SlotTracker& tracker) { _Trackers.erase(tracker); }
 
-  Omni::Fiber::Event<> _CancelEvent;
+  Omni::Fiber::Event<void> _CancelEvent;
   std::set<std::reference_wrapper<SlotTracker>, Less<SlotTracker>> _Trackers;
 };
 

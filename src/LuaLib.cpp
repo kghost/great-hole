@@ -45,10 +45,10 @@ template <int f(lua_State* L)> static int safe_call(lua_State* L) {
 template <void f(lua_State* L)> static int safe_yield(lua_State* L) {
   try {
     f(L);
-    return lua_yield(L, 0);
   } catch (std::exception const& e) {
     return luaL_error(L, e.what());
   }
+  return lua_yield(L, 0);
 }
 
 constexpr const char name_pipeline[] = "Hole.pipeline";
@@ -347,7 +347,7 @@ static void udp_dyn_mux_create_channel(lua_State* L) {
   lua_setmetatable(L, -2);
 
   interface.Schedule([&interface, u, psk, resolver = std::move(resolver), ch](this auto self, lua_State* L,
-                                                                         int nres) -> Omni::Fiber::Coroutine<int> {
+                                                                              int nres) -> Omni::Fiber::Coroutine<int> {
     if (resolver) {
       *ch = co_await u->CreateChannel(psk, resolver);
     } else {
@@ -367,11 +367,10 @@ static void udp_dyn_mux_stop(lua_State* L) {
   });
 }
 
-static const struct luaL_Reg udp_dyn_mux_metatable[] = {
-    {"__gc", safe_call<gc<UdpDynMux, name_udp_dyn_mux>>},
-    {"create_channel", safe_yield<udp_dyn_mux_create_channel>},
-    {"stop", safe_yield<udp_dyn_mux_stop>},
-    {NULL, NULL}};
+static const struct luaL_Reg udp_dyn_mux_metatable[] = {{"__gc", safe_call<gc<UdpDynMux, name_udp_dyn_mux>>},
+                                                        {"create_channel", safe_yield<udp_dyn_mux_create_channel>},
+                                                        {"stop", safe_yield<udp_dyn_mux_stop>},
+                                                        {NULL, NULL}};
 
 static void udp_dyn_mux_new(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
