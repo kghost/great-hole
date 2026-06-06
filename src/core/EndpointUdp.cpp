@@ -64,8 +64,7 @@ Omni::Fiber::Coroutine<void> Udp::DoWork() {
     co_await Omni::Fiber::Select(
         Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [&]() { stopped = true; }),
         Omni::Fiber::SelectPair(_ChannelRpc.GetServiceAwaitor(), [&](auto req) -> Omni::Fiber::Coroutine<void> {
-          bool ok = co_await Omni::Fiber::RemoteCall::HandleRequest(std::move(req));
-          if (!ok) {
+          if (!co_await Omni::Fiber::RemoteCall::HandleRequest(std::move(req))) {
             stopped = true;
           }
           co_return;
