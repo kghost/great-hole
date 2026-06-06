@@ -57,7 +57,7 @@ Omni::Fiber::Coroutine<ErrorCode> Tun::Write(Packet& p, Cancel& c) {
   auto [err, bytes_transferred] = co_await _TunFileDescriptor.async_write_some(
       boost::asio::const_buffer(p),
       boost::asio::bind_cancellation_slot(c.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
-  assert(p._Length == bytes_transferred);
+  assert(err || p._Length == bytes_transferred);
   co_return err;
 }
 

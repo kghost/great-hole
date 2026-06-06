@@ -49,6 +49,13 @@ public:
     std::copy(data.begin(), data.end(), _Data.data() + _Offset);
   }
 
+  template <typename T>
+    requires std::is_integral_v<T>
+  T PopFront() {
+    T v = *reinterpret_cast<T*>(PopFront(sizeof(T)).data());
+    return (std::endian::native == std::endian::little) ? std::byteswap(v) : v;
+  }
+
   std::span<uint8_t> PopFront(std::size_t size) {
     assert(DataSize() >= size);
     auto span = std::span<uint8_t>(_Data.data() + _Offset, size);
@@ -68,6 +75,13 @@ public:
     assert(BackSpace() >= data.size());
     std::copy(data.begin(), data.end(), _Data.data() + _Offset + _Length);
     _Length += data.size();
+  }
+
+  template <typename T>
+    requires std::is_integral_v<T>
+  T PopBack() {
+    T v = *reinterpret_cast<T*>(PopBack(sizeof(T)).data());
+    return (std::endian::native == std::endian::little) ? std::byteswap(v) : v;
   }
 
   std::span<uint8_t> PopBack(std::size_t size) {

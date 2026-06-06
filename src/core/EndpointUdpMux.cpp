@@ -157,7 +157,7 @@ Omni::Fiber::Coroutine<void> UdpMux::ReadLoop() {
       continue;
     }
 
-    uint8_t id = p.PopFront(1)[0];
+    uint8_t id = p.PopFront<uint8_t>();
     auto it = _Channels.find(id);
     if (it != _Channels.end()) {
       if (it->second->GetPeer().has_value()) {
