@@ -26,8 +26,22 @@ public:
 
   class Channel;
 
-  explicit UdpDynMux(boost::asio::io_context& ioContext);
-  explicit UdpDynMux(boost::asio::io_context& ioContext, boost::asio::ip::udp::endpoint bind);
+  class ChannelNotification {
+  public:
+    virtual ~ChannelNotification() = default;
+    virtual Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> ch) = 0;
+  };
+
+  class NoopChannelNotification : public ChannelNotification {
+  public:
+    ~NoopChannelNotification() override = default;
+    Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> ch) override { co_return; }
+  };
+  static NoopChannelNotification _NoopChannelNotification;
+
+  explicit UdpDynMux(boost::asio::io_context& ioContext, ChannelNotification& notification = _NoopChannelNotification);
+  explicit UdpDynMux(boost::asio::io_context& ioContext, boost::asio::ip::udp::endpoint bind,
+                     ChannelNotification& notification = _NoopChannelNotification);
   ~UdpDynMux() override;
 
   UdpDynMux(const UdpDynMux&) = delete;
@@ -70,6 +84,7 @@ private:
   Omni::Fiber::Coroutine<void> SendControlInvalidChannel(const boost::asio::ip::udp::endpoint& peer,
                                                          uint16_t channelId);
 
+  ChannelNotification& _Notification;
   boost::asio::ip::udp::socket _Socket;
   boost::asio::ip::udp::endpoint _Local;
   std::map<UdpDynMux::PskType, std::shared_ptr<Channel>> _Channels;
@@ -97,14 +112,15 @@ public:
   Channel(Channel&&) = delete;
   Channel& operator=(Channel&&) = delete;
 
-  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override;
-  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel& c) override;
-
-protected:
   std::string GetName() const override;
   Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
   Omni::Fiber::Coroutine<void> DoWork() override;
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+
+  UdpDynMux::PskType GetPsk() const { return _Psk; }
+
+  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override;
+  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel& c) override;
 
 private:
   UdpDynMux& _Parent;

@@ -1,6 +1,7 @@
 add_subdirectory(base)
 add_subdirectory(resolvers)
 add_subdirectory(core)
+add_subdirectory(application)
 
 # src/init.lua custom command
 set(INIT_LUA_SRC ${CMAKE_CURRENT_SOURCE_DIR}/init.lua)
