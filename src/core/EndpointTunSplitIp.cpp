@@ -106,26 +106,22 @@ EndpointTunSplitIp::CreateChannel(const std::vector<boost::asio::ip::address_v6>
     co_return nullptr;
   }
 
-  std::vector<boost::asio::ip::address_v6> v6Ips;
-  for (auto const& ip : ips) {
-    v6Ips.push_back(MapToV6(ip));
-  }
-  std::sort(v6Ips.begin(), v6Ips.end());
-  v6Ips.erase(std::unique(v6Ips.begin(), v6Ips.end()), v6Ips.end());
+  auto sortedIps = ips;
+  std::sort(sortedIps.begin(), sortedIps.end());
 
   auto reply = co_await _ChannelRpc.Call(
-      [&tun = *this, v6Ips](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
-        for (auto const& ip : v6Ips) {
+      [&tun = *this, sortedIps](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
+        for (auto const& ip : sortedIps) {
           if (tun._Channels.contains(ip)) {
             co_return nullptr;
           }
         }
-        auto channel = std::make_shared<Channel>(tun, v6Ips);
+        auto channel = std::make_shared<Channel>(tun, sortedIps);
         auto err = co_await channel->Start();
         if (err) {
           co_return nullptr;
         }
-        for (auto const& ip : v6Ips) {
+        for (auto const& ip : sortedIps) {
           tun._Channels.emplace(ip, channel);
         }
         co_return channel;
