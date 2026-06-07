@@ -123,14 +123,12 @@ Omni::Fiber::Coroutine<void> Udp::RemoveChannel(const boost::asio::ip::udp::endp
 }
 
 Omni::Fiber::Coroutine<void> Udp::ReadLoop() {
-  auto slotTracker = _Service.value()._Stop.AsioSlot();
   while (!_Service.value()._Stop.IsTriggered()) {
     Packet p;
     boost::asio::ip::udp::endpoint peer;
 
-    auto [err, bytes_transferred] = co_await _Socket.async_receive_from(
-        boost::asio::mutable_buffer(p), peer,
-        boost::asio::bind_cancellation_slot(slotTracker.Slot(), Omni::Fiber::AsioUseFiber));
+    auto [err, bytes_transferred] =
+        co_await _Socket.async_receive_from(boost::asio::mutable_buffer(p), peer, _Service.value()._Stop.AsioToken());
     if (err) {
       if (err == boost::asio::error::operation_aborted) {
         BOOST_LOG_TRIVIAL(info) << "udp(" << this << ") read loop cancelled";
@@ -159,9 +157,7 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::WriteTo(boost::asio::ip::udp::endpoint co
   if (c.IsTriggered()) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
-  auto [err, bytes_transferred] = co_await _Socket.async_send_to(
-      boost::asio::const_buffer(p), peer,
-      boost::asio::bind_cancellation_slot(c.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+  auto [err, bytes_transferred] = co_await _Socket.async_send_to(boost::asio::const_buffer(p), peer, c.AsioToken());
   assert(err || bytes_transferred == p._Length);
   co_return err;
 }

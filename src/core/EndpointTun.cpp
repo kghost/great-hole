@@ -43,9 +43,8 @@ Omni::Fiber::Coroutine<ErrorCode> Tun::Read(Packet& p, Cancel& c) {
   if (c.IsTriggered()) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
-  auto [err, bytes_transferred] = co_await _TunFileDescriptor.async_read_some(
-      boost::asio::mutable_buffer(p),
-      boost::asio::bind_cancellation_slot(c.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+  auto [err, bytes_transferred] =
+      co_await _TunFileDescriptor.async_read_some(boost::asio::mutable_buffer(p), c.AsioToken());
   p._Length = bytes_transferred;
   co_return err;
 }
@@ -54,9 +53,8 @@ Omni::Fiber::Coroutine<ErrorCode> Tun::Write(Packet& p, Cancel& c) {
   if (c.IsTriggered()) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
-  auto [err, bytes_transferred] = co_await _TunFileDescriptor.async_write_some(
-      boost::asio::const_buffer(p),
-      boost::asio::bind_cancellation_slot(c.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+  auto [err, bytes_transferred] =
+      co_await _TunFileDescriptor.async_write_some(boost::asio::const_buffer(p), c.AsioToken());
   assert(err || p._Length == bytes_transferred);
   co_return err;
 }

@@ -25,9 +25,7 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverIpDns::DoStart() {
     co_return make_error_code(boost::asio::error::operation_aborted);
   }
   boost::asio::ip::udp::resolver resolver(_Executor);
-  auto [err, results] = co_await resolver.async_resolve(
-      _Host, "",
-      boost::asio::bind_cancellation_slot(_Service.value()._Stop.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+  auto [err, results] = co_await resolver.async_resolve(_Host, "", _Service.value()._Stop.AsioToken());
   if (err) {
     co_return err;
   }

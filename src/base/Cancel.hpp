@@ -4,6 +4,7 @@
 #include <functional>
 #include <set>
 
+#include "Asio.hpp"
 #include "Event.hpp"
 #include "Utils.hpp"
 
@@ -52,6 +53,10 @@ public:
   };
 
   SlotTracker AsioSlot() { return SlotTracker(*this); }
+
+  decltype(auto) AsioToken() {
+    return boost::asio::bind_cancellation_slot(AsioSlot().Slot(), Omni::Fiber::AsioUseFiber);
+  }
 
 private:
   void Register(SlotTracker& tracker) {

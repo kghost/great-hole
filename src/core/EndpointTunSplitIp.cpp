@@ -150,13 +150,11 @@ Omni::Fiber::Coroutine<void> EndpointTunSplitIp::RemoveChannel(const boost::asio
 }
 
 Omni::Fiber::Coroutine<void> EndpointTunSplitIp::ReadLoop() {
-  auto slotTracker = _Service.value()._Stop.AsioSlot();
   while (!_Service.value()._Stop.IsTriggered()) {
     Packet p;
 
-    auto [err, bytesTransferred] = co_await _TunFileDescriptor.async_read_some(
-        boost::asio::mutable_buffer(p),
-        boost::asio::bind_cancellation_slot(slotTracker.Slot(), Omni::Fiber::AsioUseFiber));
+    auto [err, bytesTransferred] =
+        co_await _TunFileDescriptor.async_read_some(boost::asio::mutable_buffer(p), _Service.value()._Stop.AsioToken());
     if (err) {
       if (err == boost::asio::error::operation_aborted) {
         BOOST_LOG_TRIVIAL(info) << "EndpointTunSplitIp(" << this << ") read loop cancelled";
@@ -193,9 +191,8 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::WriteToTun(Packet& p, Canc
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
 
-  auto [err, bytesTransferred] = co_await _TunFileDescriptor.async_write_some(
-      boost::asio::const_buffer(p),
-      boost::asio::bind_cancellation_slot(c.AsioSlot().Slot(), Omni::Fiber::AsioUseFiber));
+  auto [err, bytesTransferred] =
+      co_await _TunFileDescriptor.async_write_some(boost::asio::const_buffer(p), c.AsioToken());
   assert(err || bytesTransferred == p._Length);
   co_return err;
 }
