@@ -5,13 +5,13 @@
 
 namespace gh {
 
-ResolverStaticIp::ResolverStaticIp(const boost::asio::ip::address& address) : _Address(address) {}
+ResolverStaticIp::ResolverStaticIp(const boost::asio::ip::address_v6& address) : _Address(address) {}
 
 std::string ResolverStaticIp::GetName() const {
   return "ResolverStaticIp:" + boost::lexical_cast<std::string>(_Address);
 }
 
-boost::asio::ip::address ResolverStaticIp::GetResolverResult() const { return _Address; }
+boost::asio::ip::address_v6 ResolverStaticIp::GetResolverResult() const { return _Address; }
 Omni::Fiber::Coroutine<ErrorCode> ResolverStaticIp::DoStart() { co_return ErrorCode{}; }
 Omni::Fiber::Coroutine<ErrorCode> ResolverStaticIp::DoGracefulStop() { co_return ErrorCode{}; }
 

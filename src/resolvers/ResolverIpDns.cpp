@@ -3,15 +3,16 @@
 #include <random>
 
 #include "Asio.hpp"
+#include "Utils.hpp"
 
 namespace gh {
 
 ResolverIpDns::ResolverIpDns(boost::asio::any_io_executor executor, std::string const& host)
     : _Executor(executor), _Host(host) {}
 
-boost::asio::ip::address ResolverIpDns::GetResolverResult() const {
+boost::asio::ip::address_v6 ResolverIpDns::GetResolverResult() const {
   if (_Addresses.empty()) {
-    return boost::asio::ip::address{};
+    return boost::asio::ip::address_v6{};
   }
   static std::random_device rd;
   static std::mt19937 gen(rd());
@@ -31,7 +32,7 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverIpDns::DoStart() {
     co_return err;
   }
   for (auto const& entry : results) {
-    _Addresses.push_back(entry.endpoint().address());
+    _Addresses.push_back(MapToV6(entry.endpoint().address()));
   }
   co_return ErrorCode{};
 }

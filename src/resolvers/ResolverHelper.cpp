@@ -11,6 +11,7 @@
 #include "ResolverNumberPort.hpp"
 #include "ResolverServicePort.hpp"
 #include "ResolverStaticIp.hpp"
+#include "Utils.hpp"
 
 namespace gh {
 
@@ -34,7 +35,7 @@ std::shared_ptr<ResolverIp> FindResolverIp(const std::string& input, ResolveFor&
   try {
     // Try to parse as static IP
     auto address = boost::asio::ip::make_address(stripped);
-    return std::make_shared<ResolverStaticIp>(address);
+    return std::make_shared<ResolverStaticIp>(MapToV6(address));
   } catch (const boost::system::system_error&) {
     // If not a static IP, treat as DNS host name
     return std::make_shared<ResolverIpDns>(target.GetExecutor(), input);

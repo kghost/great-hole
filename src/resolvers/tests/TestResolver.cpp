@@ -15,6 +15,7 @@
 #include "ResolverNumberPort.hpp"
 #include "ResolverServicePort.hpp"
 #include "ResolverStaticIp.hpp"
+#include "Utils.hpp"
 
 using namespace gh;
 
@@ -51,15 +52,15 @@ TEST(ResolverTest, StaticIpResolverSuccess) {
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
-    auto r1 = std::make_shared<ResolverStaticIp>(boost::asio::ip::make_address("127.0.0.1"));
+    auto r1 = std::make_shared<ResolverStaticIp>(MapToV6(boost::asio::ip::make_address("127.0.0.1")));
     auto err1 = co_await r1->Start();
     EXPECT_FALSE(err1);
     if (!err1) {
       auto addr = r1->GetResolverResult();
-      EXPECT_EQ(addr.to_string(), "127.0.0.1");
+      EXPECT_EQ(addr.to_string(), "::ffff:127.0.0.1");
     }
 
-    auto r2 = std::make_shared<ResolverStaticIp>(boost::asio::ip::make_address("::1"));
+    auto r2 = std::make_shared<ResolverStaticIp>(boost::asio::ip::address_v6::loopback());
     auto err2 = co_await r2->Start();
     EXPECT_FALSE(err2);
     if (!err2) {
@@ -186,7 +187,7 @@ TEST(ResolverTest, ResolverEndpointSuccess) {
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
-    auto ipResolver = std::make_shared<ResolverStaticIp>(boost::asio::ip::make_address("127.0.0.1"));
+    auto ipResolver = std::make_shared<ResolverStaticIp>(MapToV6(boost::asio::ip::make_address("127.0.0.1")));
     auto portResolver = std::make_shared<ResolverNumberPort>(9090);
     auto r = std::make_shared<ResolverCombinedEndpoint>(ipResolver, portResolver);
 
@@ -194,7 +195,7 @@ TEST(ResolverTest, ResolverEndpointSuccess) {
     EXPECT_FALSE(err);
     if (!err) {
       auto endpoint = r->GetResolverResult();
-      EXPECT_EQ(endpoint.address().to_string(), "127.0.0.1");
+      EXPECT_EQ(endpoint.address().to_string(), "::ffff:127.0.0.1");
       EXPECT_EQ(endpoint.port(), 9090);
     }
 
@@ -299,7 +300,7 @@ TEST(ResolverTest, ResolverHelperTest) {
     EXPECT_TRUE(result1.has_value());
     if (result1.has_value()) {
       auto addr = result1.value();
-      EXPECT_EQ(addr.to_string(), "127.0.0.1");
+      EXPECT_EQ(addr.to_string(), "::ffff:127.0.0.1");
     }
 
     auto ipRes2 = FindResolverIp("localhost", mockedResolveFor);
@@ -330,7 +331,7 @@ TEST(ResolverTest, ResolverHelperTest) {
     EXPECT_TRUE(result4.has_value());
     if (result4.has_value()) {
       auto endpoint = result4.value();
-      EXPECT_EQ(endpoint.address().to_string(), "127.0.0.1");
+      EXPECT_EQ(endpoint.address().to_string(), "::ffff:127.0.0.1");
       EXPECT_EQ(endpoint.port(), 9090);
     }
 

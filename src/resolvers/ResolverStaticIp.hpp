@@ -12,7 +12,7 @@ namespace gh {
 
 class ResolverStaticIp final : public ResolverIp {
 public:
-  explicit ResolverStaticIp(const boost::asio::ip::address& address);
+  explicit ResolverStaticIp(const boost::asio::ip::address_v6& address);
   ~ResolverStaticIp() override = default;
 
   ResolverStaticIp(const ResolverStaticIp&) = delete;
@@ -20,7 +20,7 @@ public:
   ResolverStaticIp(ResolverStaticIp&&) = delete;
   ResolverStaticIp& operator=(ResolverStaticIp&&) = delete;
 
-  boost::asio::ip::address GetResolverResult() const override;
+  boost::asio::ip::address_v6 GetResolverResult() const override;
 
 protected:
   std::string GetName() const override;
@@ -28,7 +28,7 @@ protected:
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 
 private:
-  boost::asio::ip::address _Address;
+  boost::asio::ip::address_v6 _Address;
 };
 
 } // namespace gh

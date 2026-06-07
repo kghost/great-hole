@@ -1,10 +1,10 @@
 #include "EndpointTunSplitIp.hpp"
 
 #include <fcntl.h>
+#include <linux/if_tun.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#include <linux/if_tun.h>
 
 #include <algorithm>
 #include <array>
@@ -27,6 +27,7 @@
 #include "Packet.hpp"
 #include "Select.hpp"
 #include "ServiceBase.hpp"
+#include "Utils.hpp"
 
 namespace gh {
 
@@ -69,8 +70,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::DoStart() {
 
 Omni::Fiber::Coroutine<void> EndpointTunSplitIp::DoWork() {
   (co_await Omni::Fiber::GetCurrentFiber())
-      .Spawn("EndpointTunSplitIp ReadLoop:" + _TunName + "@" +
-                 std::to_string(reinterpret_cast<uintptr_t>(this)),
+      .Spawn("EndpointTunSplitIp ReadLoop:" + _TunName + "@" + std::to_string(reinterpret_cast<uintptr_t>(this)),
              [this]() -> Omni::Fiber::Coroutine<void> {
                co_await ReadLoop();
                co_return;
@@ -101,31 +101,49 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::DoGracefulStop() {
 }
 
 Omni::Fiber::Coroutine<std::shared_ptr<EndpointTunSplitIp::Channel>>
-EndpointTunSplitIp::CreateChannel(const boost::asio::ip::address& ip) {
+EndpointTunSplitIp::CreateChannel(const std::vector<boost::asio::ip::address_v6>& ips) {
+  assert(!ips.empty());
+  if (ips.empty()) {
+    co_return nullptr;
+  }
+
+  std::vector<boost::asio::ip::address_v6> v6Ips;
+  for (auto const& ip : ips) {
+    v6Ips.push_back(MapToV6(ip));
+  }
+  std::sort(v6Ips.begin(), v6Ips.end());
+  v6Ips.erase(std::unique(v6Ips.begin(), v6Ips.end()), v6Ips.end());
+
   auto reply = co_await _ChannelRpc.Call(
-      [&tun = *this, ip](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
-        if (tun._Channels.contains(ip)) {
-          co_return nullptr;
+      [&tun = *this, v6Ips](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
+        for (auto const& ip : v6Ips) {
+          if (tun._Channels.contains(ip)) {
+            co_return nullptr;
+          }
         }
-        auto channel = std::make_shared<Channel>(tun, ip);
+        auto channel = std::make_shared<Channel>(tun, v6Ips);
         auto err = co_await channel->Start();
         if (err) {
           co_return nullptr;
         }
-        tun._Channels.emplace(ip, channel);
+        for (auto const& ip : v6Ips) {
+          tun._Channels.emplace(ip, channel);
+        }
         co_return channel;
       });
   assert(reply.has_value());
   co_return reply.value();
 }
 
-Omni::Fiber::Coroutine<void> EndpointTunSplitIp::RemoveChannel(const boost::asio::ip::address& ip) {
+Omni::Fiber::Coroutine<void> EndpointTunSplitIp::RemoveChannel(const boost::asio::ip::address_v6& ip) {
   co_await _ChannelRpc.Call([this, ip]() -> Omni::Fiber::Coroutine<void> {
     auto it = _Channels.find(ip);
     assert(it != _Channels.end());
 
     auto channel = std::move(it->second);
-    _Channels.erase(it);
+    for (auto const& chIp : channel->GetIps()) {
+      _Channels.erase(chIp);
+    }
     co_await channel->Stop();
     co_await channel->WaitService();
   });
@@ -164,8 +182,8 @@ Omni::Fiber::Coroutine<void> EndpointTunSplitIp::ReadLoop() {
     if (it != _Channels.end()) {
       co_await it->second->Send(std::move(p));
     } else {
-      BOOST_LOG_TRIVIAL(debug) << "EndpointTunSplitIp(" << this << ") dropped packet to unknown dest IP: "
-                               << destIpOpt->to_string();
+      BOOST_LOG_TRIVIAL(debug) << "EndpointTunSplitIp(" << this
+                               << ") dropped packet to unknown dest IP: " << destIpOpt->to_string();
     }
   }
 }
@@ -182,7 +200,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::WriteToTun(Packet& p, Canc
   co_return err;
 }
 
-std::optional<boost::asio::ip::address> EndpointTunSplitIp::GetSourceAddress(const Packet& p) {
+std::optional<boost::asio::ip::address_v6> EndpointTunSplitIp::GetSourceAddress(const Packet& p) {
   if (p.DataSize() < 20) {
     return std::nullopt;
   }
@@ -190,7 +208,7 @@ std::optional<boost::asio::ip::address> EndpointTunSplitIp::GetSourceAddress(con
   if (version == 4) {
     std::array<uint8_t, 4> addrBytes;
     std::copy_n(p.Data().data() + 12, 4, addrBytes.begin());
-    return boost::asio::ip::make_address_v4(addrBytes);
+    return MapToV6(boost::asio::ip::make_address_v4(addrBytes));
   } else if (version == 6) {
     if (p.DataSize() < 40) {
       return std::nullopt;
@@ -202,7 +220,7 @@ std::optional<boost::asio::ip::address> EndpointTunSplitIp::GetSourceAddress(con
   return std::nullopt;
 }
 
-std::optional<boost::asio::ip::address> EndpointTunSplitIp::GetDestAddress(const Packet& p) {
+std::optional<boost::asio::ip::address_v6> EndpointTunSplitIp::GetDestAddress(const Packet& p) {
   if (p.DataSize() < 20) {
     return std::nullopt;
   }
@@ -210,7 +228,7 @@ std::optional<boost::asio::ip::address> EndpointTunSplitIp::GetDestAddress(const
   if (version == 4) {
     std::array<uint8_t, 4> addrBytes;
     std::copy_n(p.Data().data() + 16, 4, addrBytes.begin());
-    return boost::asio::ip::make_address_v4(addrBytes);
+    return MapToV6(boost::asio::ip::make_address_v4(addrBytes));
   } else if (version == 6) {
     if (p.DataSize() < 40) {
       return std::nullopt;
@@ -223,13 +241,13 @@ std::optional<boost::asio::ip::address> EndpointTunSplitIp::GetDestAddress(const
 }
 
 // ==================== EndpointTunSplitIp::Channel ====================
-EndpointTunSplitIp::Channel::Channel(EndpointTunSplitIp& parent, const boost::asio::ip::address& ip)
-    : _Parent(parent), _Ip(ip) {}
+EndpointTunSplitIp::Channel::Channel(EndpointTunSplitIp& parent, const std::vector<boost::asio::ip::address_v6>& ips)
+    : _Parent(parent), _Ips(ips) {}
 
 EndpointTunSplitIp::Channel::~Channel() {}
 
 std::string EndpointTunSplitIp::Channel::GetName() const {
-  return std::format("TunSplitIpChannel:[{}]", _Ip.to_string());
+  return std::format("TunSplitIpChannel:[{}]", _Ips.front().to_string());
 }
 
 Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::Channel::DoStart() { co_return ErrorCode{}; }
@@ -243,22 +261,21 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::Channel::DoGracefulStop() 
 Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::Channel::Read(Packet& p, Cancel& c) {
   bool stopped = false;
   std::optional<ErrorCode> err;
-  co_await Omni::Fiber::Select(
-      Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [&]() { stopped = true; }),
-      Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&](auto data) {
-        if (data.has_value()) {
-          auto& inner = data.value();
-          if (inner.has_value()) {
-            p = std::move(inner.value());
-            err = ErrorCode{};
-          } else {
-            err = inner.error();
-          }
-        } else {
-          p._Length = 0;
-          err = ErrorCode{AppErrorCategory::kEndOfStream, kAppError};
-        }
-      }));
+  co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [&]() { stopped = true; }),
+                               Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&](auto data) {
+                                 if (data.has_value()) {
+                                   auto& inner = data.value();
+                                   if (inner.has_value()) {
+                                     p = std::move(inner.value());
+                                     err = ErrorCode{};
+                                   } else {
+                                     err = inner.error();
+                                   }
+                                 } else {
+                                   p._Length = 0;
+                                   err = ErrorCode{AppErrorCategory::kEndOfStream, kAppError};
+                                 }
+                               }));
   if (err.has_value()) {
     co_return err.value();
   }
@@ -271,11 +288,11 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::Channel::Read(Packet& p, C
 
 Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::Channel::Write(Packet& p, Cancel& c) {
   auto srcIpOpt = GetSourceAddress(p);
-  if (!srcIpOpt.has_value() || *srcIpOpt != _Ip) {
-    BOOST_LOG_TRIVIAL(warning) << "Channel " << _Ip.to_string() << " dropped packet: source IP "
+  if (!std::binary_search(_Ips.begin(), _Ips.end(), srcIpOpt)) {
+    BOOST_LOG_TRIVIAL(warning) << "Channel drop packet: source IP "
                                << (srcIpOpt.has_value() ? srcIpOpt->to_string() : "invalid/unknown")
-                               << " does not match channel IP";
-    co_return ErrorCode(AppErrorCategory::kInvalidPacketSession, kAppError);
+                               << " does not match channel IPs";
+    co_return ErrorCode(AppMinorErrorCategory::kSourceIpMismatch, kAppMinorError);
   }
   co_return co_await _Parent.WriteToTun(p, c);
 }

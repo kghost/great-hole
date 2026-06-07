@@ -19,18 +19,20 @@ public:
   std::string message(int ev) const override { return _Errs[ev]; }
 
   enum Codes {
-    kEndOfStream = 0,
-    kOperationAborted = 1,
-    kIncorrectState = 2,
-    kAlreadyStarted = 3,
-    kForkExecError = 4,
-    kInvalidPacketSize = 5,
-    kInvalidPacketSession = 6,
-    kInvalidPacketReserved = 7,
+    kNoError = 0,
+    kEndOfStream = 1,
+    kOperationAborted = 2,
+    kIncorrectState = 3,
+    kAlreadyStarted = 4,
+    kForkExecError = 5,
+    kInvalidPacketSize = 6,
+    kInvalidPacketSession = 7,
+    kInvalidPacketReserved = 8,
   };
 
 private:
   static constexpr auto _Errs = std::to_array({
+      "no error",
       "end of stream",
       "operation aborted",
       "incorrect state",
@@ -42,6 +44,24 @@ private:
   });
 };
 
+class AppMinorErrorCategory : public ErrorCategory {
+public:
+  const char* name() const noexcept override { return "great-hole minor error"; }
+  std::string message(int ev) const override { return _Errs[ev]; }
+
+  enum Codes {
+    kNoError = 0,
+    kSourceIpMismatch = 1,
+  };
+
+private:
+  static constexpr auto _Errs = std::to_array({
+      "no error",
+      "source ip mismatch",
+  });
+};
+
 extern AppErrorCategory kAppError;
+extern AppMinorErrorCategory kAppMinorError;
 
 } // namespace gh

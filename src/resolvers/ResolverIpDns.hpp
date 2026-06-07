@@ -21,7 +21,7 @@ public:
   ResolverIpDns(ResolverIpDns&&) = delete;
   ResolverIpDns& operator=(ResolverIpDns&&) = delete;
 
-  boost::asio::ip::address GetResolverResult() const override;
+  boost::asio::ip::address_v6 GetResolverResult() const override;
 
 protected:
   std::string GetName() const override { return "ResolverIpDns"; }
@@ -31,7 +31,7 @@ protected:
 private:
   boost::asio::any_io_executor _Executor;
   std::string _Host;
-  std::vector<boost::asio::ip::address> _Addresses;
+  std::vector<boost::asio::ip::address_v6> _Addresses;
 };
 
 } // namespace gh

@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <boost/asio.hpp>
 #include <boost/asio/posix/basic_descriptor.hpp>
@@ -30,8 +31,8 @@ public:
   EndpointTunSplitIp(EndpointTunSplitIp&&) = delete;
   EndpointTunSplitIp& operator=(EndpointTunSplitIp&&) = delete;
 
-  Omni::Fiber::Coroutine<std::shared_ptr<Channel>> CreateChannel(const boost::asio::ip::address& ip);
-  Omni::Fiber::Coroutine<void> RemoveChannel(const boost::asio::ip::address& ip);
+  Omni::Fiber::Coroutine<std::shared_ptr<Channel>> CreateChannel(const std::vector<boost::asio::ip::address_v6>& ips);
+  Omni::Fiber::Coroutine<void> RemoveChannel(const boost::asio::ip::address_v6& ip);
 
 protected:
   std::string GetName() const override;
@@ -43,19 +44,19 @@ private:
   Omni::Fiber::Coroutine<void> ReadLoop();
   Omni::Fiber::Coroutine<ErrorCode> WriteToTun(Packet& p, Cancel& c);
 
-  static std::optional<boost::asio::ip::address> GetSourceAddress(const Packet& p);
-  static std::optional<boost::asio::ip::address> GetDestAddress(const Packet& p);
+  static std::optional<boost::asio::ip::address_v6> GetSourceAddress(const Packet& p);
+  static std::optional<boost::asio::ip::address_v6> GetDestAddress(const Packet& p);
 
   boost::asio::posix::stream_descriptor _TunFileDescriptor;
   const std::string _TunName;
   const int _TestFd{-1};
-  std::map<boost::asio::ip::address, std::shared_ptr<Channel>> _Channels;
+  std::map<boost::asio::ip::address_v6, std::shared_ptr<Channel>> _Channels;
   Omni::Fiber::RemoteCall _ChannelRpc;
 };
 
 class EndpointTunSplitIp::Channel : public Endpoint {
 public:
-  explicit Channel(EndpointTunSplitIp& parent, const boost::asio::ip::address& ip);
+  explicit Channel(EndpointTunSplitIp& parent, const std::vector<boost::asio::ip::address_v6>& ips);
   ~Channel() override;
 
   Channel(const Channel&) = delete;
@@ -78,11 +79,11 @@ public:
     co_return;
   }
 
-  const boost::asio::ip::address& GetIp() const { return _Ip; }
+  const std::vector<boost::asio::ip::address_v6>& GetIps() const { return _Ips; }
 
 private:
   EndpointTunSplitIp& _Parent;
-  boost::asio::ip::address _Ip;
+  const std::vector<boost::asio::ip::address_v6> _Ips;
   Omni::Fiber::Pipe<std::expected<Packet, ErrorCode>> _Pipe;
 };
 

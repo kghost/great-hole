@@ -42,7 +42,7 @@ public:
 };
 
 // ==================== ResolverIp ====================
-class ResolverIp : public Resolver<boost::asio::ip::address> {
+class ResolverIp : public Resolver<boost::asio::ip::address_v6> {
 public:
   virtual ~ResolverIp() override = default;
 };

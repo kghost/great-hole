@@ -22,7 +22,7 @@ enable_testing()
 find_package(GTest REQUIRED)
 
 add_compile_options("-ffile-compilation-dir=.")
-add_compile_options("-ffile-prefix-map=${CMAKE_SOURCE_DIR}/=")
+add_compile_options("-ffile-prefix-map=${CMAKE_SOURCE_DIR}/=./")
 set(OMNIFIBER_INTERNAL ON CACHE BOOL "" FORCE)
 
 add_subdirectory(libs/omni-fiber)
