@@ -185,7 +185,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMux::WriteTo(uint8_t id, Packet& p, Cancel&
 
   auto it = _Channels.find(id);
   if (it == _Channels.end() || !it->second->GetPeer().has_value()) {
-    co_return ErrorCode{AppErrorCategory::kInvalidPacketSession, kAppError};
+    co_return ErrorCode{AppMinorErrorCategory::kInvalidPacketSession, kAppMinorError};
   }
 
   if (p.FrontSpace() < 1) {

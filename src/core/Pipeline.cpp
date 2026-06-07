@@ -97,7 +97,9 @@ Omni::Fiber::Coroutine<ErrorCode> Pipeline::Stop() {
 }
 
 bool Pipeline::IsCritical(const ErrorCode& ec) {
-  if (ec.category() == boost::system::system_category()) {
+  if (!ec) {
+    return false;
+  } else if (ec.category() == boost::system::system_category()) {
     switch (ec.value()) {
     case boost::system::errc::invalid_argument:
     case boost::system::errc::io_error:
@@ -110,13 +112,9 @@ bool Pipeline::IsCritical(const ErrorCode& ec) {
       return true;
     }
   } else if (ec.category() == kAppError) {
-    switch (ec.value()) {
-    case AppErrorCategory::kInvalidPacketSession:
-    case AppErrorCategory::kInvalidPacketSize:
-      return false;
-    default:
-      return true;
-    }
+    return true;
+  } else if (ec.category() == kAppMinorError) {
+    return false;
   } else {
     return true;
   }

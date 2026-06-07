@@ -201,11 +201,11 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::Write(Packet& p, Cancel& c
   }
 
   if (_State != State::kRunning) {
-    co_return ErrorCode{AppErrorCategory::kInvalidPacketSession, kAppError};
+    co_return ErrorCode{AppMinorErrorCategory::kInvalidPacketSession, kAppMinorError};
   }
 
   if (!_Peer.has_value() || _RemoteRxId == 0) {
-    co_return ErrorCode{AppErrorCategory::kInvalidPacketSession, kAppError};
+    co_return ErrorCode{AppMinorErrorCategory::kInvalidPacketSession, kAppMinorError};
   }
 
   if (p._Offset < 2) {

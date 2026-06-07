@@ -25,9 +25,7 @@ public:
     kIncorrectState = 3,
     kAlreadyStarted = 4,
     kForkExecError = 5,
-    kInvalidPacketSize = 6,
-    kInvalidPacketSession = 7,
-    kInvalidPacketReserved = 8,
+    kInvalidPacketReserved = 6,
   };
 
 private:
@@ -38,8 +36,6 @@ private:
       "incorrect state",
       "already_started",
       "fork_exec_error",
-      "invalid_packet_size",
-      "invalid_packet_session",
       "invalid_packet_reserved",
   });
 };
@@ -52,12 +48,16 @@ public:
   enum Codes {
     kNoError = 0,
     kSourceIpMismatch = 1,
+    kInvalidPacketSize = 2,
+    kInvalidPacketSession = 3,
   };
 
 private:
   static constexpr auto _Errs = std::to_array({
       "no error",
       "source ip mismatch",
+      "invalid_packet_size",
+      "invalid_packet_session",
   });
 };
 
