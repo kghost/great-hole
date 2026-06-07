@@ -14,8 +14,8 @@
 #include "GetCurrentFiber.hpp"
 #include "Manager.hpp"
 #include "Packet.hpp"
+#include "ResolverStaticEndpoint.hpp"
 #include "Yield.hpp"
-#include "resolvers/ResolverStaticEndpoint.hpp"
 
 using boost::asio::ip::udp;
 using namespace gh;

@@ -14,7 +14,7 @@
                 "process handle SIGINT --stop false --notify false --pass true"
             ],
             "args": [
-                "test-async-log.lua"
+                "example.lua"
             ],
             "cwd": "${workspaceFolder}",
             "sourceMap": [

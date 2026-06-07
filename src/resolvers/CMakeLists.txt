@@ -21,12 +21,7 @@ foreach(suffix "" "-asan")
     ResolverHelper.cpp
   )
 
-  target_include_directories(${target} PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_SOURCE_DIR}/libs
-    ${CMAKE_SOURCE_DIR}/src
-  )
+  target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
   target_compile_definitions(${target} PUBLIC
     BOOST_ALL_DYN_LINK

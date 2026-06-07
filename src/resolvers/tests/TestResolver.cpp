@@ -8,13 +8,13 @@
 #include "Coroutine.hpp"
 #include "GetCurrentFiber.hpp"
 #include "Manager.hpp"
-#include "resolvers/ResolverCombinedEndpoint.hpp"
-#include "resolvers/ResolverDnsService.hpp"
-#include "resolvers/ResolverHelper.hpp"
-#include "resolvers/ResolverIpDns.hpp"
-#include "resolvers/ResolverNumberPort.hpp"
-#include "resolvers/ResolverServicePort.hpp"
-#include "resolvers/ResolverStaticIp.hpp"
+#include "ResolverCombinedEndpoint.hpp"
+#include "ResolverDnsService.hpp"
+#include "ResolverHelper.hpp"
+#include "ResolverIpDns.hpp"
+#include "ResolverNumberPort.hpp"
+#include "ResolverServicePort.hpp"
+#include "ResolverStaticIp.hpp"
 
 using namespace gh;
 

@@ -21,11 +21,7 @@ foreach(suffix "" "-asan")
     EndpointUdpDynMux.cpp
   )
 
-  target_include_directories(${target_core} PUBLIC
-    ${CMAKE_CURRENT_BINARY_DIR}
-    ${CMAKE_SOURCE_DIR}/libs
-    ${CMAKE_CURRENT_SOURCE_DIR}
-  )
+  target_include_directories(${target_core} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
   target_compile_definitions(${target_core} PUBLIC
     BOOST_ALL_DYN_LINK

@@ -13,7 +13,7 @@
 #include "GetCurrentFiber.hpp"
 #include "Manager.hpp"
 #include "Packet.hpp"
-#include "resolvers/ResolverHelper.hpp"
+#include "ResolverHelper.hpp"
 
 using boost::asio::ip::udp;
 using namespace gh;

@@ -11,8 +11,8 @@
 #include "ErrorCode.hpp"
 #include "Pipe.hpp"
 #include "RemoteCall.hpp"
+#include "Resolver.hpp"
 #include "ServiceBase.hpp"
-#include "resolvers/Resolver.hpp"
 
 namespace gh {
 
