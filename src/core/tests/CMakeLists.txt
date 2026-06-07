@@ -17,3 +17,9 @@ target_link_libraries(udp_dyn_mux_test PRIVATE great-hole-core-asan GTest::gtest
 target_compile_options(udp_dyn_mux_test PRIVATE -fsanitize=address -fno-omit-frame-pointer)
 target_link_options(udp_dyn_mux_test PRIVATE -fsanitize=address)
 gtest_discover_tests(udp_dyn_mux_test)
+
+add_executable(tun_split_ip_test TestTunSplitIp.cpp)
+target_link_libraries(tun_split_ip_test PRIVATE great-hole-core-asan GTest::gtest_main)
+target_compile_options(tun_split_ip_test PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+target_link_options(tun_split_ip_test PRIVATE -fsanitize=address)
+gtest_discover_tests(tun_split_ip_test)

@@ -539,4 +539,6 @@ uint16_t UdpDynMux::AllocateUniqueRxId() {
   }
 }
 
+UdpDynMux::NoopChannelNotification UdpDynMux::_NoopChannelNotification;
+
 } // namespace gh

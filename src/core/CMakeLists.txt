@@ -16,6 +16,7 @@ foreach(suffix "" "-asan")
     Filter.cpp
     UtilConsole.cpp
     EndpointTun.cpp
+    EndpointTunSplitIp.cpp
     EndpointUdp.cpp
     EndpointUdpMux.cpp
     EndpointUdpDynMux.cpp
