@@ -78,7 +78,7 @@ int main(int ac, char** av) {
       signals_fiber.Spawn("wait", [&io_context, &stop_signal] -> Omni::Fiber::Coroutine<void> {
         boost::asio::signal_set signals(io_context, SIGINT, SIGTERM, SIGUSR2);
         while (!stop_signal.IsTriggered()) {
-          auto [err, signal_number] = co_await signals.async_wait(stop_signal.AsioToken());
+          auto [err, signal_number] = co_await signals.async_wait(stop_signal.AsioSlot()());
           if (!err) {
             switch (signal_number) {
             case SIGINT:

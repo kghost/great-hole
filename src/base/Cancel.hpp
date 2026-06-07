@@ -43,7 +43,9 @@ public:
     SlotTracker(SlotTracker&&) = delete;
     SlotTracker& operator=(SlotTracker&&) = delete;
 
-    boost::asio::cancellation_slot Slot() { return _Signal.slot(); }
+    decltype(auto) operator()() {
+      return boost::asio::bind_cancellation_slot(_Signal.slot(), Omni::Fiber::AsioUseFiber);
+    }
 
     void Emit() { _Signal.emit(boost::asio::cancellation_type::total); }
 
@@ -53,10 +55,6 @@ public:
   };
 
   SlotTracker AsioSlot() { return SlotTracker(*this); }
-
-  decltype(auto) AsioToken() {
-    return boost::asio::bind_cancellation_slot(AsioSlot().Slot(), Omni::Fiber::AsioUseFiber);
-  }
 
 private:
   void Register(SlotTracker& tracker) {

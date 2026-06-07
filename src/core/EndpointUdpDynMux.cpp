@@ -84,7 +84,7 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNego
                                     // FIXME: there are gcc bugs which causes packet object leaks
                                     co_return co_await HandleControlPacket(peer, packet);
                                   }),
-          Omni::Fiber::SelectPair(timer.async_wait(_Service.value()._Stop.AsioToken()),
+          Omni::Fiber::SelectPair(timer.async_wait(_Service.value()._Stop.AsioSlot()()),
                                   Omni::Fiber::AsioApply([](auto ec) { return ec; })));
       if (state.has_value()) {
         if (state.value() != State::kNegotiating) {
@@ -152,7 +152,7 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkRunn
                                   // FIXME: there are gcc bugs which causes packet object leaks
                                   co_return co_await HandleControlPacket(peer, packet);
                                 }),
-        Omni::Fiber::SelectPair(timer.async_wait(_Service.value()._Stop.AsioToken()),
+        Omni::Fiber::SelectPair(timer.async_wait(_Service.value()._Stop.AsioSlot()()),
                                 Omni::Fiber::AsioApply([](auto ec) { return ec; })));
     if (state.has_value() && state.value() != State::kRunning) {
       co_return state.value();
@@ -390,7 +390,7 @@ Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
     boost::asio::ip::udp::endpoint peer;
 
     auto [err, bytes_transferred] = co_await _Socket.async_receive_from(boost::asio::mutable_buffer(packet), peer,
-                                                                        _Service.value()._Stop.AsioToken());
+                                                                        _Service.value()._Stop.AsioSlot()());
     if (err) {
       if (err == boost::asio::error::operation_aborted) {
         BOOST_LOG_TRIVIAL(info) << GetName() << ": read loop cancelled";
@@ -468,7 +468,7 @@ Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
 }
 
 Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::WriteTo(boost::asio::ip::udp::endpoint peer, Packet& p, Cancel& c) {
-  auto [err, bytes_transferred] = co_await _Socket.async_send_to(boost::asio::const_buffer(p), peer, c.AsioToken());
+  auto [err, bytes_transferred] = co_await _Socket.async_send_to(boost::asio::const_buffer(p), peer, c.AsioSlot()());
   assert(err || bytes_transferred == p._Length);
   co_return err;
 }

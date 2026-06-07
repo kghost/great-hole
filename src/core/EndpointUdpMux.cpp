@@ -13,7 +13,6 @@
 #include <boost/lexical_cast.hpp>
 #include <boost/log/trivial.hpp>
 
-#include "Asio.hpp"
 #include "Cancel.hpp"
 #include "ErrorCode.hpp"
 #include "GetCurrentFiber.hpp"
@@ -134,7 +133,7 @@ Omni::Fiber::Coroutine<void> UdpMux::ReadLoop() {
     boost::asio::ip::udp::endpoint peer;
 
     auto [err, bytes_transferred] =
-        co_await _Socket.async_receive_from(boost::asio::mutable_buffer(p), peer, _Service.value()._Stop.AsioToken());
+        co_await _Socket.async_receive_from(boost::asio::mutable_buffer(p), peer, _Service.value()._Stop.AsioSlot()());
     if (err) {
       if (err == boost::asio::error::operation_aborted) {
         BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") read loop cancelled";
@@ -193,7 +192,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMux::WriteTo(uint8_t id, Packet& p, Cancel&
   p.PushFront(id);
 
   auto [err, bytes_transferred] =
-      co_await _Socket.async_send_to(boost::asio::const_buffer(p), it->second->GetPeer().value(), c.AsioToken());
+      co_await _Socket.async_send_to(boost::asio::const_buffer(p), it->second->GetPeer().value(), c.AsioSlot()());
   assert(err || bytes_transferred == p._Length);
   co_return err;
 }

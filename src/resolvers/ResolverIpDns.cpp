@@ -2,7 +2,6 @@
 
 #include <random>
 
-#include "Asio.hpp"
 #include "Utils.hpp"
 
 namespace gh {
@@ -25,7 +24,7 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverIpDns::DoStart() {
     co_return make_error_code(boost::asio::error::operation_aborted);
   }
   boost::asio::ip::udp::resolver resolver(_Executor);
-  auto [err, results] = co_await resolver.async_resolve(_Host, "", _Service.value()._Stop.AsioToken());
+  auto [err, results] = co_await resolver.async_resolve(_Host, "", _Service.value()._Stop.AsioSlot()());
   if (err) {
     co_return err;
   }

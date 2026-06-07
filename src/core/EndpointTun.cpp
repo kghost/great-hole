@@ -4,7 +4,6 @@
 #include <boost/log/trivial.hpp>
 #include <linux/if_tun.h>
 
-#include "Asio.hpp"
 #include "ErrorCode.hpp"
 
 namespace gh {
@@ -44,7 +43,7 @@ Omni::Fiber::Coroutine<ErrorCode> Tun::Read(Packet& p, Cancel& c) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
   auto [err, bytes_transferred] =
-      co_await _TunFileDescriptor.async_read_some(boost::asio::mutable_buffer(p), c.AsioToken());
+      co_await _TunFileDescriptor.async_read_some(boost::asio::mutable_buffer(p), c.AsioSlot()());
   p._Length = bytes_transferred;
   co_return err;
 }
@@ -54,7 +53,7 @@ Omni::Fiber::Coroutine<ErrorCode> Tun::Write(Packet& p, Cancel& c) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
   auto [err, bytes_transferred] =
-      co_await _TunFileDescriptor.async_write_some(boost::asio::const_buffer(p), c.AsioToken());
+      co_await _TunFileDescriptor.async_write_some(boost::asio::const_buffer(p), c.AsioSlot()());
   assert(err || p._Length == bytes_transferred);
   co_return err;
 }

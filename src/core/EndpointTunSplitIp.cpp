@@ -20,7 +20,6 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/log/trivial.hpp>
 
-#include "Asio.hpp"
 #include "Cancel.hpp"
 #include "ErrorCode.hpp"
 #include "GetCurrentFiber.hpp"
@@ -153,8 +152,8 @@ Omni::Fiber::Coroutine<void> EndpointTunSplitIp::ReadLoop() {
   while (!_Service.value()._Stop.IsTriggered()) {
     Packet p;
 
-    auto [err, bytesTransferred] =
-        co_await _TunFileDescriptor.async_read_some(boost::asio::mutable_buffer(p), _Service.value()._Stop.AsioToken());
+    auto [err, bytesTransferred] = co_await _TunFileDescriptor.async_read_some(boost::asio::mutable_buffer(p),
+                                                                               _Service.value()._Stop.AsioSlot()());
     if (err) {
       if (err == boost::asio::error::operation_aborted) {
         BOOST_LOG_TRIVIAL(info) << "EndpointTunSplitIp(" << this << ") read loop cancelled";
@@ -192,7 +191,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::WriteToTun(Packet& p, Canc
   }
 
   auto [err, bytesTransferred] =
-      co_await _TunFileDescriptor.async_write_some(boost::asio::const_buffer(p), c.AsioToken());
+      co_await _TunFileDescriptor.async_write_some(boost::asio::const_buffer(p), c.AsioSlot()());
   assert(err || bytesTransferred == p._Length);
   co_return err;
 }

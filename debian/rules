@@ -1,13 +1,10 @@
 #!/usr/bin/make -f
 # -*- makefile -*-
 
-export DEB_CFLAGS_MAINT_APPEND = -ffile-prefix-map=$(CURDIR)=.
-export DEB_CXXFLAGS_MAINT_APPEND = -ffile-prefix-map=$(CURDIR)=.
-
 %:
 	dh $@ --buildsystem=cmake
 
 override_dh_auto_configure:
-	dh_auto_configure -- -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+	dh_auto_configure -- -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DGREAT_HOLE_RELATIVE_PATHS=ON
 
 override_dh_dwz:

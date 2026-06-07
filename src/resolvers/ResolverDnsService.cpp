@@ -11,7 +11,6 @@
 
 #include <boost/log/trivial.hpp>
 
-#include "Asio.hpp"
 #include "Cancel.hpp"
 #include "Select.hpp"
 
@@ -100,7 +99,8 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() {
       co_return make_error_code(boost::asio::error::operation_aborted);
     }
     boost::asio::ip::udp::resolver resolver(_Target.GetExecutor());
-    auto [resolveErr, results] = co_await resolver.async_resolve(record.target, "", _Service.value()._Stop.AsioToken());
+    auto [resolveErr, results] =
+        co_await resolver.async_resolve(record.target, "", _Service.value()._Stop.AsioSlot()());
     if (resolveErr) {
       BOOST_LOG_TRIVIAL(warning) << "Failed to resolve SRV target: " << record.target << " " << resolveErr.message();
       continue;
