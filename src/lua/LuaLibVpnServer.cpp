@@ -60,31 +60,16 @@ static void VpnServerRun(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   interface.Schedule([&interface, srv](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    Cancel c;
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
-
-    current.Spawn("VpnServerStopWatcher", [&c, &interface]() -> Omni::Fiber::Coroutine<void> {
-      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(interface.GetStopSignal(), [] {}),
-                                   Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}));
-      c.Trigger();
-      co_return;
-    });
-
-    co_await srv->Run(c);
-
-    c.Trigger();
-    co_await current.WaitAll();
+    co_await srv->Run(interface.GetStopApplication());
     co_return 0;
   });
 }
 
-static const struct luaL_Reg kVpnServerMetatable[] = {
-    {"__gc", SafeCall<Gc<VpnServer, kNameVpnServer>>},
-    {"register_peer", SafeCall<VpnServerRegisterPeer>},
-    {"unregister_peer", SafeCall<VpnServerUnregisterPeer>},
-    {"run", SafeYield<VpnServerRun>},
-    {nullptr, nullptr}
-};
+static const struct luaL_Reg kVpnServerMetatable[] = {{"__gc", SafeCall<Gc<VpnServer, kNameVpnServer>>},
+                                                      {"register_peer", SafeCall<VpnServerRegisterPeer>},
+                                                      {"unregister_peer", SafeCall<VpnServerUnregisterPeer>},
+                                                      {"run", SafeYield<VpnServerRun>},
+                                                      {nullptr, nullptr}};
 
 void RegisterVpnServer(lua_State* L, LuaInterface& interface) {
   lua_pushlightuserdata(L, &interface);

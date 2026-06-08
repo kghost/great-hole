@@ -4,28 +4,28 @@
 #include <lua.hpp>
 
 #include "Coroutine.hpp"
-#include "Event.hpp"
 
 namespace gh {
 
 class Pipeline;
+class Cancel;
 
 // Expose C++ interface to lua script
 class LuaInterface {
 public:
-  explicit LuaInterface(boost::asio::io_context& io_context, Omni::Fiber::Event<void>& stop_signal)
-      : _Context(io_context), _StopSignal(stop_signal) {}
+  explicit LuaInterface(boost::asio::io_context& io_context, Cancel& stopApplication)
+      : _Context(io_context), _StopApplication(stopApplication) {}
   ~LuaInterface() {}
 
   boost::asio::io_context& GetContext() { return _Context; }
-  Omni::Fiber::Event<void>& GetStopSignal() { return _StopSignal; }
+  Cancel& GetStopApplication() { return _StopApplication; }
 
   void Schedule(std::move_only_function<Omni::Fiber::Coroutine<int>(lua_State*, int)>&&);
   Omni::Fiber::Coroutine<int> Yield(lua_State*, int);
 
 private:
   boost::asio::io_context& _Context;
-  Omni::Fiber::Event<void>& _StopSignal;
+  Cancel& _StopApplication;
   std::optional<std::move_only_function<Omni::Fiber::Coroutine<int>(lua_State*, int)>> _PendingYield;
 };
 

@@ -23,4 +23,7 @@ print("VPN Server started on port 25525...")
 -- This blocks the current Lua fiber and processes connection/disconnection events.
 vpn:run()
 
+udp_dyn:stop()
+tun_split:stop()
+
 print("VPN Server stopped.")

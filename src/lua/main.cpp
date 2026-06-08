@@ -61,18 +61,19 @@ int main(int ac, char** av) {
   Omni::Fiber::Manager manager(executor);
 
   auto fiber_root = manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    Cancel stop_signal;
+    Cancel stopApplication;
     Cancel stopSignals;
 
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
-    auto fiberLua = current.Spawn("LuaEngine", [&io_context, &stop_signal, &start]() -> Omni::Fiber::Coroutine<void> {
-      {
-        LuaEngine engine(io_context, stop_signal.GetFiberCancelEvent());
-        co_await engine.DoFile(start);
-      }
-      auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
-      co_await fiber.WaitAll();
-    });
+    auto fiberLua =
+        current.Spawn("LuaEngine", [&io_context, &stopApplication, &start]() -> Omni::Fiber::Coroutine<void> {
+          {
+            LuaEngine engine(io_context, stopApplication);
+            co_await engine.DoFile(start);
+          }
+          auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
+          co_await fiber.WaitAll();
+        });
 
     auto fiberSignal = current.Spawn("signals", [&] -> Omni::Fiber::Coroutine<void> {
       boost::asio::signal_set signals(io_context, SIGINT, SIGTERM, SIGUSR2);
@@ -81,10 +82,10 @@ int main(int ac, char** av) {
         if (!err) {
           switch (signal_number) {
           case SIGINT:
-            stop_signal.Trigger();
+            stopApplication.Trigger();
             break;
           case SIGTERM:
-            stop_signal.Trigger();
+            stopApplication.Trigger();
             break;
 #ifndef NDEBUG
           case SIGUSR2:

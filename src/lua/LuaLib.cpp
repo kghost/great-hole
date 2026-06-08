@@ -2,6 +2,7 @@
 
 #include <lua.hpp>
 
+#include "Cancel.hpp"
 #include "Coroutine.hpp"
 #include "LuaInterface.hpp"
 #include "LuaLibCommon.hpp"
@@ -12,7 +13,7 @@ static void HoleWaitForExit(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   interface.Schedule([&interface](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    co_await interface.GetStopSignal();
+    co_await interface.GetStopApplication().GetFiberCancelEvent();
     co_return 0;
   });
 }
