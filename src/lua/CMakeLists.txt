@@ -26,6 +26,12 @@ foreach(suffix "" "-asan")
   add_executable(${target_exe}
     ${INIT_LUA_OBJ}
     LuaLib.cpp
+    LuaLibFilter.cpp
+    LuaLibPipeline.cpp
+    LuaLibEndpoint.cpp
+    LuaLibUdp.cpp
+    LuaLibTunSplitIp.cpp
+    LuaLibVpnServer.cpp
     LuaInterface.cpp
     LuaEngine.cpp
     main.cpp
