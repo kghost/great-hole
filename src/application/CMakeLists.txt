@@ -1,14 +1,14 @@
 foreach(suffix "" "-asan")
   if(suffix STREQUAL "-asan")
-    set(target "omni-application-asan")
     set(omnifiber "omni-fiber-asan")
+    set(target "great-hole-application-asan")
   else()
-    set(target "omni-application")
     set(omnifiber "omni-fiber")
+    set(target "great-hole-application")
   endif()
 
   add_library(${target} STATIC
-    DynamicPipelineFactory.cpp
+    VpnServer.cpp
   )
 
   target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -23,6 +23,7 @@ foreach(suffix "" "-asan")
   target_link_libraries(${target} PUBLIC
     Boost::log
     ${omnifiber}
+    great-hole-core${suffix}
   )
 
   if(suffix STREQUAL "-asan")

@@ -43,14 +43,23 @@ std::string UdpDynMux::Channel::GetName() const {
 Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::DoStart() { co_return ErrorCode{}; }
 
 Omni::Fiber::Coroutine<void> UdpDynMux::Channel::DoWork() {
+  auto lastState = _State;
   while (!_Service.value()._Stop.IsTriggered()) {
     switch (_State) {
     case State::kNegotiating: {
       _State = co_await DoWorkNegotiating();
+      if (_State == State::kRunning && lastState != State::kRunning) {
+        co_await _Parent._Notification.OnChannelEstablished(std::dynamic_pointer_cast<Channel>(shared_from_this()));
+      }
+      lastState = _State;
       break;
     }
     case State::kRunning: {
       _State = co_await DoWorkRunning();
+      if (_State != State::kRunning && lastState == State::kRunning) {
+        co_await _Parent._Notification.OnChannelClosed(std::dynamic_pointer_cast<Channel>(shared_from_this()));
+      }
+      lastState = _State;
       break;
     }
     case State::kStopping: {
@@ -61,6 +70,9 @@ Omni::Fiber::Coroutine<void> UdpDynMux::Channel::DoWork() {
       co_return;
     }
     }
+  }
+  if (lastState == State::kRunning) {
+    co_await _Parent._Notification.OnChannelClosed(std::dynamic_pointer_cast<Channel>(shared_from_this()));
   }
   _State = State::kStopping;
 }

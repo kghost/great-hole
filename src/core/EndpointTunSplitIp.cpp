@@ -144,6 +144,19 @@ Omni::Fiber::Coroutine<void> EndpointTunSplitIp::RemoveChannel(const boost::asio
   });
 }
 
+Omni::Fiber::Coroutine<void> EndpointTunSplitIp::RemoveChannel(std::shared_ptr<EndpointTunSplitIp::Channel> channel) {
+  if (!channel) {
+    co_return;
+  }
+  co_await _ChannelRpc.Call([this, channel]() -> Omni::Fiber::Coroutine<void> {
+    for (auto const& chIp : channel->GetIps()) {
+      _Channels.erase(chIp);
+    }
+    co_await channel->Stop();
+    co_await channel->WaitService();
+  });
+}
+
 Omni::Fiber::Coroutine<void> EndpointTunSplitIp::ReadLoop() {
   while (!_Service.value()._Stop.IsTriggered()) {
     Packet p;

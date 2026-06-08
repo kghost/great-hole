@@ -8,15 +8,19 @@
 
 #include "Coroutine.hpp"
 #include "EndpointTun.hpp"
+#include "EndpointTunSplitIp.hpp"
 #include "EndpointUdp.hpp"
 #include "EndpointUdpDynMux.hpp"
 #include "EndpointUdpMux.hpp"
 #include "ErrorCode.hpp"
 #include "FilterXor.hpp"
+#include "GetCurrentFiber.hpp"
 #include "LuaInterface.hpp"
 #include "Pipeline.hpp"
 #include "ResolverCombinedEndpoint.hpp"
 #include "ResolverHelper.hpp"
+#include "Select.hpp"
+#include "VpnServer.hpp"
 
 // IMPORTANT NOTE:
 // Stack-Unwinding Yield Leak: C++ local variables (like std::shared_ptr<ResolverEndpoint>) inside yielding Lua C API
@@ -57,6 +61,8 @@ constexpr const char name_filter[] = "Hole.filter";
 constexpr const char name_udp[] = "Hole.udp";
 constexpr const char name_udp_mux_server[] = "Hole.udp-mux-server";
 constexpr const char name_udp_dyn_mux[] = "Hole.udp-dyn-mux";
+constexpr const char name_tun_split_ip[] = "Hole.tun-split-ip";
+constexpr const char name_vpn_server[] = "Hole.vpn-server";
 
 template <typename T, const char N[]> static int gc(lua_State* L) {
   typedef std::shared_ptr<T> P;
@@ -372,22 +378,199 @@ static const struct luaL_Reg udp_dyn_mux_metatable[] = {{"__gc", safe_call<gc<Ud
                                                         {"stop", safe_yield<udp_dyn_mux_stop>},
                                                         {NULL, NULL}};
 
+static void tun_split_ip_new(lua_State* L) {
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+  std::shared_ptr<EndpointTunSplitIp>* tun = nullptr;
+  if (lua_gettop(L) == 1) {
+    if (lua_isnumber(L, 1)) {
+      tun = new (lua_newuserdata(L, sizeof(std::shared_ptr<EndpointTunSplitIp>)))
+          std::shared_ptr<EndpointTunSplitIp>(new EndpointTunSplitIp(interface.GetContext(), (int)lua_tonumber(L, 1)));
+    } else {
+      tun = new (lua_newuserdata(L, sizeof(std::shared_ptr<EndpointTunSplitIp>)))
+          std::shared_ptr<EndpointTunSplitIp>(new EndpointTunSplitIp(interface.GetContext(), lua_tostring(L, 1)));
+    }
+  } else {
+    throw std::runtime_error("tun_split_ip: invalid arguments");
+  }
+
+  luaL_getmetatable(L, name_tun_split_ip);
+  lua_setmetatable(L, -2);
+
+  interface.Schedule([&interface, tun](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    ErrorCode err = co_await (*tun)->Start();
+    if (err) {
+      throw boost::system::system_error(err, "tun_split_ip start error");
+    }
+    co_return 1;
+  });
+}
+
+static void tun_split_ip_create_channel(lua_State* L) {
+  auto& tun = *(std::shared_ptr<EndpointTunSplitIp>*)luaL_checkudata(L, 1, name_tun_split_ip);
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  luaL_checktype(L, 2, LUA_TTABLE);
+  std::vector<boost::asio::ip::address_v6> ips;
+  auto len = lua_rawlen(L, 2);
+  for (unsigned int i = 1; i <= len; ++i) {
+    lua_rawgeti(L, 2, i);
+    auto ipStr = luaL_checkstring(L, -1);
+    ips.push_back(get_address(ipStr));
+    lua_pop(L, 1);
+  }
+
+  auto ch = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>();
+  luaL_getmetatable(L, name_endpoint);
+  lua_setmetatable(L, -2);
+
+  interface.Schedule([&interface, tun, ips = std::move(ips), ch](this auto self, lua_State* L,
+                                                                 int nres) -> Omni::Fiber::Coroutine<int> {
+    *ch = co_await tun->CreateChannel(ips);
+    co_return 1;
+  });
+}
+
+static void tun_split_ip_remove_channel(lua_State* L) {
+  auto& tun = *(std::shared_ptr<EndpointTunSplitIp>*)luaL_checkudata(L, 1, name_tun_split_ip);
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+  auto& ch = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, 2, name_endpoint);
+
+  auto tunCh = std::dynamic_pointer_cast<EndpointTunSplitIp::Channel>(ch);
+  if (!tunCh) {
+    throw std::runtime_error("tun_split_ip remove_channel: invalid channel type");
+  }
+
+  interface.Schedule([&interface, tun, tunCh](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    co_await tun->RemoveChannel(tunCh);
+    co_return 0;
+  });
+}
+
+static void tun_split_ip_stop(lua_State* L) {
+  auto& tun = *(std::shared_ptr<EndpointTunSplitIp>*)luaL_checkudata(L, 1, name_tun_split_ip);
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  interface.Schedule([&interface, tun](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    co_await tun->Stop();
+    co_return 0;
+  });
+}
+
+static int vpn_server_new(lua_State* L) {
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+  auto& tun = *(std::shared_ptr<EndpointTunSplitIp>*)luaL_checkudata(L, 1, name_tun_split_ip);
+
+  new (lua_newuserdata(L, sizeof(std::shared_ptr<VpnServer>))) std::shared_ptr<VpnServer>(new VpnServer(tun));
+  luaL_getmetatable(L, name_vpn_server);
+  lua_setmetatable(L, -2);
+  return 1;
+}
+
+static int vpn_server_register_peer(lua_State* L) {
+  auto& srv = *(std::shared_ptr<VpnServer>*)luaL_checkudata(L, 1, name_vpn_server);
+  size_t len;
+  auto pskStr = luaL_checklstring(L, 2, &len);
+  if (len != 16) {
+    return luaL_error(L, "vpn_server register_peer: psk must be exactly 16 bytes");
+  }
+  UdpDynMux::PskType psk;
+  std::copy_n(reinterpret_cast<const uint8_t*>(pskStr), 16, psk.begin());
+
+  luaL_checktype(L, 3, LUA_TTABLE);
+  std::vector<boost::asio::ip::address_v6> ips;
+  auto tableLen = lua_rawlen(L, 3);
+  for (unsigned int i = 1; i <= tableLen; ++i) {
+    lua_rawgeti(L, 3, i);
+    auto ipStr = luaL_checkstring(L, -1);
+    ips.push_back(get_address(ipStr));
+    lua_pop(L, 1);
+  }
+
+  srv->RegisterPeer(psk, ips);
+  return 0;
+}
+
+static int vpn_server_unregister_peer(lua_State* L) {
+  auto& srv = *(std::shared_ptr<VpnServer>*)luaL_checkudata(L, 1, name_vpn_server);
+  size_t len;
+  auto pskStr = luaL_checklstring(L, 2, &len);
+  if (len != 16) {
+    return luaL_error(L, "vpn_server unregister_peer: psk must be exactly 16 bytes");
+  }
+  UdpDynMux::PskType psk;
+  std::copy_n(reinterpret_cast<const uint8_t*>(pskStr), 16, psk.begin());
+
+  srv->UnregisterPeer(psk);
+  return 0;
+}
+
+static void vpn_server_run(lua_State* L) {
+  auto& srv = *(std::shared_ptr<VpnServer>*)luaL_checkudata(L, 1, name_vpn_server);
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  interface.Schedule([&interface, srv](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    Cancel c;
+    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+
+    current.Spawn("VpnServerStopWatcher", [&c, &interface]() -> Omni::Fiber::Coroutine<void> {
+      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(interface.GetStopSignal(), [] {}),
+                                   Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}));
+      c.Trigger();
+      co_return;
+    });
+
+    co_await srv->Run(c);
+
+    c.Trigger();
+    co_await current.WaitAll();
+    co_return 0;
+  });
+}
+
+static const struct luaL_Reg tun_split_ip_metatable[] = {{"__gc", safe_call<gc<EndpointTunSplitIp, name_tun_split_ip>>},
+                                                         {"create_channel", safe_yield<tun_split_ip_create_channel>},
+                                                         {"remove_channel", safe_yield<tun_split_ip_remove_channel>},
+                                                         {"stop", safe_yield<tun_split_ip_stop>},
+                                                         {NULL, NULL}};
+
+static const struct luaL_Reg vpn_server_metatable[] = {{"__gc", safe_call<gc<VpnServer, name_vpn_server>>},
+                                                       {"register_peer", safe_call<vpn_server_register_peer>},
+                                                       {"unregister_peer", safe_call<vpn_server_unregister_peer>},
+                                                       {"run", safe_yield<vpn_server_run>},
+                                                       {NULL, NULL}};
+
 static void udp_dyn_mux_new(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
-  std::shared_ptr<UdpDynMux>* udp;
-  switch (lua_gettop(L)) {
-  case 0:
-    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpDynMux>)))
-        std::shared_ptr<UdpDynMux>(new UdpDynMux(interface.GetContext()));
-    break;
-  case 1: {
-    auto bind = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
-    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpDynMux>)))
-        std::shared_ptr<UdpDynMux>(new UdpDynMux(interface.GetContext(), bind));
-    break;
+  std::shared_ptr<UdpDynMux>* udp = nullptr;
+
+  std::shared_ptr<VpnServer> vpnServer = nullptr;
+  std::optional<int> port;
+
+  auto top = lua_gettop(L);
+  if (top == 1) {
+    if (lua_isnumber(L, 1)) {
+      port = (int)lua_tonumber(L, 1);
+    } else {
+      vpnServer = *(std::shared_ptr<VpnServer>*)luaL_checkudata(L, 1, name_vpn_server);
+    }
+  } else if (top == 2) {
+    port = (int)luaL_checknumber(L, 1);
+    vpnServer = *(std::shared_ptr<VpnServer>*)luaL_checkudata(L, 2, name_vpn_server);
+  } else if (top > 2) {
+    throw std::runtime_error("udp_dyn_mux: too many arguments");
   }
-  default:
-    throw std::runtime_error("udp_dyn_mux: not enough arguments");
+
+  UdpDynMux::ChannelNotification& notification =
+      vpnServer ? static_cast<UdpDynMux::ChannelNotification&>(*vpnServer)
+                : static_cast<UdpDynMux::ChannelNotification&>(UdpDynMux::_NoopChannelNotification);
+
+  if (port.has_value()) {
+    auto bind = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), *port);
+    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpDynMux>)))
+        std::shared_ptr<UdpDynMux>(new UdpDynMux(interface.GetContext(), bind, notification));
+  } else {
+    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpDynMux>)))
+        std::shared_ptr<UdpDynMux>(new UdpDynMux(interface.GetContext(), notification));
   }
 
   luaL_getmetatable(L, name_udp_dyn_mux);
@@ -447,6 +630,8 @@ static auto hole_io_object = std::to_array<const struct luaL_Reg>({
     {.name = "udp", .func = safe_yield<udp_new>},
     {.name = "udp_mux_server", .func = safe_yield<udp_mux_server_new>},
     {.name = "udp_dyn_mux", .func = safe_yield<udp_dyn_mux_new>},
+    {.name = "tun_split_ip", .func = safe_yield<tun_split_ip_new>},
+    {.name = "vpn_server", .func = safe_call<vpn_server_new>},
     {.name = NULL, .func = NULL},
 });
 
@@ -479,6 +664,20 @@ static int hole_open(lua_State* L) {
   lua_setfield(L, -2, "__index"); /* metatable.__index = metatable */
   lua_pushlightuserdata(L, &interface);
   luaL_setfuncs(L, udp_dyn_mux_metatable, 1);
+  lua_pop(L, 1);
+
+  luaL_newmetatable(L, name_tun_split_ip);
+  lua_pushvalue(L, -1);           /* push metatable */
+  lua_setfield(L, -2, "__index"); /* metatable.__index = metatable */
+  lua_pushlightuserdata(L, &interface);
+  luaL_setfuncs(L, tun_split_ip_metatable, 1);
+  lua_pop(L, 1);
+
+  luaL_newmetatable(L, name_vpn_server);
+  lua_pushvalue(L, -1);           /* push metatable */
+  lua_setfield(L, -2, "__index"); /* metatable.__index = metatable */
+  lua_pushlightuserdata(L, &interface);
+  luaL_setfuncs(L, vpn_server_metatable, 1);
   lua_pop(L, 1);
 
   luaL_newmetatable(L, name_endpoint);

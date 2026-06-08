@@ -42,6 +42,7 @@ foreach(suffix "" "-asan")
     ${omnifiber}
     ${omniresolver}
     ${omnicore}
+    great-hole-application${suffix}
   )
 
   if(suffix STREQUAL "-asan")

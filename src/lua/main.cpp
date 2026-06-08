@@ -62,9 +62,10 @@ int main(int ac, char** av) {
 
   auto fiber_root = manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     Cancel stop_signal;
+    Cancel stopSignals;
 
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
-    current.Spawn("LuaEngine", [&io_context, &stop_signal, &start]() mutable -> Omni::Fiber::Coroutine<void> {
+    auto fiberLua = current.Spawn("LuaEngine", [&io_context, &stop_signal, &start]() -> Omni::Fiber::Coroutine<void> {
       {
         LuaEngine engine(io_context, stop_signal.GetFiberCancelEvent());
         co_await engine.DoFile(start);
@@ -73,40 +74,36 @@ int main(int ac, char** av) {
       co_await fiber.WaitAll();
     });
 
-    current.Spawn("signals", [&] -> Omni::Fiber::Coroutine<void> {
-      auto& signals_fiber = co_await Omni::Fiber::GetCurrentFiber();
-      signals_fiber.Spawn("wait", [&io_context, &stop_signal] -> Omni::Fiber::Coroutine<void> {
-        boost::asio::signal_set signals(io_context, SIGINT, SIGTERM, SIGUSR2);
-        while (!stop_signal.IsTriggered()) {
-          auto [err, signal_number] = co_await signals.async_wait(stop_signal.AsioSlot()());
-          if (!err) {
-            switch (signal_number) {
-            case SIGINT:
-              stop_signal.Trigger();
-              break;
-            case SIGTERM:
-              stop_signal.Trigger();
-              break;
+    auto fiberSignal = current.Spawn("signals", [&] -> Omni::Fiber::Coroutine<void> {
+      boost::asio::signal_set signals(io_context, SIGINT, SIGTERM, SIGUSR2);
+      while (!stopSignals.IsTriggered()) {
+        auto [err, signal_number] = co_await signals.async_wait(stopSignals.AsioSlot()());
+        if (!err) {
+          switch (signal_number) {
+          case SIGINT:
+            stop_signal.Trigger();
+            break;
+          case SIGTERM:
+            stop_signal.Trigger();
+            break;
 #ifndef NDEBUG
-            case SIGUSR2:
-              co_await Omni::Fiber::StackTraceAllFibers();
-              break;
+          case SIGUSR2:
+            co_await Omni::Fiber::StackTraceAllFibers();
+            break;
 #endif
-            }
-          } else if (err == boost::asio::error::operation_aborted) {
-            continue;
-          } else {
-            throw boost::system::system_error(err, "error on waiting signal");
           }
+        } else if (err == boost::asio::error::operation_aborted) {
+          continue;
+        } else {
+          throw boost::system::system_error(err, "error on waiting signal");
         }
-        signals.clear();
-      });
-
-      co_await stop_signal.GetFiberCancelEvent();
-      co_await signals_fiber.WaitAll();
+      }
+      signals.clear();
     });
 
-    co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
+    co_await current.Join(fiberLua);
+    stopSignals.Trigger();
+    co_await current.Join(fiberSignal);
     co_return;
   });
 
