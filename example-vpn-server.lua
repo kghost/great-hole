@@ -1,8 +1,11 @@
 -- Create a TunSplitIp interface (using tun0)
 tun_split = hole.tun_split_ip("tun0")
 
--- Create the VpnServer manager, passing the TunSplitIp interface to it
-vpn = hole.vpn_server(tun_split)
+-- Create a XOR filter for packet encryption/decryption
+xor_filter = hole.filter_xor("adfasfasghagertasknldgfowpgnhophgoasndgflanhgopwehtgweopgfhweiopgfhiopafnhoawenfopw")
+
+-- Create the VpnServer manager, passing the TunSplitIp interface and a list of filters
+vpn = hole.vpn_server(tun_split, { xor_filter })
 
 -- Register a peer with a 16-byte PSK and its permitted IPv6 address(es)
 -- The PSK must be exactly 16 bytes.

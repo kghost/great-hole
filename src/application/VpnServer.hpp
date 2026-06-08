@@ -11,6 +11,7 @@
 #include "Coroutine.hpp"
 #include "EndpointTunSplitIp.hpp"
 #include "EndpointUdpDynMux.hpp"
+#include "Filter.hpp"
 #include "Pipe.hpp"
 #include "Pipeline.hpp"
 
@@ -25,7 +26,7 @@ public:
     std::shared_ptr<UdpDynMux::Channel> Channel;
   };
 
-  explicit VpnServer(std::shared_ptr<EndpointTunSplitIp> tunSplit);
+  explicit VpnServer(std::shared_ptr<EndpointTunSplitIp> tunSplit, std::vector<std::shared_ptr<Filter>> filters = {});
   ~VpnServer() override;
 
   VpnServer(const VpnServer&) = delete;
@@ -49,6 +50,7 @@ private:
   };
 
   std::shared_ptr<EndpointTunSplitIp> _TunSplit;
+  std::vector<std::shared_ptr<Filter>> _Filters;
   std::map<UdpDynMux::PskType, std::vector<boost::asio::ip::address_v6>> _Peers;
   std::map<std::shared_ptr<UdpDynMux::Channel>, Session> _Sessions;
   Omni::Fiber::Pipe<Event> _Events;

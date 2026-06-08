@@ -9,7 +9,8 @@
 
 namespace gh {
 
-VpnServer::VpnServer(std::shared_ptr<EndpointTunSplitIp> tunSplit) : _TunSplit(std::move(tunSplit)) {}
+VpnServer::VpnServer(std::shared_ptr<EndpointTunSplitIp> tunSplit, std::vector<std::shared_ptr<Filter>> filters)
+    : _TunSplit(std::move(tunSplit)), _Filters(std::move(filters)) {}
 
 VpnServer::~VpnServer() {}
 
@@ -74,8 +75,8 @@ Omni::Fiber::Coroutine<void> VpnServer::Run(Cancel& c) {
       }
 
       BOOST_LOG_TRIVIAL(info) << "VpnServer: Starting bidirectional pipelines";
-      auto inPipe = std::make_shared<Pipeline>(ev.Channel, std::vector<std::shared_ptr<Filter>>{}, tunCh);
-      auto outPipe = std::make_shared<Pipeline>(tunCh, std::vector<std::shared_ptr<Filter>>{}, ev.Channel);
+      auto inPipe = std::make_shared<Pipeline>(ev.Channel, _Filters, tunCh);
+      auto outPipe = std::make_shared<Pipeline>(tunCh, _Filters, ev.Channel);
 
       auto errIn = co_await inPipe->Start();
       auto errOut = co_await outPipe->Start();

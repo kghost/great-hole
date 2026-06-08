@@ -1,8 +1,8 @@
+#include <vector>
+
 #include "LuaLibCommon.hpp"
 
 #include "EndpointTunSplitIp.hpp"
-#include "GetCurrentFiber.hpp"
-#include "Select.hpp"
 #include "VpnServer.hpp"
 
 namespace gh {
@@ -11,7 +11,20 @@ static int VpnServerNew(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
   auto& tun = *(std::shared_ptr<EndpointTunSplitIp>*)luaL_checkudata(L, 1, kNameTunSplitIp);
 
-  new (lua_newuserdata(L, sizeof(std::shared_ptr<VpnServer>))) std::shared_ptr<VpnServer>(new VpnServer(tun));
+  std::vector<std::shared_ptr<Filter>> filters;
+  if (lua_gettop(L) >= 2) {
+    luaL_checktype(L, 2, LUA_TTABLE);
+    auto tableLen = lua_rawlen(L, 2);
+    for (unsigned int i = 1; i <= tableLen; ++i) {
+      lua_rawgeti(L, 2, i);
+      auto& f = *(std::shared_ptr<Filter>*)luaL_checkudata(L, -1, kNameFilter);
+      filters.push_back(f);
+      lua_pop(L, 1);
+    }
+  }
+
+  new (lua_newuserdata(L, sizeof(std::shared_ptr<VpnServer>)))
+      std::shared_ptr<VpnServer>(new VpnServer(tun, std::move(filters)));
   luaL_getmetatable(L, kNameVpnServer);
   lua_setmetatable(L, -2);
   return 1;
