@@ -77,14 +77,15 @@ Omni::Fiber::Coroutine<void> EndpointTunSplitIp::DoWork() {
 
   bool stopped = false;
   while (!stopped) {
-    co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [&]() { stopped = true; }),
-        Omni::Fiber::SelectPair(_ChannelRpc.GetServiceAwaitor(), [&](auto req) -> Omni::Fiber::Coroutine<void> {
-          if (!co_await Omni::Fiber::RemoteCall::HandleRequest(std::move(req))) {
-            stopped = true;
-          }
-          co_return;
-        }));
+    auto [stopResult, rpcResult] = co_await Omni::Fiber::Select(
+        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] {}),
+        Omni::Fiber::SelectPair(_ChannelRpc.GetServiceAwaitor(), _ChannelRpc.HandleRequest));
+    if (stopResult) {
+      stopped = true;
+    }
+    if (rpcResult.has_value() && !rpcResult.value()) {
+      stopped = true;
+    }
   }
 }
 
@@ -264,27 +265,26 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::Channel::DoGracefulStop() 
 }
 
 Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::Channel::Read(Packet& p, Cancel& c) {
-  bool stopped = false;
-  std::optional<ErrorCode> err;
-  co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [&]() { stopped = true; }),
-                               Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&](auto data) {
-                                 if (data.has_value()) {
-                                   auto& inner = data.value();
-                                   if (inner.has_value()) {
-                                     p = std::move(inner.value());
-                                     err = ErrorCode{};
-                                   } else {
-                                     err = inner.error();
-                                   }
-                                 } else {
-                                   p._Length = 0;
-                                   err = ErrorCode{AppErrorCategory::kEndOfStream, kAppError};
-                                 }
-                               }));
-  if (err.has_value()) {
-    co_return err.value();
+  auto [stopResult, pipeResult] =
+      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}),
+                                   Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&](auto data) {
+                                     if (data.has_value()) {
+                                       auto& inner = data.value();
+                                       if (inner.has_value()) {
+                                         p = std::move(inner.value());
+                                         return ErrorCode{};
+                                       } else {
+                                         return inner.error();
+                                       }
+                                     } else {
+                                       p._Length = 0;
+                                       return ErrorCode{AppErrorCategory::kEndOfStream, kAppError};
+                                     }
+                                   }));
+  if (pipeResult.has_value()) {
+    co_return pipeResult.value();
   }
-  if (stopped) {
+  if (stopResult) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
   assert(false && "should not reach here");

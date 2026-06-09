@@ -188,7 +188,6 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::Read(Packet& p, Cancel& c)
                                      if (data.has_value()) {
                                        _LastSeen = std::chrono::steady_clock::now();
                                        p = std::move(data.value());
-                                       p.PopFront(2);
                                        return ErrorCode{};
                                      } else {
                                        p._Length = 0;
@@ -329,14 +328,15 @@ Omni::Fiber::Coroutine<void> UdpDynMux::DoWork() {
 
   bool stopped = false;
   while (!stopped) {
-    co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [&]() { stopped = true; }),
-        Omni::Fiber::SelectPair(_ChannelRpc.GetServiceAwaitor(), [&](auto req) -> Omni::Fiber::Coroutine<void> {
-          if (!co_await Omni::Fiber::RemoteCall::HandleRequest(std::move(req))) {
-            stopped = true;
-          }
-          co_return;
-        }));
+    auto [stopResult, rpcResult] = co_await Omni::Fiber::Select(
+        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] {}),
+        Omni::Fiber::SelectPair(_ChannelRpc.GetServiceAwaitor(), Omni::Fiber::RemoteCall::HandleRequest));
+    if (stopResult) {
+      stopped = true;
+    }
+    if (rpcResult.has_value() && !rpcResult.value()) {
+      stopped = true;
+    }
   }
 }
 
@@ -468,6 +468,7 @@ Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
       if (auto it = _RxIdToChannel.find(channelId); it != _RxIdToChannel.end()) {
         auto channel = it->second;
         if (channel->_State == Channel::State::kRunning && channel->_Peer == peer) {
+          packet.PopFront(2);
           co_await channel->_DataPacket.GetProducer().Put(std::move(packet));
         } else {
           co_await SendControlInvalidChannel(peer, channelId);
