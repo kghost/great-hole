@@ -24,7 +24,7 @@ public:
   boost::asio::ip::address_v6 GetResolverResult() const override;
 
 protected:
-  std::string GetName() const override { return "ResolverIpDns"; }
+  std::string GetName() const override;
   Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
   Omni::Fiber::Coroutine<void> DoWork() override;
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;

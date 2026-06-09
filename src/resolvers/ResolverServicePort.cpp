@@ -9,7 +9,7 @@ namespace gh {
 
 ResolverServicePort::ResolverServicePort(std::string const& portStr) : _PortStr(portStr) {}
 
-std::string ResolverServicePort::GetName() const { return "ResolverServicePort:" + _PortStr; }
+std::string ResolverServicePort::GetName() const { return std::format("ResolverServicePort:[{}]", _PortStr); }
 
 uint16_t ResolverServicePort::GetResolverResult() const { return _Port; }
 

@@ -19,6 +19,8 @@ boost::asio::ip::address_v6 ResolverIpDns::GetResolverResult() const {
   return _Addresses[dis(gen)];
 }
 
+std::string ResolverIpDns::GetName() const { return std::format("ResolverIpDns:[{}]", _Host); }
+
 Omni::Fiber::Coroutine<ErrorCode> ResolverIpDns::DoStart() { co_return ErrorCode{}; }
 
 Omni::Fiber::Coroutine<void> ResolverIpDns::DoWork() {
