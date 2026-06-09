@@ -24,7 +24,7 @@ Omni::Fiber::Coroutine<void> ResolverCombinedEndpoint::DoWork() {
   // 1. Resolve IP
   auto eventPtrIp = std::make_shared<Omni::Fiber::Event<std::expected<boost::asio::ip::address_v6, ErrorCode>>>();
   auto resolveIpFiber = fiber.Spawn("ResolveIP", [this, eventPtrIp]() -> Omni::Fiber::Coroutine<void> {
-    auto res = co_await _IpResolver->Resolve();
+    auto res = co_await _IpResolver->Resolve(_Service.value()._Stop);
     eventPtrIp->Fire(res);
     co_return;
   });
@@ -52,7 +52,7 @@ Omni::Fiber::Coroutine<void> ResolverCombinedEndpoint::DoWork() {
   // 2. Resolve Port
   auto eventPtrPort = std::make_shared<Omni::Fiber::Event<std::expected<uint16_t, ErrorCode>>>();
   auto resolvePortFiber = fiber.Spawn("ResolvePort", [this, eventPtrPort]() -> Omni::Fiber::Coroutine<void> {
-    auto res = co_await _PortResolver->Resolve();
+    auto res = co_await _PortResolver->Resolve(_Service.value()._Stop);
     eventPtrPort->Fire(res);
     co_return;
   });

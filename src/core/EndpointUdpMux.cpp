@@ -52,12 +52,12 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMux::DoStart() {
 
 Omni::Fiber::Coroutine<void> UdpMux::DoWork() {
   _ReadLoopFiber = (co_await Omni::Fiber::GetCurrentFiber())
-      .Spawn("UdpMux ReadLoop:" + boost::lexical_cast<std::string>(LocalEndpoint()) + "@" +
-                 std::to_string(reinterpret_cast<uintptr_t>(this)),
-             [this]() -> Omni::Fiber::Coroutine<void> {
-               co_await ReadLoop();
-               co_return;
-             });
+                       .Spawn("UdpMux ReadLoop:" + boost::lexical_cast<std::string>(LocalEndpoint()) + "@" +
+                                  std::to_string(reinterpret_cast<uintptr_t>(this)),
+                              [this]() -> Omni::Fiber::Coroutine<void> {
+                                co_await ReadLoop();
+                                co_return;
+                              });
 
   bool stopped = false;
   while (!stopped) {
@@ -97,7 +97,7 @@ UdpMux::CreateChannel(uint8_t id, std::shared_ptr<ResolverEndpoint> resolver) {
       [&udp = *this, id, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
         std::shared_ptr<Channel> channel;
         if (resolver) {
-          auto peer = co_await resolver->Resolve();
+          auto peer = co_await resolver->Resolve(udp._Service.value()._Stop);
           if (!peer.has_value()) {
             co_return nullptr;
           }

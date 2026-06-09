@@ -90,7 +90,7 @@ Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>>
 Udp::CreateChannel(std::shared_ptr<ResolverEndpoint> resolver) {
   auto result = co_await _ChannelRpc.Call(
       [&udp = *this, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>> {
-        auto peer = co_await resolver->Resolve();
+        auto peer = co_await resolver->Resolve(udp._Service.value()._Stop);
         if (!peer.has_value()) {
           co_return nullptr;
         }

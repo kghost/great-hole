@@ -24,7 +24,7 @@ public:
   virtual ~ResolverBase() override = default;
 
 protected:
-  Omni::Fiber::Coroutine<ErrorCode> DoResolve();
+  Omni::Fiber::Coroutine<ErrorCode> DoResolve(Cancel& c);
 
   ErrorCode _ResolveError;
 };
@@ -35,8 +35,8 @@ public:
 
   virtual ResultType GetResolverResult() const = 0;
 
-  Omni::Fiber::Coroutine<std::expected<ResultType, ErrorCode>> Resolve() {
-    if (auto err = co_await DoResolve()) {
+  Omni::Fiber::Coroutine<std::expected<ResultType, ErrorCode>> Resolve(Cancel& c) {
+    if (auto err = co_await DoResolve(c)) {
       co_return std::unexpected(err);
     }
     co_return GetResolverResult();

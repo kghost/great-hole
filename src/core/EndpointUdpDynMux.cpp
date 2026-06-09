@@ -106,7 +106,7 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNego
     } else if (_PeerResolver) {
       // TODO: resolver need to be cancellable
       BOOST_LOG_TRIVIAL(info) << GetName() << " resolving peer";
-      auto res = co_await _PeerResolver->Resolve();
+      auto res = co_await _PeerResolver->Resolve(_Service.value()._Stop);
       if (res.has_value()) {
         BOOST_LOG_TRIVIAL(info) << GetName() << " resolved peer endpoint: " << res.value();
         _Peer = res.value();

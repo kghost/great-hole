@@ -52,15 +52,16 @@ TEST(ResolverTest, StaticIpResolverSuccess) {
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    Cancel c;
     auto r1 = std::make_shared<ResolverStaticIp>(MapToV6(boost::asio::ip::make_address("127.0.0.1")));
-    auto res1 = co_await r1->Resolve();
+    auto res1 = co_await r1->Resolve(c);
     EXPECT_TRUE(res1.has_value());
     if (res1.has_value()) {
       EXPECT_EQ(res1.value().to_string(), "::ffff:127.0.0.1");
     }
 
     auto r2 = std::make_shared<ResolverStaticIp>(boost::asio::ip::address_v6::loopback());
-    auto res2 = co_await r2->Resolve();
+    auto res2 = co_await r2->Resolve(c);
     EXPECT_TRUE(res2.has_value());
     if (res2.has_value()) {
       EXPECT_EQ(res2.value().to_string(), "::1");
@@ -85,22 +86,23 @@ TEST(ResolverTest, StaticPortResolverSuccess) {
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    Cancel c;
     auto r1 = std::make_shared<ResolverNumberPort>(8080);
-    auto res1 = co_await r1->Resolve();
+    auto res1 = co_await r1->Resolve(c);
     EXPECT_TRUE(res1.has_value());
     if (res1.has_value()) {
       EXPECT_EQ(res1.value(), 8080);
     }
 
     auto r2 = std::make_shared<ResolverNumberPort>(1234);
-    auto res2 = co_await r2->Resolve();
+    auto res2 = co_await r2->Resolve(c);
     EXPECT_TRUE(res2.has_value());
     if (res2.has_value()) {
       EXPECT_EQ(res2.value(), 1234);
     }
 
     auto r3 = std::make_shared<ResolverServicePort>("http");
-    auto res3 = co_await r3->Resolve();
+    auto res3 = co_await r3->Resolve(c);
     EXPECT_TRUE(res3.has_value());
     if (res3.has_value()) {
       EXPECT_EQ(res3.value(), 80);
@@ -125,12 +127,13 @@ TEST(ResolverTest, StaticPortResolverFailure) {
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    Cancel c;
     auto r1 = std::make_shared<ResolverServicePort>("abc");
-    auto res1 = co_await r1->Resolve();
+    auto res1 = co_await r1->Resolve(c);
     EXPECT_FALSE(res1.has_value());
 
     auto r2 = std::make_shared<ResolverServicePort>("99999");
-    auto res2 = co_await r2->Resolve();
+    auto res2 = co_await r2->Resolve(c);
     EXPECT_FALSE(res2.has_value());
 
     co_await current.WaitAll();
@@ -151,8 +154,9 @@ TEST(ResolverTest, StaticDnsResolverSuccess) {
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    Cancel c;
     auto r = std::make_shared<ResolverIpDns>(io.get_executor(), "localhost");
-    auto res = co_await r->Resolve();
+    auto res = co_await r->Resolve(c);
     EXPECT_TRUE(res.has_value());
     if (res.has_value()) {
       EXPECT_FALSE(res.value().is_unspecified());
@@ -176,11 +180,12 @@ TEST(ResolverTest, ResolverEndpointSuccess) {
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    Cancel c;
     auto ipResolver = std::make_shared<ResolverStaticIp>(MapToV6(boost::asio::ip::make_address("127.0.0.1")));
     auto portResolver = std::make_shared<ResolverNumberPort>(9090);
     auto r = std::make_shared<ResolverCombinedEndpoint>(ipResolver, portResolver);
 
-    auto res = co_await r->Resolve();
+    auto res = co_await r->Resolve(c);
     EXPECT_TRUE(res.has_value());
     if (res.has_value()) {
       EXPECT_EQ(res.value().address().to_string(), "::ffff:127.0.0.1");
@@ -207,8 +212,9 @@ TEST(ResolverTest, DnsServiceResolverNonExistent) {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
     auto mockedResolveFor = MockResolveeFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
 
+    Cancel c;
     auto r = std::make_shared<ResolverDnsService>("_nonexistent_service._tcp.example.invalid", mockedResolveFor);
-    auto res = co_await r->Resolve();
+    auto res = co_await r->Resolve(c);
     EXPECT_FALSE(res.has_value());
     if (!res.has_value()) {
       EXPECT_EQ(res.error(), make_error_code(boost::asio::error::host_not_found));
@@ -236,7 +242,8 @@ TEST(ResolverTest, ResolverCancellation) {
     // ResolverIpDns cancellation
     auto dnsResolver = std::make_shared<ResolverIpDns>(io.get_executor(), "nonexistent.example.invalid");
     auto resolveFiber = current.Spawn("resolve", [&]() -> Omni::Fiber::Coroutine<void> {
-      auto res = co_await dnsResolver->Resolve();
+      Cancel c;
+      auto res = co_await dnsResolver->Resolve(c);
       EXPECT_FALSE(res.has_value());
       if (!res.has_value()) {
         EXPECT_EQ(res.error(), make_error_code(boost::asio::error::operation_aborted));
@@ -254,7 +261,8 @@ TEST(ResolverTest, ResolverCancellation) {
     // ResolverDnsService cancellation
     auto srvResolver = std::make_shared<ResolverDnsService>("_sip._udp.nonexistent.example.invalid", mockedResolveFor);
     auto srvFiber = current.Spawn("srv_resolve", [&]() -> Omni::Fiber::Coroutine<void> {
-      auto res = co_await srvResolver->Resolve();
+      Cancel c;
+      auto res = co_await srvResolver->Resolve(c);
       EXPECT_FALSE(res.has_value());
       if (!res.has_value()) {
         EXPECT_EQ(res.error(), make_error_code(boost::asio::error::operation_aborted));
@@ -286,10 +294,11 @@ TEST(ResolverTest, ResolverHelperTest) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
     auto mockedResolveFor = MockResolveeFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
+    Cancel c;
 
     // 1. Test FindResolverIp
     auto ipRes1 = FindResolverIp("127.0.0.1", mockedResolveFor);
-    auto result1 = co_await ipRes1->Resolve();
+    auto result1 = co_await ipRes1->Resolve(c);
     EXPECT_TRUE(result1.has_value());
     if (result1.has_value()) {
       auto addr = result1.value();
@@ -297,7 +306,7 @@ TEST(ResolverTest, ResolverHelperTest) {
     }
 
     auto ipRes2 = FindResolverIp("localhost", mockedResolveFor);
-    auto result2 = co_await ipRes2->Resolve();
+    auto result2 = co_await ipRes2->Resolve(c);
     EXPECT_TRUE(result2.has_value());
     if (result2.has_value()) {
       EXPECT_FALSE(result2.value().is_unspecified());
@@ -305,14 +314,14 @@ TEST(ResolverTest, ResolverHelperTest) {
 
     // 2. Test FindResolverPort
     auto portRes1 = FindResolverPort("8080", mockedResolveFor);
-    auto result3_1 = co_await portRes1->Resolve();
+    auto result3_1 = co_await portRes1->Resolve(c);
     EXPECT_TRUE(result3_1.has_value());
     if (result3_1.has_value()) {
       EXPECT_EQ(result3_1.value(), 8080);
     }
 
     auto portRes2 = FindResolverPort("http", mockedResolveFor);
-    auto result3_2 = co_await portRes2->Resolve();
+    auto result3_2 = co_await portRes2->Resolve(c);
     EXPECT_TRUE(result3_2.has_value());
     if (result3_2.has_value()) {
       EXPECT_EQ(result3_2.value(), 80);
@@ -320,7 +329,7 @@ TEST(ResolverTest, ResolverHelperTest) {
 
     // 3. Test FindResolverEndpoint (Combined IPv4)
     auto epRes1 = FindResolverEndpoint("127.0.0.1:9090", mockedResolveFor);
-    auto result4 = co_await epRes1->Resolve();
+    auto result4 = co_await epRes1->Resolve(c);
     EXPECT_TRUE(result4.has_value());
     if (result4.has_value()) {
       auto endpoint = result4.value();
@@ -330,7 +339,7 @@ TEST(ResolverTest, ResolverHelperTest) {
 
     // 4. Test FindResolverEndpoint (Combined IPv6)
     auto epRes2 = FindResolverEndpoint("[::1]:9999", mockedResolveFor);
-    auto result5 = co_await epRes2->Resolve();
+    auto result5 = co_await epRes2->Resolve(c);
     EXPECT_TRUE(result5.has_value());
     if (result5.has_value()) {
       auto endpoint = result5.value();
@@ -340,7 +349,7 @@ TEST(ResolverTest, ResolverHelperTest) {
 
     // 5. Test FindResolverEndpoint (SRV Dns Service)
     auto epRes3 = FindResolverEndpoint("example.invalid", mockedResolveFor);
-    auto result6 = co_await epRes3->Resolve();
+    auto result6 = co_await epRes3->Resolve(c);
     // Non-existent SRV record should fail with host_not_found
     EXPECT_FALSE(result6.has_value());
 
