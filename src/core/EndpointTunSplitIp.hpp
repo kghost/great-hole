@@ -52,6 +52,7 @@ private:
   const std::string _TunName;
   std::map<boost::asio::ip::address_v6, std::shared_ptr<Channel>> _Channels;
   Omni::Fiber::RemoteCall _ChannelRpc;
+  std::shared_ptr<Omni::Fiber::Fiber> _ReadLoopFiber;
 };
 
 class EndpointTunSplitIp::Channel : public Endpoint {

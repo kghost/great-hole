@@ -67,7 +67,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::DoStart() {
 }
 
 Omni::Fiber::Coroutine<void> EndpointTunSplitIp::DoWork() {
-  (co_await Omni::Fiber::GetCurrentFiber())
+  _ReadLoopFiber = (co_await Omni::Fiber::GetCurrentFiber())
       .Spawn("EndpointTunSplitIp ReadLoop:" + _TunName + "@" + std::to_string(reinterpret_cast<uintptr_t>(this)),
              [this]() -> Omni::Fiber::Coroutine<void> {
                co_await ReadLoop();
@@ -94,7 +94,10 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::DoGracefulStop() {
     co_await channel->Stop();
     co_await channel->WaitService();
   }
-  co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
+  if (_ReadLoopFiber) {
+    co_await (co_await Omni::Fiber::GetCurrentFiber()).Join(_ReadLoopFiber);
+    _ReadLoopFiber.reset();
+  }
   _TunFileDescriptor.close();
   co_return ErrorCode{};
 }

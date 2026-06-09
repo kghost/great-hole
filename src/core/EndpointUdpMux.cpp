@@ -51,7 +51,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMux::DoStart() {
 }
 
 Omni::Fiber::Coroutine<void> UdpMux::DoWork() {
-  (co_await Omni::Fiber::GetCurrentFiber())
+  _ReadLoopFiber = (co_await Omni::Fiber::GetCurrentFiber())
       .Spawn("UdpMux ReadLoop:" + boost::lexical_cast<std::string>(LocalEndpoint()) + "@" +
                  std::to_string(reinterpret_cast<uintptr_t>(this)),
              [this]() -> Omni::Fiber::Coroutine<void> {
@@ -79,7 +79,10 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMux::DoGracefulStop() {
     co_await channel->Stop();
     co_await channel->WaitService();
   }
-  co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
+  if (_ReadLoopFiber) {
+    co_await (co_await Omni::Fiber::GetCurrentFiber()).Join(_ReadLoopFiber);
+    _ReadLoopFiber.reset();
+  }
   _Socket.close();
   co_return ErrorCode{};
 }

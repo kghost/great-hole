@@ -321,7 +321,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoStart() {
 
 Omni::Fiber::Coroutine<void> UdpDynMux::DoWork() {
   auto& currentFiber = co_await Omni::Fiber::GetCurrentFiber();
-  currentFiber.Spawn(GetName() + " ReadLoop", [this]() -> Omni::Fiber::Coroutine<void> {
+  _ReadLoopFiber = currentFiber.Spawn(GetName() + " ReadLoop", [this]() -> Omni::Fiber::Coroutine<void> {
     co_await ReadLoop();
     co_return;
   });
@@ -347,7 +347,10 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoGracefulStop() {
     co_await channel->WaitService();
   }
   _RxIdToChannel.clear();
-  co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
+  if (_ReadLoopFiber) {
+    co_await (co_await Omni::Fiber::GetCurrentFiber()).Join(_ReadLoopFiber);
+    _ReadLoopFiber.reset();
+  }
   _Socket.close();
   co_return ErrorCode{};
 }

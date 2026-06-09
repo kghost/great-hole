@@ -23,7 +23,7 @@ Omni::Fiber::Coroutine<void> ResolverCombinedEndpoint::DoWork() {
 
   // 1. Resolve IP
   auto eventPtrIp = std::make_shared<Omni::Fiber::Event<std::expected<boost::asio::ip::address_v6, ErrorCode>>>();
-  fiber.Spawn("ResolveIP", [this, eventPtrIp]() -> Omni::Fiber::Coroutine<void> {
+  auto resolveIpFiber = fiber.Spawn("ResolveIP", [this, eventPtrIp]() -> Omni::Fiber::Coroutine<void> {
     auto res = co_await _IpResolver->Resolve();
     eventPtrIp->Fire(res);
     co_return;
@@ -37,21 +37,21 @@ Omni::Fiber::Coroutine<void> ResolverCombinedEndpoint::DoWork() {
 
   if (cancelIp) {
     co_await _IpResolver->Stop();
-    co_await *eventPtrIp;
+    co_await fiber.Join(resolveIpFiber);
     _ResolveError = make_error_code(boost::asio::error::operation_aborted);
-    co_await fiber.WaitAll();
     co_return;
   }
 
+  co_await fiber.Join(resolveIpFiber);
+
   if (!resIp.has_value()) {
     _ResolveError = resIp.error();
-    co_await fiber.WaitAll();
     co_return;
   }
 
   // 2. Resolve Port
   auto eventPtrPort = std::make_shared<Omni::Fiber::Event<std::expected<uint16_t, ErrorCode>>>();
-  fiber.Spawn("ResolvePort", [this, eventPtrPort]() -> Omni::Fiber::Coroutine<void> {
+  auto resolvePortFiber = fiber.Spawn("ResolvePort", [this, eventPtrPort]() -> Omni::Fiber::Coroutine<void> {
     auto res = co_await _PortResolver->Resolve();
     eventPtrPort->Fire(res);
     co_return;
@@ -65,21 +65,20 @@ Omni::Fiber::Coroutine<void> ResolverCombinedEndpoint::DoWork() {
 
   if (cancelPort) {
     co_await _PortResolver->Stop();
-    co_await *eventPtrPort;
+    co_await fiber.Join(resolvePortFiber);
     _ResolveError = make_error_code(boost::asio::error::operation_aborted);
-    co_await fiber.WaitAll();
     co_return;
   }
 
+  co_await fiber.Join(resolvePortFiber);
+
   if (!resPort.has_value()) {
     _ResolveError = resPort.error();
-    co_await fiber.WaitAll();
     co_return;
   }
 
   _Endpoint = boost::asio::ip::udp::endpoint(resIp.value(), resPort.value());
   _ResolveError = ErrorCode{};
-  co_await fiber.WaitAll();
 }
 
 Omni::Fiber::Coroutine<ErrorCode> ResolverCombinedEndpoint::DoGracefulStop() {

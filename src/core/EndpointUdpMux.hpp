@@ -53,6 +53,7 @@ private:
   boost::asio::ip::udp::endpoint _Local;
   std::map<uint8_t, std::shared_ptr<Channel>> _Channels;
   Omni::Fiber::RemoteCall _ChannelRpc;
+  std::shared_ptr<Omni::Fiber::Fiber> _ReadLoopFiber;
 };
 
 class UdpMux::Channel : public Endpoint {

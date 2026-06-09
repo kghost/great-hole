@@ -97,6 +97,7 @@ private:
   std::map<boost::asio::ip::udp::endpoint, std::chrono::steady_clock::time_point> _LastErrorSent;
 
   std::mt19937 _Prng;
+  std::shared_ptr<Omni::Fiber::Fiber> _ReadLoopFiber;
 };
 
 class UdpDynMux::Channel : public Endpoint {
