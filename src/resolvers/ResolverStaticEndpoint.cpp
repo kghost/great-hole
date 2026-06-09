@@ -10,6 +10,10 @@ std::string ResolverStaticEndpoint::GetName() const {
   return std::format("ResolverStaticEndpoint:{}", boost::lexical_cast<std::string>(_Endpoint));
 }
 Omni::Fiber::Coroutine<ErrorCode> ResolverStaticEndpoint::DoStart() { co_return ErrorCode{}; }
+Omni::Fiber::Coroutine<void> ResolverStaticEndpoint::DoWork() {
+  _ResolveError = ErrorCode{};
+  co_return;
+}
 Omni::Fiber::Coroutine<ErrorCode> ResolverStaticEndpoint::DoGracefulStop() { co_return ErrorCode{}; }
 
 } // namespace gh

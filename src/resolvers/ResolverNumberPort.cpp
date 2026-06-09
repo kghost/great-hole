@@ -14,7 +14,10 @@ std::string ResolverNumberPort::GetName() const {
 uint16_t ResolverNumberPort::GetResolverResult() const { return _Port; }
 
 Omni::Fiber::Coroutine<ErrorCode> ResolverNumberPort::DoStart() { co_return ErrorCode{}; }
-
+Omni::Fiber::Coroutine<void> ResolverNumberPort::DoWork() {
+  _ResolveError = ErrorCode{};
+  co_return;
+}
 Omni::Fiber::Coroutine<ErrorCode> ResolverNumberPort::DoGracefulStop() { co_return ErrorCode{}; }
 
 } // namespace gh

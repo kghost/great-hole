@@ -13,6 +13,10 @@ std::string ResolverStaticIp::GetName() const {
 
 boost::asio::ip::address_v6 ResolverStaticIp::GetResolverResult() const { return _Address; }
 Omni::Fiber::Coroutine<ErrorCode> ResolverStaticIp::DoStart() { co_return ErrorCode{}; }
+Omni::Fiber::Coroutine<void> ResolverStaticIp::DoWork() {
+  _ResolveError = ErrorCode{};
+  co_return;
+}
 Omni::Fiber::Coroutine<ErrorCode> ResolverStaticIp::DoGracefulStop() { co_return ErrorCode{}; }
 
 } // namespace gh

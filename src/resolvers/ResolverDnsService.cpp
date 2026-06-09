@@ -34,21 +34,24 @@ boost::asio::ip::udp::endpoint ResolverDnsService::GetResolverResult() const {
   return _Endpoints[dis(gen)];
 }
 
-Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() {
+Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() { co_return ErrorCode{}; }
+
+Omni::Fiber::Coroutine<void> ResolverDnsService::DoWork() {
   if (_Service.value()._Stop.IsTriggered()) {
-    co_return make_error_code(boost::asio::error::operation_aborted);
+    _ResolveError = make_error_code(boost::asio::error::operation_aborted);
+    co_return;
   }
   auto eventPtr = std::make_shared<Omni::Fiber::Event<std::pair<ErrorCode, std::vector<SRVResult>>>>();
   auto workGuard = boost::asio::make_work_guard(_Target.GetExecutor());
 
   // Run the blocking res_nsearch query in a separate thread.
-  std::thread([this, eventPtr, workGuard]() mutable {
+  std::thread([serviceName = _ServiceName, eventPtr, workGuard]() mutable {
     std::vector<SRVResult> srvResults;
     struct __res_state res;
     std::memset(&res, 0, sizeof(res));
     res_ninit(&res);
     unsigned char answer[65536];
-    int len = res_nsearch(&res, _ServiceName.c_str(), C_IN, T_SRV, answer, sizeof(answer));
+    int len = res_nsearch(&res, serviceName.c_str(), C_IN, T_SRV, answer, sizeof(answer));
     ErrorCode queryErr;
     if (len < 0) {
       queryErr = make_error_code(boost::asio::error::host_not_found);
@@ -76,7 +79,7 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() {
     }
     res_nclose(&res);
 
-    boost::asio::post(_Target.GetExecutor(), [eventPtr, workGuard, queryErr, srvResults]() mutable {
+    boost::asio::post(workGuard.get_executor(), [eventPtr, workGuard, queryErr, srvResults]() mutable {
       eventPtr->Fire(std::make_pair(queryErr, std::move(srvResults)));
     });
   }).detach();
@@ -88,15 +91,18 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() {
       Omni::Fiber::SelectPair(*eventPtr, [&](auto const& response) { srvResponse = response; }));
 
   if (cancelled) {
-    co_return make_error_code(boost::asio::error::operation_aborted);
+    _ResolveError = make_error_code(boost::asio::error::operation_aborted);
+    co_return;
   }
   if (srvResponse.first) {
-    co_return srvResponse.first;
+    _ResolveError = srvResponse.first;
+    co_return;
   }
 
   for (auto const& record : srvResponse.second) {
     if (_Service.value()._Stop.IsTriggered()) {
-      co_return make_error_code(boost::asio::error::operation_aborted);
+      _ResolveError = make_error_code(boost::asio::error::operation_aborted);
+      co_return;
     }
     boost::asio::ip::udp::resolver resolver(_Target.GetExecutor());
     auto [resolveErr, results] =
@@ -111,10 +117,11 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() {
   }
 
   if (_Endpoints.empty()) {
-    co_return make_error_code(boost::asio::error::host_not_found);
+    _ResolveError = make_error_code(boost::asio::error::host_not_found);
+    co_return;
   }
 
-  co_return ErrorCode{};
+  _ResolveError = ErrorCode{};
 }
 
 Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoGracefulStop() { co_return ErrorCode{}; }

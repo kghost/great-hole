@@ -26,6 +26,7 @@ public:
 protected:
   std::string GetName() const override { return "ResolverDnsService"; }
   Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
+  Omni::Fiber::Coroutine<void> DoWork() override;
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 
 private:

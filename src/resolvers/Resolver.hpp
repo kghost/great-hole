@@ -25,6 +25,8 @@ public:
 
 protected:
   Omni::Fiber::Coroutine<ErrorCode> DoResolve();
+
+  ErrorCode _ResolveError;
 };
 
 template <typename ResultType> class Resolver : public ResolverBase {

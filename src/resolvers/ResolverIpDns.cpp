@@ -19,19 +19,23 @@ boost::asio::ip::address_v6 ResolverIpDns::GetResolverResult() const {
   return _Addresses[dis(gen)];
 }
 
-Omni::Fiber::Coroutine<ErrorCode> ResolverIpDns::DoStart() {
+Omni::Fiber::Coroutine<ErrorCode> ResolverIpDns::DoStart() { co_return ErrorCode{}; }
+
+Omni::Fiber::Coroutine<void> ResolverIpDns::DoWork() {
   if (_Service.value()._Stop.IsTriggered()) {
-    co_return make_error_code(boost::asio::error::operation_aborted);
+    _ResolveError = make_error_code(boost::asio::error::operation_aborted);
+    co_return;
   }
   boost::asio::ip::udp::resolver resolver(_Executor);
   auto [err, results] = co_await resolver.async_resolve(_Host, "", _Service.value()._Stop.AsioSlot()());
   if (err) {
-    co_return err;
+    _ResolveError = err;
+    co_return;
   }
   for (auto const& entry : results) {
     _Addresses.push_back(MapToV6(entry.endpoint().address()));
   }
-  co_return ErrorCode{};
+  _ResolveError = ErrorCode{};
 }
 
 Omni::Fiber::Coroutine<ErrorCode> ResolverIpDns::DoGracefulStop() { co_return ErrorCode{}; }

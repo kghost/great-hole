@@ -13,13 +13,20 @@ std::string ResolverServicePort::GetName() const { return "ResolverServicePort:"
 
 uint16_t ResolverServicePort::GetResolverResult() const { return _Port; }
 
-Omni::Fiber::Coroutine<ErrorCode> ResolverServicePort::DoStart() {
+Omni::Fiber::Coroutine<ErrorCode> ResolverServicePort::DoStart() { co_return ErrorCode{}; }
+
+Omni::Fiber::Coroutine<void> ResolverServicePort::DoWork() {
+  if (_Service.value()._Stop.IsTriggered()) {
+    _ResolveError = make_error_code(boost::asio::error::operation_aborted);
+    co_return;
+  }
   struct servent* s = getservbyname(_PortStr.c_str(), nullptr);
   if (s == nullptr) {
-    co_return make_error_code(boost::asio::error::invalid_argument);
+    _ResolveError = make_error_code(boost::asio::error::invalid_argument);
+    co_return;
   }
   _Port = ntohs(s->s_port);
-  co_return ErrorCode{};
+  _ResolveError = ErrorCode{};
 }
 
 Omni::Fiber::Coroutine<ErrorCode> ResolverServicePort::DoGracefulStop() { co_return ErrorCode{}; }

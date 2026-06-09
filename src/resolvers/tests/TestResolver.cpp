@@ -53,23 +53,19 @@ TEST(ResolverTest, StaticIpResolverSuccess) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
     auto r1 = std::make_shared<ResolverStaticIp>(MapToV6(boost::asio::ip::make_address("127.0.0.1")));
-    auto err1 = co_await r1->Start();
-    EXPECT_FALSE(err1);
-    if (!err1) {
-      auto addr = r1->GetResolverResult();
-      EXPECT_EQ(addr.to_string(), "::ffff:127.0.0.1");
+    auto res1 = co_await r1->Resolve();
+    EXPECT_TRUE(res1.has_value());
+    if (res1.has_value()) {
+      EXPECT_EQ(res1.value().to_string(), "::ffff:127.0.0.1");
     }
 
     auto r2 = std::make_shared<ResolverStaticIp>(boost::asio::ip::address_v6::loopback());
-    auto err2 = co_await r2->Start();
-    EXPECT_FALSE(err2);
-    if (!err2) {
-      auto addr = r2->GetResolverResult();
-      EXPECT_EQ(addr.to_string(), "::1");
+    auto res2 = co_await r2->Resolve();
+    EXPECT_TRUE(res2.has_value());
+    if (res2.has_value()) {
+      EXPECT_EQ(res2.value().to_string(), "::1");
     }
 
-    co_await r1->Stop();
-    co_await r2->Stop();
     co_await current.WaitAll();
 
     testPassed = true;
@@ -90,29 +86,26 @@ TEST(ResolverTest, StaticPortResolverSuccess) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
     auto r1 = std::make_shared<ResolverNumberPort>(8080);
-    auto err1 = co_await r1->Start();
-    EXPECT_FALSE(err1);
-    if (!err1) {
-      EXPECT_EQ(r1->GetResolverResult(), 8080);
+    auto res1 = co_await r1->Resolve();
+    EXPECT_TRUE(res1.has_value());
+    if (res1.has_value()) {
+      EXPECT_EQ(res1.value(), 8080);
     }
 
     auto r2 = std::make_shared<ResolverNumberPort>(1234);
-    auto err2 = co_await r2->Start();
-    EXPECT_FALSE(err2);
-    if (!err2) {
-      EXPECT_EQ(r2->GetResolverResult(), 1234);
+    auto res2 = co_await r2->Resolve();
+    EXPECT_TRUE(res2.has_value());
+    if (res2.has_value()) {
+      EXPECT_EQ(res2.value(), 1234);
     }
 
     auto r3 = std::make_shared<ResolverServicePort>("http");
-    auto err3 = co_await r3->Start();
-    EXPECT_FALSE(err3);
-    if (!err3) {
-      EXPECT_EQ(r3->GetResolverResult(), 80);
+    auto res3 = co_await r3->Resolve();
+    EXPECT_TRUE(res3.has_value());
+    if (res3.has_value()) {
+      EXPECT_EQ(res3.value(), 80);
     }
 
-    co_await r1->Stop();
-    co_await r2->Stop();
-    co_await r3->Stop();
     co_await current.WaitAll();
 
     testPassed = true;
@@ -133,15 +126,14 @@ TEST(ResolverTest, StaticPortResolverFailure) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
     auto r1 = std::make_shared<ResolverServicePort>("abc");
-    auto err1 = co_await r1->Start();
-    EXPECT_TRUE(err1);
+    auto res1 = co_await r1->Resolve();
+    EXPECT_FALSE(res1.has_value());
 
     auto r2 = std::make_shared<ResolverServicePort>("99999");
-    auto err2 = co_await r2->Start();
-    EXPECT_TRUE(err2);
+    auto res2 = co_await r2->Resolve();
+    EXPECT_FALSE(res2.has_value());
 
-    co_await r1->WaitService();
-    co_await r2->WaitService();
+    co_await current.WaitAll();
     testPassed = true;
     co_return;
   });
@@ -160,15 +152,12 @@ TEST(ResolverTest, StaticDnsResolverSuccess) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
     auto r = std::make_shared<ResolverIpDns>(io.get_executor(), "localhost");
-    auto err = co_await r->Start();
-    // DNS resolving "localhost" should succeed on any machine
-    EXPECT_FALSE(err);
-    if (!err) {
-      auto addr = r->GetResolverResult();
-      EXPECT_FALSE(addr.is_unspecified());
+    auto res = co_await r->Resolve();
+    EXPECT_TRUE(res.has_value());
+    if (res.has_value()) {
+      EXPECT_FALSE(res.value().is_unspecified());
     }
 
-    co_await r->Stop();
     co_await current.WaitAll();
     testPassed = true;
     co_return;
@@ -191,15 +180,13 @@ TEST(ResolverTest, ResolverEndpointSuccess) {
     auto portResolver = std::make_shared<ResolverNumberPort>(9090);
     auto r = std::make_shared<ResolverCombinedEndpoint>(ipResolver, portResolver);
 
-    auto err = co_await r->Start();
-    EXPECT_FALSE(err);
-    if (!err) {
-      auto endpoint = r->GetResolverResult();
-      EXPECT_EQ(endpoint.address().to_string(), "::ffff:127.0.0.1");
-      EXPECT_EQ(endpoint.port(), 9090);
+    auto res = co_await r->Resolve();
+    EXPECT_TRUE(res.has_value());
+    if (res.has_value()) {
+      EXPECT_EQ(res.value().address().to_string(), "::ffff:127.0.0.1");
+      EXPECT_EQ(res.value().port(), 9090);
     }
 
-    co_await r->Stop();
     co_await current.WaitAll();
     testPassed = true;
     co_return;
@@ -221,12 +208,13 @@ TEST(ResolverTest, DnsServiceResolverNonExistent) {
     auto mockedResolveFor = MockResolveeFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
 
     auto r = std::make_shared<ResolverDnsService>("_nonexistent_service._tcp.example.invalid", mockedResolveFor);
-    auto err = co_await r->Start();
-    // Resolving a non-existent SRV record should fail with host_not_found
-    EXPECT_TRUE(err);
-    EXPECT_EQ(err, make_error_code(boost::asio::error::host_not_found));
+    auto res = co_await r->Resolve();
+    EXPECT_FALSE(res.has_value());
+    if (!res.has_value()) {
+      EXPECT_EQ(res.error(), make_error_code(boost::asio::error::host_not_found));
+    }
 
-    co_await r->WaitService();
+    co_await current.WaitAll();
     testPassed = true;
     co_return;
   });
@@ -244,12 +232,15 @@ TEST(ResolverTest, ResolverCancellation) {
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
-    // ResolverIpDns cancellation (instant cancellation)
+    
+    // ResolverIpDns cancellation
     auto dnsResolver = std::make_shared<ResolverIpDns>(io.get_executor(), "nonexistent.example.invalid");
     auto resolveFiber = current.Spawn("resolve", [&]() -> Omni::Fiber::Coroutine<void> {
-      auto err = co_await dnsResolver->Start();
-      EXPECT_EQ(err, make_error_code(boost::asio::error::operation_aborted));
-      co_await dnsResolver->WaitService();
+      auto res = co_await dnsResolver->Resolve();
+      EXPECT_FALSE(res.has_value());
+      if (!res.has_value()) {
+        EXPECT_EQ(res.error(), make_error_code(boost::asio::error::operation_aborted));
+      }
       co_return;
     });
     auto resolveFiberCancel = current.Spawn("resolve_cancel", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -260,12 +251,14 @@ TEST(ResolverTest, ResolverCancellation) {
     co_await current.Join(resolveFiberCancel);
 
     auto mockedResolveFor = MockResolveeFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
-    // ResolverDnsService cancellation (instant cancellation)
+    // ResolverDnsService cancellation
     auto srvResolver = std::make_shared<ResolverDnsService>("_sip._udp.nonexistent.example.invalid", mockedResolveFor);
     auto srvFiber = current.Spawn("srv_resolve", [&]() -> Omni::Fiber::Coroutine<void> {
-      auto err = co_await srvResolver->Start();
-      EXPECT_EQ(err, make_error_code(boost::asio::error::operation_aborted));
-      co_await srvResolver->WaitService();
+      auto res = co_await srvResolver->Resolve();
+      EXPECT_FALSE(res.has_value());
+      if (!res.has_value()) {
+        EXPECT_EQ(res.error(), make_error_code(boost::asio::error::operation_aborted));
+      }
       co_return;
     });
     auto srvFiberCancel = current.Spawn("srv_resolve_cancel", [&]() -> Omni::Fiber::Coroutine<void> {
