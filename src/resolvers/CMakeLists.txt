@@ -19,6 +19,7 @@ foreach(suffix "" "-asan")
     ResolverDnsService.cpp
     ResolverStaticEndpoint.cpp
     ResolverHelper.cpp
+    AresResolver.cpp
   )
 
   target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -35,7 +36,7 @@ foreach(suffix "" "-asan")
     Boost::log
     ${omnibase}
     ${omnifiber}
-    resolv
+    PkgConfig::CARES
   )
 
   if (Boost_PROCESS_FOUND)

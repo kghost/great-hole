@@ -2,7 +2,7 @@
 
 #include <random>
 
-#include "Utils.hpp"
+#include "AresResolver.hpp"
 
 namespace gh {
 
@@ -24,20 +24,17 @@ std::string ResolverIpDns::GetName() const { return std::format("ResolverIpDns:[
 Omni::Fiber::Coroutine<ErrorCode> ResolverIpDns::DoStart() { co_return ErrorCode{}; }
 
 Omni::Fiber::Coroutine<void> ResolverIpDns::DoWork() {
-  if (_Service.value()._Stop.IsTriggered()) {
-    _ResolveError = make_error_code(boost::asio::error::operation_aborted);
+  auto result = co_await AresResolver::ResolveIp(_Executor, _Host, _Service.value()._Stop);
+  if (!result.has_value()) {
+    _ResolveError = result.error();
     co_return;
   }
-  boost::asio::ip::udp::resolver resolver(_Executor);
-  auto [err, results] = co_await resolver.async_resolve(_Host, "", _Service.value()._Stop.AsioSlot()());
-  if (err) {
-    _ResolveError = err;
-    co_return;
+  _Addresses = std::move(result.value());
+  if (_Addresses.empty()) {
+    _ResolveError = make_error_code(boost::asio::error::host_not_found);
+  } else {
+    _ResolveError = ErrorCode{};
   }
-  for (auto const& entry : results) {
-    _Addresses.push_back(MapToV6(entry.endpoint().address()));
-  }
-  _ResolveError = ErrorCode{};
 }
 
 Omni::Fiber::Coroutine<ErrorCode> ResolverIpDns::DoGracefulStop() { co_return ErrorCode{}; }

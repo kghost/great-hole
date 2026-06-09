@@ -1,26 +1,12 @@
 #include "ResolverDnsService.hpp"
 
-#include <arpa/inet.h>
-#include <arpa/nameser.h>
-#include <expected>
-#include <netdb.h>
-#include <resolv.h>
-
-#include <cstring>
 #include <random>
-#include <thread>
 
 #include <boost/log/trivial.hpp>
 
-#include "Cancel.hpp"
-#include "Select.hpp"
+#include "AresResolver.hpp"
 
 namespace gh {
-
-struct SRVResult {
-  std::string target;
-  uint16_t port;
-};
 
 ResolverDnsService::ResolverDnsService(const std::string& serviceName, ResolveFor& target)
     : _ServiceName(serviceName), _Target(target) {}
@@ -38,87 +24,25 @@ boost::asio::ip::udp::endpoint ResolverDnsService::GetResolverResult() const {
 Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() { co_return ErrorCode{}; }
 
 Omni::Fiber::Coroutine<void> ResolverDnsService::DoWork() {
-  if (_Service.value()._Stop.IsTriggered()) {
-    _ResolveError = make_error_code(boost::asio::error::operation_aborted);
+  auto executor = _Target.GetExecutor();
+  auto srvResult = co_await AresResolver::ResolveSrv(executor, _ServiceName, _Service.value()._Stop);
+  if (!srvResult.has_value()) {
+    _ResolveError = srvResult.error();
     co_return;
   }
-  auto eventPtr = std::make_shared<Omni::Fiber::Event<std::expected<std::vector<SRVResult>, ErrorCode>>>();
-  auto workGuard = boost::asio::make_work_guard(_Target.GetExecutor());
 
-  // Run the blocking res_nsearch query in a separate thread.
-  std::thread([serviceName = _ServiceName, eventPtr, workGuard]() mutable {
-    std::vector<SRVResult> srvResults;
-    struct __res_state res;
-    std::memset(&res, 0, sizeof(res));
-    res_ninit(&res);
-    unsigned char answer[65536];
-    int len = res_nsearch(&res, serviceName.c_str(), C_IN, T_SRV, answer, sizeof(answer));
-    ErrorCode queryErr;
-    if (len < 0) {
-      queryErr = make_error_code(boost::asio::error::host_not_found);
-    } else {
-      ns_msg handle;
-      if (ns_initparse(answer, len, &handle) < 0) {
-        queryErr = make_error_code(boost::asio::error::invalid_argument);
-      } else {
-        int count = ns_msg_count(handle, ns_s_an);
-        for (int i = 0; i < count; i++) {
-          ns_rr rr;
-          if (ns_parserr(&handle, ns_s_an, i, &rr) < 0) {
-            continue;
-          }
-          if (ns_rr_type(rr) == T_SRV) {
-            const unsigned char* rdata = ns_rr_rdata(rr);
-            uint16_t port = ns_get16(rdata + 4);
-            char targetBuf[NS_MAXDNAME];
-            if (dn_expand(ns_msg_base(handle), ns_msg_end(handle), rdata + 6, targetBuf, sizeof(targetBuf)) >= 0) {
-              srvResults.push_back({std::string(targetBuf), port});
-            }
-          }
-        }
-      }
-    }
-    res_nclose(&res);
-
-    boost::asio::post(workGuard.get_executor(), [eventPtr, workGuard, queryErr, srvResults]() mutable {
-      if (queryErr) {
-        eventPtr->Fire(std::unexpected(queryErr));
-      } else {
-        eventPtr->Fire(std::move(srvResults));
-      }
-    });
-  }).detach();
-
-  auto [cancelled, response] =
-      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] {}),
-                                   Omni::Fiber::SelectPair(*eventPtr, [](auto const& response) { return response; }));
-
-  if (cancelled) {
-    _ResolveError = make_error_code(boost::asio::error::operation_aborted);
-    co_return;
-  }
-  if (response.has_value()) {
-    auto& srvResponse = response.value();
-    if (srvResponse.error()) {
-      _ResolveError = srvResponse.error();
+  for (auto const& record : srvResult.value()) {
+    if (_Service.value()._Stop.IsTriggered()) {
+      _ResolveError = make_error_code(boost::asio::error::operation_aborted);
       co_return;
     }
-
-    for (auto const& record : srvResponse.value()) {
-      if (_Service.value()._Stop.IsTriggered()) {
-        _ResolveError = make_error_code(boost::asio::error::operation_aborted);
-        co_return;
-      }
-      boost::asio::ip::udp::resolver resolver(_Target.GetExecutor());
-      auto [resolveErr, results] =
-          co_await resolver.async_resolve(record.target, "", _Service.value()._Stop.AsioSlot()());
-      if (resolveErr) {
-        BOOST_LOG_TRIVIAL(warning) << "Failed to resolve SRV target: " << record.target << " " << resolveErr.message();
-        continue;
-      }
-      for (auto const& entry : results) {
-        _Endpoints.emplace_back(entry.endpoint().address(), record.port);
-      }
+    auto ipResult = co_await AresResolver::ResolveIp(executor, record.Target, _Service.value()._Stop);
+    if (!ipResult.has_value()) {
+      BOOST_LOG_TRIVIAL(warning) << "Failed to resolve SRV target: " << record.Target << " " << ipResult.error().message();
+      continue;
+    }
+    for (auto const& address : ipResult.value()) {
+      _Endpoints.emplace_back(address, record.Port);
     }
   }
 

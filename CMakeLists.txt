@@ -19,6 +19,7 @@ find_package(ZLIB REQUIRED)
 find_package(Boost REQUIRED COMPONENTS log program_options)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LUA REQUIRED IMPORTED_TARGET lua-5.4)
+pkg_check_modules(CARES REQUIRED IMPORTED_TARGET libcares)
 
 enable_testing()
 find_package(GTest REQUIRED)

@@ -16,6 +16,7 @@
 #include "ResolverServicePort.hpp"
 #include "ResolverStaticIp.hpp"
 #include "Utils.hpp"
+#include "Yield.hpp"
 
 using namespace gh;
 
@@ -238,7 +239,7 @@ TEST(ResolverTest, ResolverCancellation) {
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
-    
+
     // ResolverIpDns cancellation
     auto dnsResolver = std::make_shared<ResolverIpDns>(io.get_executor(), "nonexistent.example.invalid");
     auto resolveFiber = current.Spawn("resolve", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -250,6 +251,7 @@ TEST(ResolverTest, ResolverCancellation) {
       }
       co_return;
     });
+    co_await Omni::Fiber::Yield();
     auto resolveFiberCancel = current.Spawn("resolve_cancel", [&]() -> Omni::Fiber::Coroutine<void> {
       co_await dnsResolver->Stop();
       co_return;
@@ -269,6 +271,7 @@ TEST(ResolverTest, ResolverCancellation) {
       }
       co_return;
     });
+    co_await Omni::Fiber::Yield();
     auto srvFiberCancel = current.Spawn("srv_resolve_cancel", [&]() -> Omni::Fiber::Coroutine<void> {
       co_await srvResolver->Stop();
       co_return;
