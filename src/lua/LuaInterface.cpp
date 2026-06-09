@@ -9,7 +9,7 @@ void LuaInterface::Schedule(std::move_only_function<Omni::Fiber::Coroutine<int>(
   _PendingYield.emplace(std::move(task));
 }
 
-Omni::Fiber::Coroutine<int> LuaInterface::Yield(lua_State* L, int nres) {
+Omni::Fiber::Coroutine<int> LuaInterface::Resume(lua_State* L, int nres) {
   assert(_PendingYield.has_value());
   co_return co_await std::exchange(_PendingYield, std::nullopt).value()(L, nres);
 }

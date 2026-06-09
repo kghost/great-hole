@@ -8,24 +8,49 @@
 
 namespace gh {
 
-// Metatable names
-inline constexpr char kNamePipeline[] = "Hole.pipeline";
-inline constexpr char kNameEndpoint[] = "Hole.endpoint";
-inline constexpr char kNameFilter[] = "Hole.filter";
-inline constexpr char kNameUdp[] = "Hole.udp";
-inline constexpr char kNameUdpMuxServer[] = "Hole.udp-mux-server";
-inline constexpr char kNameUdpDynMux[] = "Hole.udp-dyn-mux";
-inline constexpr char kNameTunSplitIp[] = "Hole.tun-split-ip";
-inline constexpr char kNameVpnServer[] = "Hole.vpn-server";
+template <size_t N> struct FixedString {
+  char value[N]{};
+  constexpr FixedString(const char (&str)[N]) {
+    for (size_t i = 0; i < N; ++i) {
+      value[i] = str[i];
+    }
+  }
+};
 
-template <const char* TypeTag, typename Type> class LuaSafeUserData {
+class Pipeline;
+class Endpoint;
+class Filter;
+class Udp;
+class UdpMux;
+class UdpDynMux;
+class EndpointTunSplitIp;
+class VpnServer;
+
+template <FixedString TypeTag, typename Type> class LuaSafeUserData {
 public:
-  static constexpr const char* GetTypeTag() { return TypeTag; }
-  static Type* Get(lua_State* L, int index) { return (Type*)luaL_checkudata(L, index, TypeTag); }
+  static constexpr const char* GetTypeTag() { return TypeTag.value; }
+  static Type* Get(lua_State* L, int index) { return (Type*)luaL_checkudata(L, index, TypeTag.value); }
   template <typename... Args> static Type* New(lua_State* L, Args&&... args) {
     return new (lua_newuserdata(L, sizeof(Type))) Type(std::forward<Args>(args)...);
   }
+  template <typename ElementType = typename Type::element_type, typename... Args>
+  static Type* MakeShared(lua_State* L, Args&&... args) {
+    return new (lua_newuserdata(L, sizeof(Type))) Type(std::make_shared<ElementType>(std::forward<Args>(args)...));
+  }
+  static int Gc(lua_State* L) {
+    Get(L, 1)->~Type();
+    return 0;
+  }
 };
+
+using LuaPipeline = LuaSafeUserData<"Hole.pipeline", std::shared_ptr<Pipeline>>;
+using LuaEndpoint = LuaSafeUserData<"Hole.endpoint", std::shared_ptr<Endpoint>>;
+using LuaFilter = LuaSafeUserData<"Hole.filter", std::shared_ptr<Filter>>;
+using LuaUdp = LuaSafeUserData<"Hole.udp", std::shared_ptr<Udp>>;
+using LuaUdpMux = LuaSafeUserData<"Hole.udp-mux-server", std::shared_ptr<UdpMux>>;
+using LuaUdpDynMux = LuaSafeUserData<"Hole.udp-dyn-mux", std::shared_ptr<UdpDynMux>>;
+using LuaTunSplitIp = LuaSafeUserData<"Hole.tun-split-ip", std::shared_ptr<EndpointTunSplitIp>>;
+using LuaVpnServer = LuaSafeUserData<"Hole.vpn-server", std::shared_ptr<VpnServer>>;
 
 template <int F(lua_State* L)> inline int SafeCall(lua_State* L) {
   try {
@@ -42,12 +67,6 @@ template <void F(lua_State* L)> inline int SafeYield(lua_State* L) {
     return luaL_error(L, e.what());
   }
   return lua_yield(L, 0);
-}
-
-template <typename T, const char N[]> inline int Gc(lua_State* L) {
-  typedef std::shared_ptr<T> P;
-  ((P*)luaL_checkudata(L, 1, N))->~P();
-  return 0;
 }
 
 inline boost::asio::ip::address_v6 GetAddress(const char* str) {

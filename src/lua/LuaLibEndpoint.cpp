@@ -1,13 +1,12 @@
 #include "LuaLibCommon.hpp"
 
-#include "Endpoint.hpp"
 #include "EndpointTun.hpp"
 #include "ErrorCode.hpp"
 
 namespace gh {
 
 static void EndpointStop(lua_State* L) {
-  auto& ep = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, 1, kNameEndpoint);
+  auto& ep = *LuaEndpoint::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   interface.Schedule([&interface, ep](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
@@ -17,10 +16,7 @@ static void EndpointStop(lua_State* L) {
 }
 
 static const struct luaL_Reg kEndpointMetatable[] = {
-    {"__gc", SafeCall<Gc<Endpoint, kNameEndpoint>>},
-    {"stop", SafeYield<EndpointStop>},
-    {nullptr, nullptr}
-};
+    {"__gc", SafeCall<LuaEndpoint::Gc>}, {"stop", SafeYield<EndpointStop>}, {nullptr, nullptr}};
 
 static void TunNew(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
@@ -29,9 +25,8 @@ static void TunNew(lua_State* L) {
     throw std::runtime_error("tun: not enough arguments");
   }
 
-  auto tun = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>)))
-      std::shared_ptr<Endpoint>(new Tun(interface.GetContext(), lua_tostring(L, 1)));
-  luaL_getmetatable(L, kNameEndpoint);
+  auto tun = LuaEndpoint::MakeShared<Tun>(L, interface.GetContext(), lua_tostring(L, 1));
+  luaL_getmetatable(L, LuaEndpoint::GetTypeTag());
   lua_setmetatable(L, -2);
 
   interface.Schedule([&interface, tun](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
@@ -48,7 +43,7 @@ void RegisterEndpoint(lua_State* L, LuaInterface& interface) {
   lua_pushcclosure(L, SafeYield<TunNew>, 1);
   lua_setfield(L, -2, "tun");
 
-  luaL_newmetatable(L, kNameEndpoint);
+  luaL_newmetatable(L, LuaEndpoint::GetTypeTag());
   lua_pushvalue(L, -1);
   lua_setfield(L, -2, "__index");
   lua_pushlightuserdata(L, &interface);

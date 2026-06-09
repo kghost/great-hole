@@ -15,7 +15,7 @@ Omni::Fiber::Coroutine<void> LuaEngine::RunLoop(lua_State* co) {
   while (true) {
     switch (status) {
     case LUA_YIELD: {
-      auto nargs = co_await _Interface.Yield(co, nres);
+      auto nargs = co_await _Interface.Resume(co, nres);
       status = lua_resume(co, _LuaState.get(), nargs, &nres);
       break;
     }
@@ -33,7 +33,7 @@ Omni::Fiber::Coroutine<void> LuaEngine::DoFile(const std::string& filename) {
 
   lua_State* co = lua_newthread(_LuaState.get());
   luaL_openlibs(co);
-  luaopen_hole(co, _Interface);
+  LuaOpenHole(co, _Interface);
 
   if (luaL_loadbuffer(co, _binary_init_lua_start, _binary_init_lua_end - _binary_init_lua_start, "internal-lua") !=
       LUA_OK) {

@@ -7,6 +7,6 @@ namespace gh {
 
 class LuaInterface;
 
-void luaopen_hole(lua_State* L, LuaInterface& interface);
+void LuaOpenHole(lua_State* L, LuaInterface& interface);
 
 } // namespace gh

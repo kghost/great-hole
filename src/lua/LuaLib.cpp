@@ -44,7 +44,7 @@ static int HoleOpen(lua_State* L) {
 
 static const char kModuleName[] = "hole";
 
-void luaopen_hole(lua_State* L, LuaInterface& interface) {
+void LuaOpenHole(lua_State* L, LuaInterface& interface) {
   luaL_getsubtable(L, LUA_REGISTRYINDEX, "_LOADED");
   lua_getfield(L, -1, kModuleName); /* _LOADED[modname] */
   if (!lua_toboolean(L, -1)) {      /* package not already loaded? */

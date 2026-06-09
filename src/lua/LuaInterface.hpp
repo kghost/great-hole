@@ -21,7 +21,7 @@ public:
   Cancel& GetStopApplication() { return _StopApplication; }
 
   void Schedule(std::move_only_function<Omni::Fiber::Coroutine<int>(lua_State*, int)>&&);
-  Omni::Fiber::Coroutine<int> Yield(lua_State*, int);
+  Omni::Fiber::Coroutine<int> Resume(lua_State*, int);
 
 private:
   boost::asio::io_context& _Context;

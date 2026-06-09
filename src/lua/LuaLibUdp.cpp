@@ -1,12 +1,12 @@
 #include "LuaLibCommon.hpp"
 
-#include "Endpoint.hpp"
 #include "EndpointUdp.hpp"
 #include "EndpointUdpDynMux.hpp"
 #include "EndpointUdpMux.hpp"
 #include "ErrorCode.hpp"
 #include "ResolverCombinedEndpoint.hpp"
 #include "ResolverHelper.hpp"
+#include "VpnServer.hpp"
 
 namespace gh {
 
@@ -16,7 +16,7 @@ static void UdpCreateChannel(lua_State* L) {
     throw std::runtime_error("udp_create_channel: invalid number of arguments");
   }
 
-  auto& u = *(std::shared_ptr<Udp>*)luaL_checkudata(L, 1, kNameUdp);
+  auto& u = *LuaUdp::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   std::shared_ptr<ResolverEndpoint> resolver;
@@ -34,8 +34,8 @@ static void UdpCreateChannel(lua_State* L) {
                                                           FindResolverPort(port, u->GetResolveFor()));
   }
 
-  auto ch = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>();
-  luaL_getmetatable(L, kNameEndpoint);
+  auto ch = LuaEndpoint::New(L);
+  luaL_getmetatable(L, LuaEndpoint::GetTypeTag());
   lua_setmetatable(L, -2);
 
   interface.Schedule([&interface, u, resolver = std::move(resolver), ch](this auto self, lua_State* L,
@@ -46,7 +46,7 @@ static void UdpCreateChannel(lua_State* L) {
 }
 
 static void UdpStop(lua_State* L) {
-  auto& u = *(std::shared_ptr<Udp>*)luaL_checkudata(L, 1, kNameUdp);
+  auto& u = *LuaUdp::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   interface.Schedule([&interface, u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
@@ -55,7 +55,7 @@ static void UdpStop(lua_State* L) {
   });
 }
 
-static const struct luaL_Reg kUdpMetatable[] = {{"__gc", SafeCall<Gc<Udp, kNameUdp>>},
+static const struct luaL_Reg kUdpMetatable[] = {{"__gc", SafeCall<LuaUdp::Gc>},
                                                 {"create_channel", SafeYield<UdpCreateChannel>},
                                                 {"stop", SafeYield<UdpStop>},
                                                 {nullptr, nullptr}};
@@ -65,19 +65,18 @@ static void UdpNew(lua_State* L) {
   std::shared_ptr<Udp>* udp = nullptr;
   switch (lua_gettop(L)) {
   case 0:
-    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<Udp>))) std::shared_ptr<Udp>(new Udp(interface.GetContext()));
+    udp = LuaUdp::MakeShared(L, interface.GetContext());
     break;
   case 1: {
     auto bind = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
-    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<Udp>)))
-        std::shared_ptr<Udp>(new Udp(interface.GetContext(), bind));
+    udp = LuaUdp::MakeShared(L, interface.GetContext(), bind);
     break;
   }
   default:
     throw std::runtime_error("udp: not enough arguments");
   }
 
-  luaL_getmetatable(L, kNameUdp);
+  luaL_getmetatable(L, LuaUdp::GetTypeTag());
   lua_setmetatable(L, -2);
 
   interface.Schedule([&interface, udp](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
@@ -97,7 +96,7 @@ static void UdpMuxServerCreateChannel(lua_State* L) {
   }
 
   auto id = (uint8_t)luaL_checknumber(L, 2);
-  auto& u = *(std::shared_ptr<UdpMux>*)luaL_checkudata(L, 1, kNameUdpMuxServer);
+  auto& u = *LuaUdpMux::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   std::shared_ptr<ResolverEndpoint> resolver = nullptr;
@@ -117,8 +116,8 @@ static void UdpMuxServerCreateChannel(lua_State* L) {
 
   interface.Schedule([&interface, u, id, resolver = std::move(resolver)](this auto self, lua_State* L,
                                                                          int nres) -> Omni::Fiber::Coroutine<int> {
-    auto ch = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>();
-    luaL_getmetatable(L, kNameEndpoint);
+    auto ch = LuaEndpoint::New(L);
+    luaL_getmetatable(L, LuaEndpoint::GetTypeTag());
     lua_setmetatable(L, -2);
 
     if (resolver) {
@@ -131,7 +130,7 @@ static void UdpMuxServerCreateChannel(lua_State* L) {
 }
 
 static void UdpMuxServerStop(lua_State* L) {
-  auto& u = *(std::shared_ptr<UdpMux>*)luaL_checkudata(L, 1, kNameUdpMuxServer);
+  auto& u = *LuaUdpMux::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   interface.Schedule([&interface, u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
@@ -140,7 +139,7 @@ static void UdpMuxServerStop(lua_State* L) {
   });
 }
 
-static const struct luaL_Reg kUdpMuxServerMetatable[] = {{"__gc", SafeCall<Gc<UdpMux, kNameUdpMuxServer>>},
+static const struct luaL_Reg kUdpMuxServerMetatable[] = {{"__gc", SafeCall<LuaUdpMux::Gc>},
                                                          {"create_channel", SafeYield<UdpMuxServerCreateChannel>},
                                                          {"stop", SafeYield<UdpMuxServerStop>},
                                                          {nullptr, nullptr}};
@@ -150,20 +149,18 @@ static void UdpMuxServerNew(lua_State* L) {
   std::shared_ptr<UdpMux>* udp = nullptr;
   switch (lua_gettop(L)) {
   case 0:
-    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpMux>)))
-        std::shared_ptr<UdpMux>(new UdpMux(interface.GetContext()));
+    udp = LuaUdpMux::MakeShared(L, interface.GetContext());
     break;
   case 1: {
     auto bind = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
-    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpMux>)))
-        std::shared_ptr<UdpMux>(new UdpMux(interface.GetContext(), bind));
+    udp = LuaUdpMux::MakeShared(L, interface.GetContext(), bind);
     break;
   }
   default:
     throw std::runtime_error("udp_mux_server: not enough arguments");
   }
 
-  luaL_getmetatable(L, kNameUdpMuxServer);
+  luaL_getmetatable(L, LuaUdpMux::GetTypeTag());
   lua_setmetatable(L, -2);
 
   interface.Schedule([&interface, udp](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
@@ -190,7 +187,7 @@ static void UdpDynMuxCreateChannel(lua_State* L) {
   UdpDynMux::PskType psk;
   std::copy_n(reinterpret_cast<const uint8_t*>(s), 16, psk.begin());
 
-  auto& u = *(std::shared_ptr<UdpDynMux>*)luaL_checkudata(L, 1, kNameUdpDynMux);
+  auto& u = *LuaUdpDynMux::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   std::shared_ptr<ResolverEndpoint> resolver = nullptr;
@@ -208,8 +205,8 @@ static void UdpDynMuxCreateChannel(lua_State* L) {
                                                           FindResolverPort(port, u->GetResolveFor()));
   }
 
-  auto ch = new (lua_newuserdata(L, sizeof(std::shared_ptr<Endpoint>))) std::shared_ptr<Endpoint>();
-  luaL_getmetatable(L, kNameEndpoint);
+  auto ch = LuaEndpoint::New(L);
+  luaL_getmetatable(L, LuaEndpoint::GetTypeTag());
   lua_setmetatable(L, -2);
 
   interface.Schedule([&interface, u, psk, resolver = std::move(resolver), ch](this auto self, lua_State* L,
@@ -224,7 +221,7 @@ static void UdpDynMuxCreateChannel(lua_State* L) {
 }
 
 static void UdpDynMuxStop(lua_State* L) {
-  auto& u = *(std::shared_ptr<UdpDynMux>*)luaL_checkudata(L, 1, kNameUdpDynMux);
+  auto& u = *LuaUdpDynMux::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   interface.Schedule([&interface, u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
@@ -233,7 +230,7 @@ static void UdpDynMuxStop(lua_State* L) {
   });
 }
 
-static const struct luaL_Reg kUdpDynMuxMetatable[] = {{"__gc", SafeCall<Gc<UdpDynMux, kNameUdpDynMux>>},
+static const struct luaL_Reg kUdpDynMuxMetatable[] = {{"__gc", SafeCall<LuaUdpDynMux::Gc>},
                                                       {"create_channel", SafeYield<UdpDynMuxCreateChannel>},
                                                       {"stop", SafeYield<UdpDynMuxStop>},
                                                       {nullptr, nullptr}};
@@ -250,11 +247,11 @@ static void UdpDynMuxNew(lua_State* L) {
     if (lua_isnumber(L, 1)) {
       port = (int)lua_tonumber(L, 1);
     } else {
-      vpnServer = *(std::shared_ptr<VpnServer>*)luaL_checkudata(L, 1, kNameVpnServer);
+      vpnServer = *LuaVpnServer::Get(L, 1);
     }
   } else if (top == 2) {
     port = (int)luaL_checknumber(L, 1);
-    vpnServer = *(std::shared_ptr<VpnServer>*)luaL_checkudata(L, 2, kNameVpnServer);
+    vpnServer = *LuaVpnServer::Get(L, 2);
   } else if (top > 2) {
     throw std::runtime_error("udp_dyn_mux: too many arguments");
   }
@@ -265,14 +262,12 @@ static void UdpDynMuxNew(lua_State* L) {
 
   if (port.has_value()) {
     auto bind = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), *port);
-    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpDynMux>)))
-        std::shared_ptr<UdpDynMux>(new UdpDynMux(interface.GetContext(), bind, notification));
+    udp = LuaUdpDynMux::MakeShared(L, interface.GetContext(), bind, notification);
   } else {
-    udp = new (lua_newuserdata(L, sizeof(std::shared_ptr<UdpDynMux>)))
-        std::shared_ptr<UdpDynMux>(new UdpDynMux(interface.GetContext(), notification));
+    udp = LuaUdpDynMux::MakeShared(L, interface.GetContext(), notification);
   }
 
-  luaL_getmetatable(L, kNameUdpDynMux);
+  luaL_getmetatable(L, LuaUdpDynMux::GetTypeTag());
   lua_setmetatable(L, -2);
 
   interface.Schedule([&interface, udp](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
@@ -297,21 +292,21 @@ void RegisterUdp(lua_State* L, LuaInterface& interface) {
   lua_pushcclosure(L, SafeYield<UdpDynMuxNew>, 1);
   lua_setfield(L, -2, "udp_dyn_mux");
 
-  luaL_newmetatable(L, kNameUdp);
+  luaL_newmetatable(L, LuaUdp::GetTypeTag());
   lua_pushvalue(L, -1);
   lua_setfield(L, -2, "__index");
   lua_pushlightuserdata(L, &interface);
   luaL_setfuncs(L, kUdpMetatable, 1);
   lua_pop(L, 1);
 
-  luaL_newmetatable(L, kNameUdpMuxServer);
+  luaL_newmetatable(L, LuaUdpMux::GetTypeTag());
   lua_pushvalue(L, -1);
   lua_setfield(L, -2, "__index");
   lua_pushlightuserdata(L, &interface);
   luaL_setfuncs(L, kUdpMuxServerMetatable, 1);
   lua_pop(L, 1);
 
-  luaL_newmetatable(L, kNameUdpDynMux);
+  luaL_newmetatable(L, LuaUdpDynMux::GetTypeTag());
   lua_pushvalue(L, -1);
   lua_setfield(L, -2, "__index");
   lua_pushlightuserdata(L, &interface);

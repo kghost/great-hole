@@ -10,7 +10,7 @@
 namespace gh {
 
 static void PipelineStop(lua_State* L) {
-  auto& pipe = *(std::shared_ptr<Pipeline>*)luaL_checkudata(L, 1, kNamePipeline);
+  auto& pipe = *LuaPipeline::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   interface.Schedule([&interface, pipe](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
@@ -20,7 +20,7 @@ static void PipelineStop(lua_State* L) {
 }
 
 static const auto kPipelineMetatable = std::to_array<const struct luaL_Reg>({
-    {.name = "__gc", .func = SafeCall<Gc<Pipeline, kNamePipeline>>},
+    {.name = "__gc", .func = SafeCall<LuaPipeline::Gc>},
     {.name = "stop", .func = SafeYield<PipelineStop>},
     {.name = nullptr, .func = nullptr},
 });
@@ -33,16 +33,15 @@ static void PipelineNew(lua_State* L) {
 
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  std::shared_ptr<Endpoint> ep1 = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, 1, kNameEndpoint);
+  std::shared_ptr<Endpoint> ep1 = *LuaEndpoint::Get(L, 1);
   std::vector<std::shared_ptr<Filter>> filters(c - 2);
   for (auto i = 2; i < c; ++i) {
-    filters[i - 2] = *(std::shared_ptr<Filter>*)luaL_checkudata(L, i, kNameFilter);
+    filters[i - 2] = *LuaFilter::Get(L, i);
   }
-  std::shared_ptr<Endpoint> ep2 = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, c, kNameEndpoint);
+  std::shared_ptr<Endpoint> ep2 = *LuaEndpoint::Get(L, c);
 
-  auto pipe = new (lua_newuserdata(L, sizeof(std::shared_ptr<Pipeline>)))
-      std::shared_ptr<Pipeline>(new Pipeline(ep1, filters, ep2));
-  luaL_getmetatable(L, kNamePipeline);
+  auto pipe = LuaPipeline::MakeShared(L, ep1, filters, ep2);
+  luaL_getmetatable(L, LuaPipeline::GetTypeTag());
   lua_setmetatable(L, -2);
 
   interface.Schedule([&interface, pipe](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
@@ -59,7 +58,7 @@ void RegisterPipeline(lua_State* L, LuaInterface& interface) {
   lua_pushcclosure(L, SafeYield<PipelineNew>, 1);
   lua_setfield(L, -2, "pipeline");
 
-  luaL_newmetatable(L, kNamePipeline);
+  luaL_newmetatable(L, LuaPipeline::GetTypeTag());
   lua_pushvalue(L, -1);
   lua_setfield(L, -2, "__index");
   lua_pushlightuserdata(L, &interface);
