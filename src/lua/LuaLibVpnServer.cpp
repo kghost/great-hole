@@ -2,7 +2,7 @@
 
 #include "LuaLibCommon.hpp"
 
-#include "VpnServer.hpp"
+#include "VpnServer.hpp" // IWYU pragma: keep
 
 namespace gh {
 

@@ -5,7 +5,7 @@
 
 #include "Endpoint.hpp"
 #include "Filter.hpp"
-#include "Pipeline.hpp"
+#include "Pipeline.hpp" // IWYU pragma: keep
 
 namespace gh {
 

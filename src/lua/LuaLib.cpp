@@ -36,6 +36,8 @@ static int HoleOpen(lua_State* L) {
   RegisterPipeline(L, interface);
   RegisterEndpoint(L, interface);
   RegisterUdp(L, interface);
+  RegisterUdpMux(L, interface);
+  RegisterUdpDynMux(L, interface);
   RegisterTunSplitIp(L, interface);
   RegisterVpnServer(L, interface);
 

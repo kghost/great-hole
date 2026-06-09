@@ -1,6 +1,5 @@
 #include "LuaLibCommon.hpp"
 
-#include "Endpoint.hpp"
 #include "EndpointTunSplitIp.hpp"
 #include "ErrorCode.hpp"
 

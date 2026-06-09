@@ -17,15 +17,6 @@ template <size_t N> struct FixedString {
   }
 };
 
-class Pipeline;
-class Endpoint;
-class Filter;
-class Udp;
-class UdpMux;
-class UdpDynMux;
-class EndpointTunSplitIp;
-class VpnServer;
-
 template <FixedString TypeTag, typename Type> class LuaSafeUserData {
 public:
   static constexpr const char* GetTypeTag() { return TypeTag.value; }
@@ -42,6 +33,15 @@ public:
     return 0;
   }
 };
+
+class Pipeline;
+class Endpoint;
+class Filter;
+class Udp;
+class UdpMux;
+class UdpDynMux;
+class EndpointTunSplitIp;
+class VpnServer;
 
 using LuaPipeline = LuaSafeUserData<"Hole.pipeline", std::shared_ptr<Pipeline>>;
 using LuaEndpoint = LuaSafeUserData<"Hole.endpoint", std::shared_ptr<Endpoint>>;
@@ -82,6 +82,8 @@ void RegisterFilter(lua_State* L, LuaInterface& interface);
 void RegisterPipeline(lua_State* L, LuaInterface& interface);
 void RegisterEndpoint(lua_State* L, LuaInterface& interface);
 void RegisterUdp(lua_State* L, LuaInterface& interface);
+void RegisterUdpMux(lua_State* L, LuaInterface& interface);
+void RegisterUdpDynMux(lua_State* L, LuaInterface& interface);
 void RegisterTunSplitIp(lua_State* L, LuaInterface& interface);
 void RegisterVpnServer(lua_State* L, LuaInterface& interface);
 
