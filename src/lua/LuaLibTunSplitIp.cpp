@@ -9,11 +9,7 @@ static void TunSplitIpNew(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
   std::shared_ptr<EndpointTunSplitIp>* tun = nullptr;
   if (lua_gettop(L) == 1) {
-    if (lua_isnumber(L, 1)) {
-      tun = LuaTunSplitIp::MakeShared(L, interface.GetContext(), (int)lua_tonumber(L, 1));
-    } else {
-      tun = LuaTunSplitIp::MakeShared(L, interface.GetContext(), lua_tostring(L, 1));
-    }
+    tun = LuaTunSplitIp::MakeShared(L, interface.GetContext(), lua_tostring(L, 1));
   } else {
     throw std::runtime_error("tun_split_ip: invalid arguments");
   }

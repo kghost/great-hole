@@ -34,35 +34,34 @@ namespace gh {
 EndpointTunSplitIp::EndpointTunSplitIp(boost::asio::io_context& ioContext, const std::string& name)
     : _TunFileDescriptor(ioContext), _TunName(name) {}
 
-EndpointTunSplitIp::EndpointTunSplitIp(boost::asio::io_context& ioContext, int testFd)
-    : _TunFileDescriptor(ioContext), _TunName("test"), _TestFd(testFd) {}
+EndpointTunSplitIp::EndpointTunSplitIp(boost::asio::io_context& ioContext, const std::string& name, int fd)
+    : _TunFileDescriptor(ioContext), _TunName(name) {
+  _TunFileDescriptor.assign(fd);
+}
 
 EndpointTunSplitIp::~EndpointTunSplitIp() { assert(_Channels.empty()); }
 
 std::string EndpointTunSplitIp::GetName() const { return "TunSplitIp:" + _TunName; }
 
 Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::DoStart() {
-  if (_TestFd != -1) {
-    _TunFileDescriptor.assign(_TestFd);
-    _TunFileDescriptor.non_blocking(true);
-    co_return ErrorCode{};
+  if (!_TunFileDescriptor.is_open()) {
+    int fd = ::open("/dev/net/tun", O_RDWR);
+    if (fd < 0) {
+      co_return ErrorCode(errno, system_category());
+    }
+
+    struct ifreq ifr;
+    memset(&ifr, 0, sizeof(ifr));
+    strncpy(ifr.ifr_name, _TunName.c_str(), IFNAMSIZ);
+    ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
+    if (::ioctl(fd, TUNSETIFF, (void*)&ifr) < 0) {
+      ::close(fd);
+      co_return ErrorCode(errno, system_category());
+    }
+
+    _TunFileDescriptor.assign(fd);
   }
 
-  int fd = ::open("/dev/net/tun", O_RDWR);
-  if (fd < 0) {
-    co_return ErrorCode(errno, system_category());
-  }
-
-  struct ifreq ifr;
-  memset(&ifr, 0, sizeof(ifr));
-  strncpy(ifr.ifr_name, _TunName.c_str(), IFNAMSIZ);
-  ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
-  if (::ioctl(fd, TUNSETIFF, (void*)&ifr) < 0) {
-    ::close(fd);
-    co_return ErrorCode(errno, system_category());
-  }
-
-  _TunFileDescriptor.assign(fd);
   _TunFileDescriptor.non_blocking(true);
   co_return ErrorCode{};
 }

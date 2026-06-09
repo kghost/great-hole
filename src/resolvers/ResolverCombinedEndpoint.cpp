@@ -1,7 +1,5 @@
 #include "ResolverCombinedEndpoint.hpp"
 
-#include "GetCurrentFiber.hpp"
-
 namespace gh {
 
 ResolverCombinedEndpoint::ResolverCombinedEndpoint(std::shared_ptr<ResolverIp> ipResolver,
@@ -33,7 +31,8 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverCombinedEndpoint::DoStart() {
 Omni::Fiber::Coroutine<ErrorCode> ResolverCombinedEndpoint::DoGracefulStop() {
   co_await _IpResolver->Stop();
   co_await _PortResolver->Stop();
-  co_await (co_await Omni::Fiber::GetCurrentFiber()).WaitAll();
+  co_await _IpResolver->WaitService();
+  co_await _PortResolver->WaitService();
   co_return ErrorCode{};
 }
 

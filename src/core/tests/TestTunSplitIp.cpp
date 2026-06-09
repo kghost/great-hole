@@ -40,7 +40,7 @@ TEST(TunSplitIpTest, DispatchAndVerifyIP) {
   int testFd = fds[0];
   int externalFd = fds[1];
 
-  auto tunSplit = std::make_shared<EndpointTunSplitIp>(io, testFd);
+  auto tunSplit = std::make_shared<EndpointTunSplitIp>(io, "test", testFd);
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -215,7 +215,7 @@ TEST(TunSplitIpTest, MultipleIPsPerChannel) {
   int testFd = fds[0];
   int externalFd = fds[1];
 
-  auto tunSplit = std::make_shared<EndpointTunSplitIp>(io, testFd);
+  auto tunSplit = std::make_shared<EndpointTunSplitIp>(io, "test", testFd);
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {

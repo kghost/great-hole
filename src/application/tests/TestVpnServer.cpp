@@ -42,7 +42,7 @@ TEST(VpnServerTest, ConstructorStoresFiltersAndAppliesThem) {
   int testFd = fds[0];
   int externalFd = fds[1];
 
-  auto tunSplit = std::make_shared<EndpointTunSplitIp>(io, testFd);
+  auto tunSplit = std::make_shared<EndpointTunSplitIp>(io, "test", testFd);
   int filterCounter = 0;
   auto mockFilter = std::make_shared<MockFilter>(filterCounter);
   std::vector<std::shared_ptr<Filter>> filters = {mockFilter};

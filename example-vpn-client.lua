@@ -1,26 +1,32 @@
+function string.fromhex(str)
+        return (str:gsub('..', function (cc)
+                return string.char(tonumber(cc, 16))
+        end))
+end
+
 -- Create a TunSplitIp interface (using tun0)
 tun = hole.tun("tun0")
-
--- Create a XOR filter for packet encryption/decryption
-xor_filter = hole.filter_xor("adfasfasghagertasknldgfowpgnhophgoasndgflanhgopwehtgweopgfhweiopgfhiopafnhoawenfopw")
 
 -- Create the VpnServer manager, passing the TunSplitIp interface and a list of filters
 udp = hole.udp_dyn_mux()
 
 -- Register a peer with a 16-byte PSK and its permitted IPv6 address(es)
 -- The PSK must be exactly 16 bytes.
-udp:create_channel(psk1, ips1)
+key = "662069c972f50b26b3a75d03265e9eb1"
+channel = udp:create_channel(key:fromhex(), "server:port")
 
--- Create a dynamic UDP multiplexer on port 25525, associating it with our VpnServer callback
-udp_dyn = hole.udp_dyn_mux(25525, vpn)
+-- Create a XOR filter for packet encryption/decryption
+filter_key = "25c55aeeed1c3c194ac3ecc51ad7197a33844a453500842b0e38416c8b39cf22e757f95ef441bc4f60367e6e165722f3c46913a530f6a165571e70e11cb2f0ee"
+xor_filter = hole.filter_xor(filter_key:fromhex())
 
-print("VPN Server started on port 25525...")
+-- Pipeline: tun <-> xor_filter <-> channel
+p = hole.pipeline(tun, xor_filter, channel)
 
--- Start the VPN Server event processing loop.
--- This blocks the current Lua fiber and processes connection/disconnection events.
-vpn:run()
+hole.wait_for_exit()
 
-udp_dyn:stop()
-tun_split:stop()
+p:stop()
 
-print("VPN Server stopped.")
+udp:stop()
+tun:stop()
+
+print("VPN Client stopped.")

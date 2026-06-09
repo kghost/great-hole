@@ -23,7 +23,7 @@ public:
   class Channel;
 
   explicit EndpointTunSplitIp(boost::asio::io_context& ioContext, const std::string& name);
-  explicit EndpointTunSplitIp(boost::asio::io_context& ioContext, int testFd);
+  explicit EndpointTunSplitIp(boost::asio::io_context& ioContext, const std::string& name, int fd);
   ~EndpointTunSplitIp() override;
 
   EndpointTunSplitIp(const EndpointTunSplitIp&) = delete;
@@ -50,7 +50,6 @@ private:
 
   boost::asio::posix::stream_descriptor _TunFileDescriptor;
   const std::string _TunName;
-  const int _TestFd{-1};
   std::map<boost::asio::ip::address_v6, std::shared_ptr<Channel>> _Channels;
   Omni::Fiber::RemoteCall _ChannelRpc;
 };
