@@ -33,15 +33,15 @@ static void PipelineNew(lua_State* L) {
 
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  std::shared_ptr<EndpointInput> in = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, 1, kNameEndpoint);
+  std::shared_ptr<Endpoint> ep1 = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, 1, kNameEndpoint);
   std::vector<std::shared_ptr<Filter>> filters(c - 2);
   for (auto i = 2; i < c; ++i) {
     filters[i - 2] = *(std::shared_ptr<Filter>*)luaL_checkudata(L, i, kNameFilter);
   }
-  std::shared_ptr<EndpointOutput> out = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, c, kNameEndpoint);
+  std::shared_ptr<Endpoint> ep2 = *(std::shared_ptr<Endpoint>*)luaL_checkudata(L, c, kNameEndpoint);
 
   auto pipe = new (lua_newuserdata(L, sizeof(std::shared_ptr<Pipeline>)))
-      std::shared_ptr<Pipeline>(new Pipeline(in, filters, out));
+      std::shared_ptr<Pipeline>(new Pipeline(ep1, filters, ep2));
   luaL_getmetatable(L, kNamePipeline);
   lua_setmetatable(L, -2);
 

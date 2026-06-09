@@ -5,13 +5,11 @@ c2 = u2:create_channel("127.0.0.1", 25525)
 
 f = hole.filter_xor("adfasfasghagertasknldgfowpgnhophgoasndgflanhgopwehtgweopgfhweiopgfhiopafnhoawenfopw")
 
-p1 = hole.pipeline(c1, f, c2)
-p2 = hole.pipeline(c2, f, c1)
+p = hole.pipeline(c1, f, c2)
 
 hole.wait_for_exit()
 
-p2:stop()
-p1:stop()
+p:stop()
 
 c2:stop()
 c1:stop()

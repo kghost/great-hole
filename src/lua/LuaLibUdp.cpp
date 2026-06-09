@@ -7,7 +7,6 @@
 #include "ErrorCode.hpp"
 #include "ResolverCombinedEndpoint.hpp"
 #include "ResolverHelper.hpp"
-#include "VpnServer.hpp"
 
 namespace gh {
 
@@ -56,12 +55,10 @@ static void UdpStop(lua_State* L) {
   });
 }
 
-static const struct luaL_Reg kUdpMetatable[] = {
-    {"__gc", SafeCall<Gc<Udp, kNameUdp>>},
-    {"create_channel", SafeYield<UdpCreateChannel>},
-    {"stop", SafeYield<UdpStop>},
-    {nullptr, nullptr}
-};
+static const struct luaL_Reg kUdpMetatable[] = {{"__gc", SafeCall<Gc<Udp, kNameUdp>>},
+                                                {"create_channel", SafeYield<UdpCreateChannel>},
+                                                {"stop", SafeYield<UdpStop>},
+                                                {nullptr, nullptr}};
 
 static void UdpNew(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
@@ -143,12 +140,10 @@ static void UdpMuxServerStop(lua_State* L) {
   });
 }
 
-static const struct luaL_Reg kUdpMuxServerMetatable[] = {
-    {"__gc", SafeCall<Gc<UdpMux, kNameUdpMuxServer>>},
-    {"create_channel", SafeYield<UdpMuxServerCreateChannel>},
-    {"stop", SafeYield<UdpMuxServerStop>},
-    {nullptr, nullptr}
-};
+static const struct luaL_Reg kUdpMuxServerMetatable[] = {{"__gc", SafeCall<Gc<UdpMux, kNameUdpMuxServer>>},
+                                                         {"create_channel", SafeYield<UdpMuxServerCreateChannel>},
+                                                         {"stop", SafeYield<UdpMuxServerStop>},
+                                                         {nullptr, nullptr}};
 
 static void UdpMuxServerNew(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
@@ -218,7 +213,7 @@ static void UdpDynMuxCreateChannel(lua_State* L) {
   lua_setmetatable(L, -2);
 
   interface.Schedule([&interface, u, psk, resolver = std::move(resolver), ch](this auto self, lua_State* L,
-                                                                               int nres) -> Omni::Fiber::Coroutine<int> {
+                                                                              int nres) -> Omni::Fiber::Coroutine<int> {
     if (resolver) {
       *ch = co_await u->CreateChannel(psk, resolver);
     } else {
@@ -238,12 +233,10 @@ static void UdpDynMuxStop(lua_State* L) {
   });
 }
 
-static const struct luaL_Reg kUdpDynMuxMetatable[] = {
-    {"__gc", SafeCall<Gc<UdpDynMux, kNameUdpDynMux>>},
-    {"create_channel", SafeYield<UdpDynMuxCreateChannel>},
-    {"stop", SafeYield<UdpDynMuxStop>},
-    {nullptr, nullptr}
-};
+static const struct luaL_Reg kUdpDynMuxMetatable[] = {{"__gc", SafeCall<Gc<UdpDynMux, kNameUdpDynMux>>},
+                                                      {"create_channel", SafeYield<UdpDynMuxCreateChannel>},
+                                                      {"stop", SafeYield<UdpDynMuxStop>},
+                                                      {nullptr, nullptr}};
 
 static void UdpDynMuxNew(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));

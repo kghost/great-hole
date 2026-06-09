@@ -4,14 +4,14 @@ This document details the design of the C++ `VpnServer` component in the `great-
 
 ## Overview
 
-The VPN Server manages incoming client connection sessions. A client connects by negotiating a channel over `EndpointUdpDynMux`. Upon successful negotiation, a tunnel interface channel on `EndpointTunSplitIp` is created, and bidirectional packet routing pipelines are set up to connect the two endpoints. When the client disconnects or times out, the pipelines and split IP channel are stopped and cleaned up.
+The VPN Server manages incoming client connection sessions. A client connects by negotiating a channel over `EndpointUdpDynMux`. Upon successful negotiation, a tunnel interface channel on `EndpointTunSplitIp` is created, and a bidirectional packet routing pipeline is set up to connect the two endpoints. When the client disconnects or times out, the pipeline and split IP channel are stopped and cleaned up.
 
 ```mermaid
 graph TD
     UdpMux[EndpointUdpDynMux] -->|Connection Callback| Vpn[VpnServer]
     Vpn -->|Accept Events| LuaFiber[Lua Fiber Run Loop]
     LuaFiber -->|Create Channel| TunSplit[EndpointTunSplitIp]
-    LuaFiber -->|Start Bidirectional Pipelines| Pipe[Pipeline Pair]
+    LuaFiber -->|Start Bidirectional Pipeline| Pipe[Pipeline]
     Pipe -->|Read/Write| UdpCh[UdpDynMux::Channel]
     Pipe -->|Read/Write| TunCh[EndpointTunSplitIp::Channel]
 ```
@@ -81,8 +81,7 @@ public:
 private:
   struct Session {
     std::shared_ptr<EndpointTunSplitIp::Channel> TunChannel;
-    std::shared_ptr<Pipeline> InPipeline;
-    std::shared_ptr<Pipeline> OutPipeline;
+    std::shared_ptr<Pipeline> Pipe;
   };
 
   std::shared_ptr<EndpointTunSplitIp> _TunSplit;

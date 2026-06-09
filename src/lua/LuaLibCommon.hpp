@@ -18,8 +18,16 @@ inline constexpr char kNameUdpDynMux[] = "Hole.udp-dyn-mux";
 inline constexpr char kNameTunSplitIp[] = "Hole.tun-split-ip";
 inline constexpr char kNameVpnServer[] = "Hole.vpn-server";
 
-template <int F(lua_State* L)>
-inline int SafeCall(lua_State* L) {
+template <const char* TypeTag, typename Type> class LuaSafeUserData {
+public:
+  static constexpr const char* GetTypeTag() { return TypeTag; }
+  static Type* Get(lua_State* L, int index) { return (Type*)luaL_checkudata(L, index, TypeTag); }
+  template <typename... Args> static Type* New(lua_State* L, Args&&... args) {
+    return new (lua_newuserdata(L, sizeof(Type))) Type(std::forward<Args>(args)...);
+  }
+};
+
+template <int F(lua_State* L)> inline int SafeCall(lua_State* L) {
   try {
     return F(L);
   } catch (std::exception const& e) {
@@ -27,8 +35,7 @@ inline int SafeCall(lua_State* L) {
   }
 }
 
-template <void F(lua_State* L)>
-inline int SafeYield(lua_State* L) {
+template <void F(lua_State* L)> inline int SafeYield(lua_State* L) {
   try {
     F(L);
   } catch (std::exception const& e) {
@@ -37,8 +44,7 @@ inline int SafeYield(lua_State* L) {
   return lua_yield(L, 0);
 }
 
-template <typename T, const char N[]>
-inline int Gc(lua_State* L) {
+template <typename T, const char N[]> inline int Gc(lua_State* L) {
   typedef std::shared_ptr<T> P;
   ((P*)luaL_checkudata(L, 1, N))->~P();
   return 0;

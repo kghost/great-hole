@@ -61,8 +61,7 @@ Omni::Fiber::Coroutine<void> VpnServer::Run(Cancel& c) {
       if (_Sessions.contains(ev.Channel)) {
         BOOST_LOG_TRIVIAL(warning) << "VpnServer: Client session already exists, cleaning up old session";
         auto& oldSession = _Sessions[ev.Channel];
-        co_await oldSession.InPipeline->Stop();
-        co_await oldSession.OutPipeline->Stop();
+        co_await oldSession.Pipe->Stop();
         co_await _TunSplit->RemoveChannel(oldSession.TunChannel);
         _Sessions.erase(ev.Channel);
       }
@@ -74,27 +73,23 @@ Omni::Fiber::Coroutine<void> VpnServer::Run(Cancel& c) {
         continue;
       }
 
-      BOOST_LOG_TRIVIAL(info) << "VpnServer: Starting bidirectional pipelines";
-      auto inPipe = std::make_shared<Pipeline>(ev.Channel, _Filters, tunCh);
-      auto outPipe = std::make_shared<Pipeline>(tunCh, _Filters, ev.Channel);
+      BOOST_LOG_TRIVIAL(info) << "VpnServer: Starting bidirectional pipeline";
+      auto pipe = std::make_shared<Pipeline>(ev.Channel, _Filters, tunCh);
 
-      auto errIn = co_await inPipe->Start();
-      auto errOut = co_await outPipe->Start();
-      if (errIn || errOut) {
-        BOOST_LOG_TRIVIAL(error) << "VpnServer: Failed to start pipelines";
-        co_await inPipe->Stop();
-        co_await outPipe->Stop();
+      auto err = co_await pipe->Start();
+      if (err) {
+        BOOST_LOG_TRIVIAL(error) << "VpnServer: Failed to start pipeline";
+        co_await pipe->Stop();
         co_await _TunSplit->RemoveChannel(tunCh);
         continue;
       }
 
-      _Sessions.emplace(ev.Channel, Session{std::move(tunCh), std::move(inPipe), std::move(outPipe)});
+      _Sessions.emplace(ev.Channel, Session{std::move(tunCh), std::move(pipe)});
     } else if (ev.Type == EventType::kClosed) {
       auto it = _Sessions.find(ev.Channel);
       if (it != _Sessions.end()) {
         BOOST_LOG_TRIVIAL(info) << "VpnServer: Cleaning up disconnected client session";
-        co_await it->second.InPipeline->Stop();
-        co_await it->second.OutPipeline->Stop();
+        co_await it->second.Pipe->Stop();
         co_await _TunSplit->RemoveChannel(it->second.TunChannel);
         _Sessions.erase(it);
       }
@@ -104,8 +99,7 @@ Omni::Fiber::Coroutine<void> VpnServer::Run(Cancel& c) {
   // Cleanup all sessions on stop
   BOOST_LOG_TRIVIAL(info) << "VpnServer: Stopping all client sessions";
   for (auto& [ch, session] : _Sessions) {
-    co_await session.InPipeline->Stop();
-    co_await session.OutPipeline->Stop();
+    co_await session.Pipe->Stop();
     co_await _TunSplit->RemoveChannel(session.TunChannel);
   }
   _Sessions.clear();
