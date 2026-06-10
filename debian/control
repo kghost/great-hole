@@ -3,7 +3,7 @@ Section: utils
 Priority: extra
 Maintainer: Zang MingJie <zealot0630@gmail.com>
 Build-Depends: debhelper-compat (= 13), debhelper (>= 13), cmake, clang,
- libclang-rt-dev, netbase, zlib1g-dev, libdw-dev, libboost-dev,
+ libclang-rt-dev, netbase, zlib1g-dev, libdw-dev, libc-ares-dev, libboost-dev,
  libboost-program-options-dev, libboost-log-dev, libboost-chrono-dev,
  liblua5.4-dev, pkgconf, libgtest-dev
 Standards-Version: 3.9.4
