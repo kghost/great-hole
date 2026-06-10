@@ -6,6 +6,7 @@
 #include <boost/log/trivial.hpp>
 
 #include "Select.hpp"
+#include "SelectPair.hpp"
 
 namespace gh {
 

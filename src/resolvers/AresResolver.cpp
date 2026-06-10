@@ -15,6 +15,7 @@
 
 #include "Cancel.hpp"
 #include "Select.hpp"
+#include "SelectPair.hpp"
 #include "Utils.hpp"
 
 namespace gh {

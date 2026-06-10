@@ -3,6 +3,7 @@
 #include "Event.hpp"
 #include "GetCurrentFiber.hpp"
 #include "Select.hpp"
+#include "SelectPair.hpp"
 
 namespace gh {
 

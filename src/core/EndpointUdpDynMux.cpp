@@ -24,6 +24,7 @@
 #include "ErrorCode.hpp"
 #include "GetCurrentFiber.hpp"
 #include "Select.hpp"
+#include "SelectPair.hpp"
 #include "ServiceBase.hpp"
 
 namespace gh {

@@ -25,6 +25,7 @@
 #include "GetCurrentFiber.hpp"
 #include "Packet.hpp"
 #include "Select.hpp"
+#include "SelectPair.hpp"
 #include "ServiceBase.hpp"
 #include "Utils.hpp"
 
@@ -67,12 +68,13 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::DoStart() {
 }
 
 Omni::Fiber::Coroutine<void> EndpointTunSplitIp::DoWork() {
-  _ReadLoopFiber = (co_await Omni::Fiber::GetCurrentFiber())
-      .Spawn("EndpointTunSplitIp ReadLoop:" + _TunName + "@" + std::to_string(reinterpret_cast<uintptr_t>(this)),
-             [this]() -> Omni::Fiber::Coroutine<void> {
-               co_await ReadLoop();
-               co_return;
-             });
+  _ReadLoopFiber =
+      (co_await Omni::Fiber::GetCurrentFiber())
+          .Spawn("EndpointTunSplitIp ReadLoop:" + _TunName + "@" + std::to_string(reinterpret_cast<uintptr_t>(this)),
+                 [this]() -> Omni::Fiber::Coroutine<void> {
+                   co_await ReadLoop();
+                   co_return;
+                 });
 
   bool stopped = false;
   while (!stopped) {

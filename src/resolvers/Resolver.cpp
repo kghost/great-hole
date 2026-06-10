@@ -5,6 +5,7 @@
 #include "Coroutine.hpp"
 #include "ErrorCode.hpp"
 #include "Select.hpp"
+#include "SelectPair.hpp"
 
 namespace gh {
 
