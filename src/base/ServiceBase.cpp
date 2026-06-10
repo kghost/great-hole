@@ -50,6 +50,9 @@ Omni::Fiber::Coroutine<ErrorCode> ServiceBase::Start() {
 Omni::Fiber::Coroutine<void> ServiceBase::DoWork() { co_return co_await _Service.value()._Stop.GetFiberCancelEvent(); }
 
 Omni::Fiber::Coroutine<ErrorCode> ServiceBase::Stop() {
+  if (!_Service.has_value()) {
+    co_return ErrorCode{};
+  }
   _Service.value()._Stop.Trigger();
   co_return co_await _Service.value()._StopError;
 }

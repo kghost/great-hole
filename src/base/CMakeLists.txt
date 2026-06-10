@@ -31,3 +31,6 @@ foreach(suffix "" "-asan")
     target_link_options(${target} PRIVATE -fsanitize=address)
   endif()
 endforeach()
+
+add_subdirectory(tests)
+
