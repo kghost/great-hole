@@ -140,15 +140,16 @@ public:
 
       auto [listResult, cancelled] =
           co_await Omni::Fiber::Select(list, Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] {}));
-      if (cancelled) {
-        co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
-      }
 
       // Cancel outstanding waits
       for (auto const& [fd, tracker] : _Trackers) {
         tracker->Descriptor.cancel();
       }
       timer.cancel();
+
+      if (cancelled) {
+        co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+      }
     }
   }
 
@@ -276,7 +277,8 @@ AresResolver::ResolveSrv(boost::asio::any_io_executor executor, const std::strin
   };
 
   ares_dns_record_t* dnsrecQuery = nullptr;
-  ares_status_t queryStatus = ares_dns_record_create(&dnsrecQuery, 0, ARES_FLAG_RD, ARES_OPCODE_QUERY, ARES_RCODE_NOERROR);
+  ares_status_t queryStatus =
+      ares_dns_record_create(&dnsrecQuery, 0, ARES_FLAG_RD, ARES_OPCODE_QUERY, ARES_RCODE_NOERROR);
   if (queryStatus != ARES_SUCCESS) {
     co_return std::unexpected(make_error_code(boost::asio::error::no_recovery));
   }
@@ -288,7 +290,8 @@ AresResolver::ResolveSrv(boost::asio::any_io_executor executor, const std::strin
   }
 
   queryStatus = ares_search_dnsrec(runner->GetChannel(), dnsrecQuery,
-                                   LambdaBridge<decltype(SrvCallback), ares_status_t, size_t, const ares_dns_record_t*>, &SrvCallback);
+                                   LambdaBridge<decltype(SrvCallback), ares_status_t, size_t, const ares_dns_record_t*>,
+                                   &SrvCallback);
   ares_dns_record_destroy(dnsrecQuery);
 
   if (queryStatus != ARES_SUCCESS) {
