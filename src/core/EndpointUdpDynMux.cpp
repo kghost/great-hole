@@ -106,13 +106,15 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNego
       }
     } else if (_PeerResolver) {
       // TODO: resolver need to be cancellable
-      BOOST_LOG_TRIVIAL(info) << GetName() << " resolving peer";
+      BOOST_LOG_TRIVIAL(info) << GetName() << " resolver " << _PeerResolver->GetName() << " resolving peer";
       auto res = co_await _PeerResolver->Resolve(_Service.value()._Stop);
       if (res.has_value()) {
-        BOOST_LOG_TRIVIAL(info) << GetName() << " resolved peer endpoint: " << res.value();
+        BOOST_LOG_TRIVIAL(info) << GetName() << " resolver " << _PeerResolver->GetName()
+                                << " resolved peer endpoint: " << res.value();
         _Peer = res.value();
       } else {
-        BOOST_LOG_TRIVIAL(warning) << GetName() << " peer resolution failed: " << res.error().message();
+        BOOST_LOG_TRIVIAL(warning) << GetName() << " resolver " << _PeerResolver->GetName()
+                                   << " resolution failed: " << res.error().message();
       }
     } else {
       BOOST_LOG_TRIVIAL(info) << GetName() << " negotiating waiting for peer endpoint initiate";

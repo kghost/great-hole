@@ -6,6 +6,7 @@
 
 #include "Asio.hpp"
 #include "Coroutine.hpp"
+#include "ErrorCode.hpp"
 #include "GetCurrentFiber.hpp"
 #include "Manager.hpp"
 #include "ResolverCombinedEndpoint.hpp"
@@ -247,7 +248,8 @@ TEST(ResolverTest, ResolverCancellation) {
       auto res = co_await dnsResolver->Resolve(c);
       EXPECT_FALSE(res.has_value());
       if (!res.has_value()) {
-        EXPECT_EQ(res.error(), make_error_code(boost::asio::error::operation_aborted));
+        auto err = ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+        EXPECT_EQ(res.error(), err);
       }
       co_return;
     });
@@ -267,7 +269,8 @@ TEST(ResolverTest, ResolverCancellation) {
       auto res = co_await srvResolver->Resolve(c);
       EXPECT_FALSE(res.has_value());
       if (!res.has_value()) {
-        EXPECT_EQ(res.error(), make_error_code(boost::asio::error::operation_aborted));
+        auto err = ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+        EXPECT_EQ(res.error(), err);
       }
       co_return;
     });
