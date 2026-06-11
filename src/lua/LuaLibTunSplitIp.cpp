@@ -40,13 +40,13 @@ static void TunSplitIpCreateChannel(lua_State* L) {
     lua_pop(L, 1);
   }
 
-  auto ch = LuaEndpoint::New(L);
+  auto channel = LuaEndpoint::New(L);
   luaL_getmetatable(L, LuaEndpoint::GetTypeTag());
   lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, tun, ips = std::move(ips), ch](this auto self, lua_State* L,
-                                                                 int nres) -> Omni::Fiber::Coroutine<int> {
-    *ch = co_await tun->CreateChannel(ips);
+  interface.Schedule([&interface, tun, ips = std::move(ips), channel](this auto self, lua_State* L,
+                                                                      int nres) -> Omni::Fiber::Coroutine<int> {
+    *channel = co_await tun->CreateChannel(ips);
     co_return 1;
   });
 }
@@ -54,17 +54,18 @@ static void TunSplitIpCreateChannel(lua_State* L) {
 static void TunSplitIpRemoveChannel(lua_State* L) {
   auto& tun = *LuaTunSplitIp::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
-  auto& ch = *LuaEndpoint::Get(L, 2);
+  auto& channel = *LuaEndpoint::Get(L, 2);
 
-  auto tunCh = std::dynamic_pointer_cast<EndpointTunSplitIp::Channel>(ch);
-  if (!tunCh) {
+  auto tunChannel = std::dynamic_pointer_cast<EndpointTunSplitIp::Channel>(channel);
+  if (!tunChannel) {
     throw std::runtime_error("tun_split_ip remove_channel: invalid channel type");
   }
 
-  interface.Schedule([&interface, tun, tunCh](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    co_await tun->RemoveChannel(tunCh);
-    co_return 0;
-  });
+  interface.Schedule(
+      [&interface, tun, tunChannel](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+        co_await tun->RemoveChannel(tunChannel);
+        co_return 0;
+      });
 }
 
 static void TunSplitIpStop(lua_State* L) {

@@ -31,13 +31,13 @@ static void UdpDynMuxCreateChannel(lua_State* L) {
   UdpDynMux::PskType psk;
   std::copy_n(reinterpret_cast<const uint8_t*>(s), 16, psk.begin());
 
-  auto& u = *LuaUdpDynMux::Get(L, 1);
+  auto& udp = *LuaUdpDynMux::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   std::shared_ptr<ResolverEndpoint> resolver = nullptr;
   if (top == 3) {
     auto input = luaL_checkstring(L, 3);
-    resolver = FindResolverEndpoint(input, u->GetResolveFor());
+    resolver = FindResolverEndpoint(input, udp->GetResolveFor());
   } else if (top == 4) {
     auto host = luaL_checkstring(L, 3);
     luaL_checkany(L, 4);
@@ -45,20 +45,20 @@ static void UdpDynMuxCreateChannel(lua_State* L) {
     if (!port) {
       throw std::runtime_error("udp_dyn_mux_create_channel: port must be a number or a string");
     }
-    resolver = std::make_shared<ResolverCombinedEndpoint>(FindResolverIp(host, u->GetResolveFor()),
-                                                          FindResolverPort(port, u->GetResolveFor()));
+    resolver = std::make_shared<ResolverCombinedEndpoint>(FindResolverIp(host, udp->GetResolveFor()),
+                                                          FindResolverPort(port, udp->GetResolveFor()));
   }
 
-  auto ch = LuaEndpoint::New(L);
-  luaL_getmetatable(L, LuaEndpoint::GetTypeTag());
-  lua_setmetatable(L, -2);
+  interface.Schedule([&interface, udp, psk, resolver = std::move(resolver)](this auto self, lua_State* L,
+                                                                            int nres) -> Omni::Fiber::Coroutine<int> {
+    auto channel = LuaEndpoint::New(L);
+    luaL_getmetatable(L, LuaEndpoint::GetTypeTag());
+    lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, u, psk, resolver = std::move(resolver), ch](this auto self, lua_State* L,
-                                                                              int nres) -> Omni::Fiber::Coroutine<int> {
     if (resolver) {
-      *ch = co_await u->CreateChannel(psk, resolver);
+      *channel = co_await udp->CreateChannel(psk, resolver);
     } else {
-      *ch = co_await u->CreateChannel(psk);
+      *channel = co_await udp->CreateChannel(psk);
     }
     co_return 1;
   });

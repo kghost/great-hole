@@ -41,14 +41,14 @@ static void UdpMuxServerCreateChannel(lua_State* L) {
 
   interface.Schedule([&interface, u, id, resolver = std::move(resolver)](this auto self, lua_State* L,
                                                                          int nres) -> Omni::Fiber::Coroutine<int> {
-    auto ch = LuaEndpoint::New(L);
+    auto channel = LuaEndpoint::New(L);
     luaL_getmetatable(L, LuaEndpoint::GetTypeTag());
     lua_setmetatable(L, -2);
 
     if (resolver) {
-      *ch = co_await u->CreateChannel(id, resolver);
+      *channel = co_await u->CreateChannel(id, resolver);
     } else {
-      *ch = co_await u->CreateChannel(id);
+      *channel = co_await u->CreateChannel(id);
     }
     co_return 1;
   });

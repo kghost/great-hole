@@ -26,8 +26,8 @@ We extend `UdpDynMux::ChannelNotification` with `OnChannelClosed` to notify when
 class ChannelNotification {
 public:
   virtual ~ChannelNotification() = default;
-  virtual Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> ch) = 0;
-  virtual Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> ch) = 0;
+  virtual Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) = 0;
+  virtual Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) = 0;
 };
 ```
 
@@ -71,8 +71,8 @@ public:
   void UnregisterPeer(const UdpDynMux::PskType& psk);
 
   // Connection callbacks (fill the internal event pipe)
-  Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> ch) override;
-  Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> ch) override;
+  Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override;
+  Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override;
 
   // The main run loop called from the Lua fiber.
   // Processes connection/disconnection events, manages session pipelines and channels.

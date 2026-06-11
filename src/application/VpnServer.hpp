@@ -12,20 +12,13 @@
 #include "EndpointTunSplitIp.hpp"
 #include "EndpointUdpDynMux.hpp"
 #include "Filter.hpp"
-#include "Pipe.hpp"
 #include "Pipeline.hpp"
+#include "RemoteCall.hpp"
 
 namespace gh {
 
 class VpnServer : public UdpDynMux::ChannelNotification, public std::enable_shared_from_this<VpnServer> {
 public:
-  enum class EventType { kEstablished, kClosed };
-
-  struct Event {
-    EventType Type;
-    std::shared_ptr<UdpDynMux::Channel> Channel;
-  };
-
   explicit VpnServer(std::shared_ptr<EndpointTunSplitIp> tunSplit, std::vector<std::shared_ptr<Filter>> filters = {});
   ~VpnServer() override;
 
@@ -37,22 +30,22 @@ public:
   void RegisterPeer(const UdpDynMux::PskType& psk, const std::vector<boost::asio::ip::address_v6>& ips);
   void UnregisterPeer(const UdpDynMux::PskType& psk);
 
-  Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> ch) override;
-  Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> ch) override;
+  Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override;
+  Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override;
 
   Omni::Fiber::Coroutine<void> Run(Cancel& c);
 
 private:
   struct Session {
     std::shared_ptr<EndpointTunSplitIp::Channel> TunChannel;
-    std::shared_ptr<Pipeline> Pipe;
+    std::shared_ptr<Pipeline> Pipeline;
   };
 
   std::shared_ptr<EndpointTunSplitIp> _TunSplit;
   std::vector<std::shared_ptr<Filter>> _Filters;
   std::map<UdpDynMux::PskType, std::vector<boost::asio::ip::address_v6>> _Peers;
   std::map<std::shared_ptr<UdpDynMux::Channel>, Session> _Sessions;
-  Omni::Fiber::Pipe<Event> _Events;
+  Omni::Fiber::RemoteCall _ChannelCall;
 };
 
 } // namespace gh

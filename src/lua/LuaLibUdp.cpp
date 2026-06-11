@@ -38,13 +38,13 @@ static void UdpCreateChannel(lua_State* L) {
                                                           FindResolverPort(port, u->GetResolveFor()));
   }
 
-  auto ch = LuaEndpoint::New(L);
+  auto channel = LuaEndpoint::New(L);
   luaL_getmetatable(L, LuaEndpoint::GetTypeTag());
   lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, u, resolver = std::move(resolver), ch](this auto self, lua_State* L,
-                                                                         int nres) -> Omni::Fiber::Coroutine<int> {
-    *ch = co_await u->CreateChannel(resolver);
+  interface.Schedule([&interface, u, resolver = std::move(resolver), channel](this auto self, lua_State* L,
+                                                                              int nres) -> Omni::Fiber::Coroutine<int> {
+    *channel = co_await u->CreateChannel(resolver);
     co_return 1;
   });
 }

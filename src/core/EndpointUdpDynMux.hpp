@@ -29,15 +29,17 @@ public:
   class ChannelNotification {
   public:
     virtual ~ChannelNotification() = default;
-    virtual Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> ch) = 0;
-    virtual Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> ch) = 0;
+    virtual Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) = 0;
+    virtual Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) = 0;
   };
 
   class NoopChannelNotification : public ChannelNotification {
   public:
     ~NoopChannelNotification() override = default;
-    Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> ch) override { co_return; }
-    Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> ch) override { co_return; }
+    Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override {
+      co_return;
+    }
+    Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override { co_return; }
   };
   static NoopChannelNotification _NoopChannelNotification;
 
