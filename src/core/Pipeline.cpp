@@ -22,11 +22,13 @@ Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start() {
   auto me = std::static_pointer_cast<Pipeline>(shared_from_this());
   auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
 
-  fiber.Spawn(std::format("{}_1to2", GetName()),
-              [this, me]() mutable -> Omni::Fiber::Coroutine<void> { co_await RunDirection(_Ep1, _Ep2, false); });
+  _Fiber1 = fiber.Spawn(std::format("{}_1to2", GetName()), [this, me]() mutable -> Omni::Fiber::Coroutine<void> {
+    co_await RunDirection(_Ep1, _Ep2, false);
+  });
 
-  fiber.Spawn(std::format("{}_2to1", GetName()),
-              [this, me]() mutable -> Omni::Fiber::Coroutine<void> { co_await RunDirection(_Ep2, _Ep1, true); });
+  _Fiber2 = fiber.Spawn(std::format("{}_2to1", GetName()), [this, me]() mutable -> Omni::Fiber::Coroutine<void> {
+    co_await RunDirection(_Ep2, _Ep1, true);
+  });
 
   co_return ErrorCode{};
 }
@@ -107,6 +109,15 @@ Omni::Fiber::Coroutine<void> Pipeline::RunDirection(std::shared_ptr<Endpoint> in
 
 Omni::Fiber::Coroutine<ErrorCode> Pipeline::Stop() {
   _Stop.Trigger();
+  auto& current = co_await Omni::Fiber::GetCurrentFiber();
+  if (_Fiber1) {
+    co_await current.Join(_Fiber1);
+    _Fiber1.reset();
+  }
+  if (_Fiber2) {
+    co_await current.Join(_Fiber2);
+    _Fiber2.reset();
+  }
   co_return ErrorCode{};
 }
 

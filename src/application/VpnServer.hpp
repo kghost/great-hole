@@ -19,7 +19,8 @@ namespace gh {
 
 class VpnServer : public ServiceBase, public UdpDynMux::ChannelNotification {
 public:
-  explicit VpnServer(std::shared_ptr<EndpointTunSplitIp> tunSplit, std::vector<std::shared_ptr<Filter>> filters = {});
+  VpnServer(std::shared_ptr<EndpointTunSplitIp> tunSplit, std::shared_ptr<UdpDynMux> udpDynMux,
+            std::vector<std::shared_ptr<Filter>> filters = {});
   ~VpnServer() override;
 
   VpnServer(const VpnServer&) = delete;
@@ -29,8 +30,9 @@ public:
 
   std::string GetName() const override;
 
-  void RegisterPeer(const UdpDynMux::PskType& psk, const std::vector<boost::asio::ip::address_v6>& ips);
-  void UnregisterPeer(const UdpDynMux::PskType& psk);
+  Omni::Fiber::Coroutine<void> RegisterPeer(const UdpDynMux::PskType& psk,
+                                            const std::vector<boost::asio::ip::address_v6>& ips);
+  Omni::Fiber::Coroutine<void> UnregisterPeer(const UdpDynMux::PskType& psk);
 
   Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override;
   Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override;
@@ -47,6 +49,7 @@ private:
   };
 
   std::shared_ptr<EndpointTunSplitIp> _TunSplit;
+  std::shared_ptr<UdpDynMux> _UdpDynMux;
   std::vector<std::shared_ptr<Filter>> _Filters;
   std::map<UdpDynMux::PskType, std::vector<boost::asio::ip::address_v6>> _Peers;
   std::map<std::shared_ptr<UdpDynMux::Channel>, Session> _Sessions;

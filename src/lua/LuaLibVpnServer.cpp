@@ -12,31 +12,32 @@ namespace gh {
 static int VpnServerNew(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
   auto& tun = *LuaTunSplitIp::Get(L, 1);
+  auto& udp = *LuaUdpDynMux::Get(L, 2);
 
   std::vector<std::shared_ptr<Filter>> filters;
-  if (lua_gettop(L) >= 2) {
-    luaL_checktype(L, 2, LUA_TTABLE);
-    auto tableLen = lua_rawlen(L, 2);
+  if (lua_gettop(L) >= 3) {
+    luaL_checktype(L, 3, LUA_TTABLE);
+    auto tableLen = lua_rawlen(L, 3);
     for (unsigned int i = 1; i <= tableLen; ++i) {
-      lua_rawgeti(L, 2, i);
+      lua_rawgeti(L, 3, i);
       auto& f = *LuaFilter::Get(L, -1);
       filters.push_back(f);
       lua_pop(L, 1);
     }
   }
 
-  LuaVpnServer::MakeShared(L, tun, std::move(filters));
+  LuaVpnServer::MakeShared(L, tun, udp, std::move(filters));
   luaL_getmetatable(L, LuaVpnServer::GetTypeTag());
   lua_setmetatable(L, -2);
   return 1;
 }
 
-static int VpnServerRegisterPeer(lua_State* L) {
+static void VpnServerRegisterPeer(lua_State* L) {
   auto& srv = *LuaVpnServer::Get(L, 1);
   size_t len = 0;
   auto pskStr = luaL_checklstring(L, 2, &len);
   if (len != 16) {
-    return luaL_error(L, "vpn_server register_peer: psk must be exactly 16 bytes");
+    throw std::runtime_error("vpn_server register_peer: psk must be exactly 16 bytes");
   }
   UdpDynMux::PskType psk;
   std::copy_n(reinterpret_cast<const uint8_t*>(pskStr), 16, psk.begin());
@@ -51,22 +52,29 @@ static int VpnServerRegisterPeer(lua_State* L) {
     lua_pop(L, 1);
   }
 
-  srv->RegisterPeer(psk, ips);
-  return 0;
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+  interface.Schedule(
+      [srv, psk, ips = std::move(ips)](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+        co_await srv->RegisterPeer(psk, ips);
+        co_return 0;
+      });
 }
 
-static int VpnServerUnregisterPeer(lua_State* L) {
+static void VpnServerUnregisterPeer(lua_State* L) {
   auto& srv = *LuaVpnServer::Get(L, 1);
   size_t len = 0;
   auto pskStr = luaL_checklstring(L, 2, &len);
   if (len != 16) {
-    return luaL_error(L, "vpn_server unregister_peer: psk must be exactly 16 bytes");
+    throw std::runtime_error("vpn_server unregister_peer: psk must be exactly 16 bytes");
   }
   UdpDynMux::PskType psk;
   std::copy_n(reinterpret_cast<const uint8_t*>(pskStr), 16, psk.begin());
 
-  srv->UnregisterPeer(psk);
-  return 0;
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+  interface.Schedule([srv, psk](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    co_await srv->UnregisterPeer(psk);
+    co_return 0;
+  });
 }
 
 static void VpnServerStart(lua_State* L) {
@@ -102,8 +110,8 @@ static int VpnServerAsUdpDynMuxChannelNotification(lua_State* L) {
 
 static const struct luaL_Reg kVpnServerMetatable[] = {
     {"__gc", SafeCall<LuaVpnServer::Gc>},
-    {"register_peer", SafeCall<VpnServerRegisterPeer>},
-    {"unregister_peer", SafeCall<VpnServerUnregisterPeer>},
+    {"register_peer", SafeYield<VpnServerRegisterPeer>},
+    {"unregister_peer", SafeYield<VpnServerUnregisterPeer>},
     {"as_udp_dyn_mux_channel_notification", SafeCall<VpnServerAsUdpDynMuxChannelNotification>},
     {"start", SafeYield<VpnServerStart>},
     {"stop", SafeYield<VpnServerStop>},
@@ -121,8 +129,8 @@ void RegisterVpnServer(lua_State* L, LuaInterface& interface) {
   luaL_setfuncs(L, kVpnServerMetatable, 1);
   lua_pop(L, 1);
 
-  static const struct luaL_Reg kChannelNotificationMetatable[] = {
-      {"__gc", SafeCall<LuaChannelNotification::Gc>}, {nullptr, nullptr}};
+  static const struct luaL_Reg kChannelNotificationMetatable[] = {{"__gc", SafeCall<LuaChannelNotification::Gc>},
+                                                                  {nullptr, nullptr}};
 
   luaL_newmetatable(L, LuaChannelNotification::GetTypeTag());
   lua_pushvalue(L, -1);

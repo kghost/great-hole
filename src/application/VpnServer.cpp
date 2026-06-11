@@ -9,16 +9,30 @@
 
 namespace gh {
 
-VpnServer::VpnServer(std::shared_ptr<EndpointTunSplitIp> tunSplit, std::vector<std::shared_ptr<Filter>> filters)
-    : _TunSplit(std::move(tunSplit)), _Filters(std::move(filters)) {}
+VpnServer::VpnServer(std::shared_ptr<EndpointTunSplitIp> tunSplit, std::shared_ptr<UdpDynMux> udpDynMux,
+                     std::vector<std::shared_ptr<Filter>> filters)
+    : _TunSplit(tunSplit), _UdpDynMux(udpDynMux), _Filters(filters) {
+  udpDynMux->SetChannelNotification(*this);
+}
 
 VpnServer::~VpnServer() {}
 
-void VpnServer::RegisterPeer(const UdpDynMux::PskType& psk, const std::vector<boost::asio::ip::address_v6>& ips) {
+Omni::Fiber::Coroutine<void> VpnServer::RegisterPeer(const UdpDynMux::PskType& psk,
+                                                     const std::vector<boost::asio::ip::address_v6>& ips) {
   _Peers[psk] = ips;
+  if (_State == State::kRunning && _UdpDynMux) {
+    co_await _UdpDynMux->CreateChannel(psk);
+  }
+  co_return;
 }
 
-void VpnServer::UnregisterPeer(const UdpDynMux::PskType& psk) { _Peers.erase(psk); }
+Omni::Fiber::Coroutine<void> VpnServer::UnregisterPeer(const UdpDynMux::PskType& psk) {
+  _Peers.erase(psk);
+  if (_State == State::kRunning && _UdpDynMux) {
+    co_await _UdpDynMux->RemoveChannel(psk);
+  }
+  co_return;
+}
 
 Omni::Fiber::Coroutine<void> VpnServer::OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) {
   BOOST_LOG_TRIVIAL(info) << "VpnServer: client channel established: " << channel->GetName();
@@ -75,7 +89,14 @@ Omni::Fiber::Coroutine<void> VpnServer::OnChannelClosed(std::shared_ptr<UdpDynMu
 
 std::string VpnServer::GetName() const { return "VpnServer"; }
 
-Omni::Fiber::Coroutine<ErrorCode> VpnServer::DoStart() { co_return ErrorCode{}; }
+Omni::Fiber::Coroutine<ErrorCode> VpnServer::DoStart() {
+  if (_UdpDynMux) {
+    for (auto const& [psk, ips] : _Peers) {
+      co_await _UdpDynMux->CreateChannel(psk);
+    }
+  }
+  co_return ErrorCode{};
+}
 
 Omni::Fiber::Coroutine<void> VpnServer::DoWork() {
   BOOST_LOG_TRIVIAL(info) << "VpnServer: run loop started";

@@ -10,6 +10,10 @@
 #include "Filter.hpp"
 #include "Service.hpp"
 
+namespace Omni::Fiber {
+class Fiber;
+}
+
 namespace gh {
 
 class Pipeline : public std::enable_shared_from_this<Pipeline>, public Service {
@@ -35,6 +39,8 @@ private:
   std::shared_ptr<Endpoint> _Ep2;
   std::vector<std::shared_ptr<Filter>> _Filters;
   Cancel _Stop;
+  std::shared_ptr<Omni::Fiber::Fiber> _Fiber1;
+  std::shared_ptr<Omni::Fiber::Fiber> _Fiber2;
 };
 
 } // namespace gh
