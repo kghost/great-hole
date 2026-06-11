@@ -64,21 +64,34 @@ static void UdpMuxServerStop(lua_State* L) {
   });
 }
 
+static void UdpMuxServerStart(lua_State* L) {
+  auto& u = *LuaUdpMux::Get(L, 1);
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  interface.Schedule([&interface, u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    ErrorCode err = co_await u->Start();
+    if (err) {
+      throw boost::system::system_error(err, "udp_mux_server start error");
+    }
+    co_return 0;
+  });
+}
+
 static const struct luaL_Reg kUdpMuxServerMetatable[] = {{"__gc", SafeCall<LuaUdpMux::Gc>},
                                                          {"create_channel", SafeYield<UdpMuxServerCreateChannel>},
+                                                         {"start", SafeYield<UdpMuxServerStart>},
                                                          {"stop", SafeYield<UdpMuxServerStop>},
                                                          {nullptr, nullptr}};
 
-static void UdpMuxServerNew(lua_State* L) {
+static int UdpMuxServerNew(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
-  std::shared_ptr<UdpMux>* udp = nullptr;
   switch (lua_gettop(L)) {
   case 0:
-    udp = LuaUdpMux::MakeShared(L, interface.GetContext());
+    LuaUdpMux::MakeShared(L, interface.GetContext());
     break;
   case 1: {
     auto bind = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
-    udp = LuaUdpMux::MakeShared(L, interface.GetContext(), bind);
+    LuaUdpMux::MakeShared(L, interface.GetContext(), bind);
     break;
   }
   default:
@@ -87,19 +100,12 @@ static void UdpMuxServerNew(lua_State* L) {
 
   luaL_getmetatable(L, LuaUdpMux::GetTypeTag());
   lua_setmetatable(L, -2);
-
-  interface.Schedule([&interface, udp](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    ErrorCode err = co_await (*udp)->Start();
-    if (err) {
-      throw boost::system::system_error(err, "udp_mux_server start error");
-    }
-    co_return 1;
-  });
+  return 1;
 }
 
 void RegisterUdpMux(lua_State* L, LuaInterface& interface) {
   lua_pushlightuserdata(L, &interface);
-  lua_pushcclosure(L, SafeYield<UdpMuxServerNew>, 1);
+  lua_pushcclosure(L, SafeCall<UdpMuxServerNew>, 1);
   lua_setfield(L, -2, "udp_mux_server");
 
   luaL_newmetatable(L, LuaUdpMux::GetTypeTag());

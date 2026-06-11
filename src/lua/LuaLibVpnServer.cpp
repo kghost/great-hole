@@ -92,12 +92,22 @@ static void VpnServerStop(lua_State* L) {
   });
 }
 
-static const struct luaL_Reg kVpnServerMetatable[] = {{"__gc", SafeCall<LuaVpnServer::Gc>},
-                                                      {"register_peer", SafeCall<VpnServerRegisterPeer>},
-                                                      {"unregister_peer", SafeCall<VpnServerUnregisterPeer>},
-                                                      {"start", SafeYield<VpnServerStart>},
-                                                      {"stop", SafeYield<VpnServerStop>},
-                                                      {nullptr, nullptr}};
+static int VpnServerAsUdpDynMuxChannelNotification(lua_State* L) {
+  auto vpn = *LuaVpnServer::Get(L, 1);
+  LuaChannelNotification::New(L, vpn);
+  luaL_getmetatable(L, LuaChannelNotification::GetTypeTag());
+  lua_setmetatable(L, -2);
+  return 1;
+}
+
+static const struct luaL_Reg kVpnServerMetatable[] = {
+    {"__gc", SafeCall<LuaVpnServer::Gc>},
+    {"register_peer", SafeCall<VpnServerRegisterPeer>},
+    {"unregister_peer", SafeCall<VpnServerUnregisterPeer>},
+    {"as_udp_dyn_mux_channel_notification", SafeCall<VpnServerAsUdpDynMuxChannelNotification>},
+    {"start", SafeYield<VpnServerStart>},
+    {"stop", SafeYield<VpnServerStop>},
+    {nullptr, nullptr}};
 
 void RegisterVpnServer(lua_State* L, LuaInterface& interface) {
   lua_pushlightuserdata(L, &interface);
@@ -109,6 +119,15 @@ void RegisterVpnServer(lua_State* L, LuaInterface& interface) {
   lua_setfield(L, -2, "__index");
   lua_pushlightuserdata(L, &interface);
   luaL_setfuncs(L, kVpnServerMetatable, 1);
+  lua_pop(L, 1);
+
+  static const struct luaL_Reg kChannelNotificationMetatable[] = {
+      {"__gc", SafeCall<LuaChannelNotification::Gc>}, {nullptr, nullptr}};
+
+  luaL_newmetatable(L, LuaChannelNotification::GetTypeTag());
+  lua_pushvalue(L, -1);
+  lua_setfield(L, -2, "__index");
+  luaL_setfuncs(L, kChannelNotificationMetatable, 0);
   lua_pop(L, 1);
 }
 

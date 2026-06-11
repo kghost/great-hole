@@ -59,21 +59,34 @@ static void UdpStop(lua_State* L) {
   });
 }
 
+static void UdpStart(lua_State* L) {
+  auto& u = *LuaUdp::Get(L, 1);
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  interface.Schedule([&interface, u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    ErrorCode err = co_await u->Start();
+    if (err) {
+      throw boost::system::system_error(err, "udp start error");
+    }
+    co_return 0;
+  });
+}
+
 static const struct luaL_Reg kUdpMetatable[] = {{"__gc", SafeCall<LuaUdp::Gc>},
                                                 {"create_channel", SafeYield<UdpCreateChannel>},
+                                                {"start", SafeYield<UdpStart>},
                                                 {"stop", SafeYield<UdpStop>},
                                                 {nullptr, nullptr}};
 
-static void UdpNew(lua_State* L) {
+static int UdpNew(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
-  std::shared_ptr<Udp>* udp = nullptr;
   switch (lua_gettop(L)) {
   case 0:
-    udp = LuaUdp::MakeShared(L, interface.GetContext());
+    LuaUdp::MakeShared(L, interface.GetContext());
     break;
   case 1: {
     auto bind = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
-    udp = LuaUdp::MakeShared(L, interface.GetContext(), bind);
+    LuaUdp::MakeShared(L, interface.GetContext(), bind);
     break;
   }
   default:
@@ -82,19 +95,12 @@ static void UdpNew(lua_State* L) {
 
   luaL_getmetatable(L, LuaUdp::GetTypeTag());
   lua_setmetatable(L, -2);
-
-  interface.Schedule([&interface, udp](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    ErrorCode err = co_await (*udp)->Start();
-    if (err) {
-      throw boost::system::system_error(err, "udp start error");
-    }
-    co_return 1;
-  });
+  return 1;
 }
 
 void RegisterUdp(lua_State* L, LuaInterface& interface) {
   lua_pushlightuserdata(L, &interface);
-  lua_pushcclosure(L, SafeYield<UdpNew>, 1);
+  lua_pushcclosure(L, SafeCall<UdpNew>, 1);
   lua_setfield(L, -2, "udp");
 
   luaL_newmetatable(L, LuaUdp::GetTypeTag());

@@ -18,8 +18,11 @@ local ips2 = { "fd00::2", "fd00::3" }
 vpn:register_peer(psk2, ips2)
 
 -- Create a dynamic UDP multiplexer on port 25525, associating it with our VpnServer callback
-udp_dyn = hole.udp_dyn_mux(25525, vpn)
+udp_dyn = hole.udp_dyn_mux(25525)
+udp_dyn:set_channel_notification(vpn:as_udp_dyn_mux_channel_notification())
 
+tun_split:start()
+udp_dyn:start()
 vpn:start()
 
 print("VPN Server started on port 25525...")

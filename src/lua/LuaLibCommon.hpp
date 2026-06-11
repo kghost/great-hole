@@ -6,6 +6,8 @@
 
 #include "LuaInterface.hpp"
 
+#include "EndpointUdpDynMux.hpp"
+
 namespace gh {
 
 template <size_t N> struct FixedString {
@@ -39,7 +41,6 @@ class Endpoint;
 class Filter;
 class Udp;
 class UdpMux;
-class UdpDynMux;
 class EndpointTunSplitIp;
 class VpnServer;
 
@@ -51,6 +52,8 @@ using LuaUdpMux = LuaSafeUserData<"Hole.udp-mux-server", std::shared_ptr<UdpMux>
 using LuaUdpDynMux = LuaSafeUserData<"Hole.udp-dyn-mux", std::shared_ptr<UdpDynMux>>;
 using LuaTunSplitIp = LuaSafeUserData<"Hole.tun-split-ip", std::shared_ptr<EndpointTunSplitIp>>;
 using LuaVpnServer = LuaSafeUserData<"Hole.vpn-server", std::shared_ptr<VpnServer>>;
+using LuaChannelNotification =
+    LuaSafeUserData<"Hole.channel-notification", std::shared_ptr<UdpDynMux::ChannelNotification>>;
 
 template <int F(lua_State* L)> inline int SafeCall(lua_State* L) {
   try {

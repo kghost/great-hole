@@ -3,11 +3,26 @@
 #include <array>
 #include <vector>
 
+#include <boost/system/system_error.hpp>
+
 #include "Endpoint.hpp"
 #include "Filter.hpp"
 #include "Pipeline.hpp" // IWYU pragma: keep
 
 namespace gh {
+
+static void PipelineStart(lua_State* L) {
+  auto& pipe = *LuaPipeline::Get(L, 1);
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  interface.Schedule([&interface, pipe](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    ErrorCode err = co_await pipe->Start();
+    if (err) {
+      throw boost::system::system_error(err, "pipeline start error");
+    }
+    co_return 0;
+  });
+}
 
 static void PipelineStop(lua_State* L) {
   auto& pipe = *LuaPipeline::Get(L, 1);
@@ -21,17 +36,16 @@ static void PipelineStop(lua_State* L) {
 
 static const auto kPipelineMetatable = std::to_array<const struct luaL_Reg>({
     {.name = "__gc", .func = SafeCall<LuaPipeline::Gc>},
+    {.name = "start", .func = SafeYield<PipelineStart>},
     {.name = "stop", .func = SafeYield<PipelineStop>},
     {.name = nullptr, .func = nullptr},
 });
 
-static void PipelineNew(lua_State* L) {
+static int PipelineNew(lua_State* L) {
   auto c = lua_gettop(L);
   if (c < 2) {
     throw std::runtime_error("pipeline: not enough arguments");
   }
-
-  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   std::shared_ptr<Endpoint> ep1 = *LuaEndpoint::Get(L, 1);
   std::vector<std::shared_ptr<Filter>> filters(c - 2);
@@ -40,22 +54,15 @@ static void PipelineNew(lua_State* L) {
   }
   std::shared_ptr<Endpoint> ep2 = *LuaEndpoint::Get(L, c);
 
-  auto pipe = LuaPipeline::MakeShared(L, ep1, filters, ep2);
+  LuaPipeline::MakeShared(L, ep1, filters, ep2);
   luaL_getmetatable(L, LuaPipeline::GetTypeTag());
   lua_setmetatable(L, -2);
-
-  interface.Schedule([&interface, pipe](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    ErrorCode err = co_await (*pipe)->Start();
-    if (err) {
-      throw boost::system::system_error(err, "pipeline start error");
-    }
-    co_return 1;
-  });
+  return 1;
 }
 
 void RegisterPipeline(lua_State* L, LuaInterface& interface) {
   lua_pushlightuserdata(L, &interface);
-  lua_pushcclosure(L, SafeYield<PipelineNew>, 1);
+  lua_pushcclosure(L, SafeCall<PipelineNew>, 1);
   lua_setfield(L, -2, "pipeline");
 
   luaL_newmetatable(L, LuaPipeline::GetTypeTag());

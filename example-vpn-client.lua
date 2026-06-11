@@ -10,6 +10,9 @@ tun = hole.tun("tun0")
 -- Create the VpnServer manager, passing the TunSplitIp interface and a list of filters
 udp = hole.udp_dyn_mux()
 
+tun:start()
+udp:start()
+
 -- Register a peer with a 16-byte PSK and its permitted IPv6 address(es)
 -- The PSK must be exactly 16 bytes.
 key = "662069c972f50b26b3a75d03265e9eb1"
@@ -22,10 +25,11 @@ xor_filter = hole.filter_xor(filter_key:fromhex())
 -- Pipeline: tun <-> xor_filter <-> channel
 p = hole.pipeline(tun, xor_filter, channel)
 
+p:start()
+
 hole.wait_for_exit()
 
 p:stop()
-
 udp:stop()
 tun:stop()
 

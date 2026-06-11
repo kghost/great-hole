@@ -13,7 +13,6 @@
 #include "ErrorCode.hpp"
 #include "ResolverCombinedEndpoint.hpp"
 #include "ResolverHelper.hpp"
-#include "VpnServer.hpp"
 
 namespace gh {
 
@@ -74,58 +73,59 @@ static void UdpDynMuxStop(lua_State* L) {
   });
 }
 
+static void UdpDynMuxStart(lua_State* L) {
+  auto& u = *LuaUdpDynMux::Get(L, 1);
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  interface.Schedule([&interface, u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    ErrorCode err = co_await u->Start();
+    if (err) {
+      throw boost::system::system_error(err, "udp_dyn_mux start error");
+    }
+    co_return 0;
+  });
+}
+
+static int UdpDynMuxSetChannelNotification(lua_State* L) {
+  auto& u = *LuaUdpDynMux::Get(L, 1);
+  auto& notification = **LuaChannelNotification::Get(L, 2);
+  u->SetChannelNotification(notification);
+  return 0;
+}
+
 static const struct luaL_Reg kUdpDynMuxMetatable[] = {{"__gc", SafeCall<LuaUdpDynMux::Gc>},
                                                       {"create_channel", SafeYield<UdpDynMuxCreateChannel>},
+                                                      {"set_channel_notification", SafeCall<UdpDynMuxSetChannelNotification>},
+                                                      {"start", SafeYield<UdpDynMuxStart>},
                                                       {"stop", SafeYield<UdpDynMuxStop>},
                                                       {nullptr, nullptr}};
 
-static void UdpDynMuxNew(lua_State* L) {
+static int UdpDynMuxNew(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
-  std::shared_ptr<UdpDynMux>* udp = nullptr;
-
-  std::shared_ptr<VpnServer> vpnServer = nullptr;
   std::optional<int> port;
 
   auto top = lua_gettop(L);
   if (top == 1) {
-    if (lua_isnumber(L, 1)) {
-      port = (int)lua_tonumber(L, 1);
-    } else {
-      vpnServer = *LuaVpnServer::Get(L, 1);
-    }
-  } else if (top == 2) {
     port = (int)luaL_checknumber(L, 1);
-    vpnServer = *LuaVpnServer::Get(L, 2);
-  } else if (top > 2) {
+  } else if (top > 1) {
     throw std::runtime_error("udp_dyn_mux: too many arguments");
   }
 
-  UdpDynMux::ChannelNotification& notification =
-      vpnServer ? static_cast<UdpDynMux::ChannelNotification&>(*vpnServer)
-                : static_cast<UdpDynMux::ChannelNotification&>(UdpDynMux::_NoopChannelNotification);
-
   if (port.has_value()) {
     auto bind = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), *port);
-    udp = LuaUdpDynMux::MakeShared(L, interface.GetContext(), bind, notification);
+    LuaUdpDynMux::MakeShared(L, interface.GetContext(), bind);
   } else {
-    udp = LuaUdpDynMux::MakeShared(L, interface.GetContext(), notification);
+    LuaUdpDynMux::MakeShared(L, interface.GetContext());
   }
 
   luaL_getmetatable(L, LuaUdpDynMux::GetTypeTag());
   lua_setmetatable(L, -2);
-
-  interface.Schedule([&interface, udp](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    ErrorCode err = co_await (*udp)->Start();
-    if (err) {
-      throw boost::system::system_error(err, "udp_dyn_mux start error");
-    }
-    co_return 1;
-  });
+  return 1;
 }
 
 void RegisterUdpDynMux(lua_State* L, LuaInterface& interface) {
   lua_pushlightuserdata(L, &interface);
-  lua_pushcclosure(L, SafeYield<UdpDynMuxNew>, 1);
+  lua_pushcclosure(L, SafeCall<UdpDynMuxNew>, 1);
   lua_setfield(L, -2, "udp_dyn_mux");
 
   luaL_newmetatable(L, LuaUdpDynMux::GetTypeTag());

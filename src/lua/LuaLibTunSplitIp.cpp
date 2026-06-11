@@ -1,28 +1,35 @@
 #include "LuaLibCommon.hpp"
 
+#include <boost/system/system_error.hpp>
+
 #include "EndpointTunSplitIp.hpp"
 #include "ErrorCode.hpp"
 
 namespace gh {
 
-static void TunSplitIpNew(lua_State* L) {
+static int TunSplitIpNew(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
-  std::shared_ptr<EndpointTunSplitIp>* tun = nullptr;
   if (lua_gettop(L) == 1) {
-    tun = LuaTunSplitIp::MakeShared(L, interface.GetContext(), lua_tostring(L, 1));
+    LuaTunSplitIp::MakeShared(L, interface.GetContext(), lua_tostring(L, 1));
   } else {
     throw std::runtime_error("tun_split_ip: invalid arguments");
   }
 
   luaL_getmetatable(L, LuaTunSplitIp::GetTypeTag());
   lua_setmetatable(L, -2);
+  return 1;
+}
+
+static void TunSplitIpStart(lua_State* L) {
+  auto& tun = *LuaTunSplitIp::Get(L, 1);
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   interface.Schedule([&interface, tun](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    ErrorCode err = co_await (*tun)->Start();
+    ErrorCode err = co_await tun->Start();
     if (err) {
       throw boost::system::system_error(err, "tun_split_ip start error");
     }
-    co_return 1;
+    co_return 0;
   });
 }
 
@@ -81,12 +88,13 @@ static void TunSplitIpStop(lua_State* L) {
 static const struct luaL_Reg kTunSplitIpMetatable[] = {{"__gc", SafeCall<LuaTunSplitIp::Gc>},
                                                        {"create_channel", SafeYield<TunSplitIpCreateChannel>},
                                                        {"remove_channel", SafeYield<TunSplitIpRemoveChannel>},
+                                                       {"start", SafeYield<TunSplitIpStart>},
                                                        {"stop", SafeYield<TunSplitIpStop>},
                                                        {nullptr, nullptr}};
 
 void RegisterTunSplitIp(lua_State* L, LuaInterface& interface) {
   lua_pushlightuserdata(L, &interface);
-  lua_pushcclosure(L, SafeYield<TunSplitIpNew>, 1);
+  lua_pushcclosure(L, SafeCall<TunSplitIpNew>, 1);
   lua_setfield(L, -2, "tun_split_ip");
 
   luaL_newmetatable(L, LuaTunSplitIp::GetTypeTag());
