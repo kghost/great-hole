@@ -236,7 +236,6 @@ TEST(ResolverTest, ResolverCancellation) {
   Omni::Fiber::AsioExecutor executor(io);
   Omni::Fiber::Manager manager(executor);
 
-  ::setenv("ARES_SERVERS", "169.254.255.255", 1);
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -288,7 +287,6 @@ TEST(ResolverTest, ResolverCancellation) {
   });
 
   RunEventLoop(io);
-  ::unsetenv("ARES_SERVERS");
   EXPECT_TRUE(testPassed);
 }
 

@@ -3,7 +3,7 @@
 #include <chrono>
 #include <cstring>
 #include <expected>
-#include <memory>
+#include <functional>
 #include <unordered_map>
 
 #include <ares.h>
@@ -26,167 +26,145 @@ namespace gh {
 
 namespace {
 
-template <auto MemberFunctionPtr, typename Class, typename... Args>
-void MemberFunctionBridge(void* instance, Args... args) {
-  (reinterpret_cast<Class*>(instance)->*MemberFunctionPtr)(args...);
-}
+class AresGlobal {
+public:
+  explicit AresGlobal();
+  ~AresGlobal();
+};
+
+AresGlobal::AresGlobal() { (void)ares_library_init(ARES_LIB_INIT_ALL); }
+AresGlobal::~AresGlobal() { ares_library_cleanup(); }
+AresGlobal Ares;
 
 template <typename Lambda, typename... Args> void LambdaBridge(void* data, Args... args) {
   (*reinterpret_cast<Lambda*>(data))(args...);
 }
 
-class AresChannelRunner {
-public:
-  explicit AresChannelRunner(boost::asio::any_io_executor executor) : _Executor(executor) {
-    (void)ares_library_init(ARES_LIB_INIT_ALL);
+struct SocketTracker {
+  explicit SocketTracker(boost::asio::any_io_executor executor, ares_socket_t fd) : Descriptor(executor, fd) {}
+  ~SocketTracker() { Descriptor.release(); }
+
+  SocketTracker(SocketTracker&&) = default;
+
+  boost::asio::posix::stream_descriptor Descriptor;
+  bool ReadableInterest = false;
+  bool WritableInterest = false;
+};
+
+template <typename InitiateQuery>
+  requires std::same_as<decltype(std::declval<InitiateQuery>()(std::declval<ares_channel_t*>())), ErrorCode>
+Omni::Fiber::Coroutine<ErrorCode> RunChannel(boost::asio::any_io_executor executor, InitiateQuery&& initiateQuery,
+                                             Cancel& cancel) {
+  if (cancel.IsTriggered()) {
+    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
 
-  ~AresChannelRunner() {
-    if (_Channel) {
-      ares_destroy(_Channel);
-    }
-    ares_library_cleanup();
-  }
+  std::unordered_map<ares_socket_t, SocketTracker> trackers;
 
-  AresChannelRunner(const AresChannelRunner&) = delete;
-  AresChannelRunner& operator=(const AresChannelRunner&) = delete;
-  AresChannelRunner(AresChannelRunner&&) = delete;
-  AresChannelRunner& operator=(AresChannelRunner&&) = delete;
-
-  void OnSocketStateChange(ares_socket_t fd, int readable, int writable) {
-    auto it = _Trackers.find(fd);
+  auto OnSocketStateChange = [&](ares_socket_t fd, int readable, int writable) {
+    auto it = trackers.find(fd);
     if (!readable && !writable) {
-      if (it != _Trackers.end()) {
-        _Trackers.erase(it);
+      if (it != trackers.end()) {
+        trackers.erase(it);
       }
       return;
     }
 
-    if (it == _Trackers.end()) {
-      auto [newIt, inserted] = _Trackers.emplace(fd, std::make_unique<SocketTracker>(_Executor, fd));
+    if (it == trackers.end()) {
+      auto [newIt, inserted] = trackers.emplace(fd, SocketTracker(executor, fd));
       it = newIt;
     }
 
-    auto& tracker = *it->second;
+    auto& tracker = it->second;
     tracker.ReadableInterest = readable;
     tracker.WritableInterest = writable;
   };
 
-  bool Init() {
-    struct ares_options options;
-    int optmask = 0;
-    options.sock_state_cb =
-        MemberFunctionBridge<&AresChannelRunner::OnSocketStateChange, AresChannelRunner, ares_socket_t, int, int>;
-    options.sock_state_cb_data = this;
-    optmask |= ARES_OPT_SOCK_STATE_CB;
+  struct ares_options options;
+  int optmask = 0;
+  options.sock_state_cb = LambdaBridge<decltype(OnSocketStateChange), ares_socket_t, int, int>;
+  options.sock_state_cb_data = &OnSocketStateChange;
+  optmask |= ARES_OPT_SOCK_STATE_CB;
 
-    int status = ares_init_options(&_Channel, &options, optmask);
-    return status == ARES_SUCCESS;
+  ares_channel_t* channel = nullptr;
+  int status = ares_init_options(&channel, &options, optmask);
+  if (status != ARES_SUCCESS) {
+    co_return make_error_code(boost::asio::error::no_recovery);
   }
 
-  ares_channel GetChannel() const { return _Channel; }
+  ErrorCode err = initiateQuery(channel);
+  while (!err) {
+    Omni::Fiber::SelectPairList<Omni::Fiber::AsioResult<boost::system::error_code>,
+                                std::function<void(std::tuple<boost::system::error_code>)>>
+        list;
 
-  Omni::Fiber::Coroutine<ErrorCode> RunChannel(boost::asio::any_io_executor executor,
-                                               std::shared_ptr<AresChannelRunner> runner, Cancel& cancel) {
-    while (true) {
-      Omni::Fiber::SelectPairList<Omni::Fiber::AsioResult<boost::system::error_code>,
-                                  std::function<void(std::tuple<boost::system::error_code>)>>
-          list;
-
-      boost::asio::steady_timer timer(executor);
-      struct timeval tv;
-      struct timeval* tvPtr = ares_timeout(runner->GetChannel(), nullptr, &tv);
-      if (tvPtr) {
-        auto duration = std::chrono::seconds(tv.tv_sec) + std::chrono::microseconds(tv.tv_usec);
-        timer.expires_after(duration);
-        list.Add(timer.async_wait(Omni::Fiber::AsioUseFiber), [this](auto const& tuple) {
-          auto [ec] = tuple;
-          if (!ec) {
-            ares_process_fd(_Channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
-          }
-        });
-      }
-
-      for (auto const& [fd, tracker] : _Trackers) {
-        if (tracker->ReadableInterest) {
-          list.Add(tracker->Descriptor.async_wait(boost::asio::posix::stream_descriptor::wait_read,
-                                                  Omni::Fiber::AsioUseFiber),
-                   [this, fd](auto const& tuple) {
-                     auto [ec] = tuple;
-                     if (!ec) {
-                       ares_process_fd(_Channel, fd, ARES_SOCKET_BAD);
-                     } else if (ec != boost::asio::error::operation_aborted) {
-                       ares_process_fd(_Channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
-                     }
-                   });
+    boost::asio::steady_timer timer(executor);
+    struct timeval tv;
+    struct timeval* tvPtr = ares_timeout(channel, nullptr, &tv);
+    if (tvPtr) {
+      auto duration = std::chrono::seconds(tv.tv_sec) + std::chrono::microseconds(tv.tv_usec);
+      timer.expires_after(duration);
+      list.Add(timer.async_wait(Omni::Fiber::AsioUseFiber), [channel](auto const& tuple) {
+        auto [ec] = tuple;
+        if (!ec) {
+          ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
         }
-        if (tracker->WritableInterest) {
-          list.Add(tracker->Descriptor.async_wait(boost::asio::posix::stream_descriptor::wait_write,
-                                                  Omni::Fiber::AsioUseFiber),
-                   [this, fd](auto const& tuple) {
-                     auto [ec] = tuple;
-                     if (!ec) {
-                       ares_process_fd(_Channel, ARES_SOCKET_BAD, fd);
-                     } else if (ec != boost::asio::error::operation_aborted) {
-                       ares_process_fd(_Channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
-                     }
-                   });
-        }
-      }
+      });
+    }
 
-      if (list.Empty()) {
-        co_return ErrorCode{};
+    for (auto& [fd, tracker] : trackers) {
+      if (tracker.ReadableInterest) {
+        list.Add(
+            tracker.Descriptor.async_wait(boost::asio::posix::stream_descriptor::wait_read, Omni::Fiber::AsioUseFiber),
+            [channel, fd](auto const& tuple) {
+              auto [ec] = tuple;
+              if (!ec) {
+                ares_process_fd(channel, fd, ARES_SOCKET_BAD);
+              } else if (ec != boost::asio::error::operation_aborted) {
+                ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
+              }
+            });
       }
-
-      auto [listResult, cancelled] =
-          co_await Omni::Fiber::Select(list, Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] {}));
-
-      // Cancel outstanding waits
-      for (auto const& [fd, tracker] : _Trackers) {
-        tracker->Descriptor.cancel();
+      if (tracker.WritableInterest) {
+        list.Add(
+            tracker.Descriptor.async_wait(boost::asio::posix::stream_descriptor::wait_write, Omni::Fiber::AsioUseFiber),
+            [channel, fd](auto const& tuple) {
+              auto [ec] = tuple;
+              if (!ec) {
+                ares_process_fd(channel, ARES_SOCKET_BAD, fd);
+              } else if (ec != boost::asio::error::operation_aborted) {
+                ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
+              }
+            });
       }
-      timer.cancel();
+    }
 
-      if (cancelled) {
-        co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
-      }
+    if (list.Empty()) {
+      break;
+    }
+
+    auto [listResult, cancelled] =
+        co_await Omni::Fiber::Select(list, Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] {}));
+
+    // Cancel outstanding waits
+    for (auto& [fd, tracker] : trackers) {
+      tracker.Descriptor.cancel();
+    }
+    timer.cancel();
+
+    if (cancelled) {
+      err = ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
     }
   }
 
-private:
-  struct SocketTracker {
-    explicit SocketTracker(boost::asio::any_io_executor executor, ares_socket_t fd) : Descriptor(executor) {
-      Descriptor.assign(fd);
-    }
-
-    ~SocketTracker() {
-      Descriptor.cancel();
-      Descriptor.release();
-    }
-
-    boost::asio::posix::stream_descriptor Descriptor;
-    bool ReadableInterest = false;
-    bool WritableInterest = false;
-  };
-
-  boost::asio::any_io_executor _Executor;
-  ares_channel _Channel = nullptr;
-  std::unordered_map<ares_socket_t, std::unique_ptr<SocketTracker>> _Trackers;
-};
+  ares_destroy(channel);
+  co_return err;
+}
 
 } // namespace
 
 Omni::Fiber::Coroutine<std::expected<std::vector<boost::asio::ip::address_v6>, ErrorCode>>
 AresResolver::ResolveIp(boost::asio::any_io_executor executor, const std::string& host, Cancel& cancel) {
-  if (cancel.IsTriggered()) {
-    co_return std::unexpected(ErrorCode{AppErrorCategory::kOperationAborted, kAppError});
-  }
-
-  auto runner = std::make_shared<AresChannelRunner>(executor);
-  if (!runner->Init()) {
-    co_return std::unexpected(make_error_code(boost::asio::error::no_recovery));
-  }
-
   std::expected<std::vector<boost::asio::ip::address_v6>, ErrorCode> result;
 
   struct ares_addrinfo_hints hints;
@@ -226,10 +204,15 @@ AresResolver::ResolveIp(boost::asio::any_io_executor executor, const std::string
     }
   };
 
-  ares_getaddrinfo(runner->GetChannel(), host.c_str(), nullptr, &hints,
-                   LambdaBridge<decltype(AddrInfoCallback), int, int, struct ares_addrinfo*>, &AddrInfoCallback);
+  auto ec = co_await RunChannel(
+      executor,
+      [&](ares_channel_t* channel) -> ErrorCode {
+        ares_getaddrinfo(channel, host.c_str(), nullptr, &hints,
+                         LambdaBridge<decltype(AddrInfoCallback), int, int, struct ares_addrinfo*>, &AddrInfoCallback);
+        return ErrorCode{};
+      },
+      cancel);
 
-  auto ec = co_await runner->RunChannel(executor, runner, cancel);
   if (ec) {
     co_return std::unexpected(ec);
   }
@@ -239,15 +222,6 @@ AresResolver::ResolveIp(boost::asio::any_io_executor executor, const std::string
 
 Omni::Fiber::Coroutine<std::expected<std::vector<SrvResult>, ErrorCode>>
 AresResolver::ResolveSrv(boost::asio::any_io_executor executor, const std::string& serviceName, Cancel& cancel) {
-  if (cancel.IsTriggered()) {
-    co_return std::unexpected(ErrorCode{AppErrorCategory::kOperationAborted, kAppError});
-  }
-
-  auto runner = std::make_shared<AresChannelRunner>(executor);
-  if (!runner->Init()) {
-    co_return std::unexpected(make_error_code(boost::asio::error::no_recovery));
-  }
-
   std::expected<std::vector<SrvResult>, ErrorCode> result;
   auto SrvCallback = [&result](ares_status_t status, size_t timeouts, const ares_dns_record_t* dnsrec) {
     (void)timeouts;
@@ -276,29 +250,35 @@ AresResolver::ResolveSrv(boost::asio::any_io_executor executor, const std::strin
     }
   };
 
-  ares_dns_record_t* dnsrecQuery = nullptr;
-  ares_status_t queryStatus =
-      ares_dns_record_create(&dnsrecQuery, 0, ARES_FLAG_RD, ARES_OPCODE_QUERY, ARES_RCODE_NOERROR);
-  if (queryStatus != ARES_SUCCESS) {
-    co_return std::unexpected(make_error_code(boost::asio::error::no_recovery));
-  }
+  auto ec = co_await RunChannel(
+      executor,
+      [&](ares_channel_t* channel) -> ErrorCode {
+        ares_dns_record_t* dnsrecQuery = nullptr;
+        ares_status_t queryStatus =
+            ares_dns_record_create(&dnsrecQuery, 0, ARES_FLAG_RD, ARES_OPCODE_QUERY, ARES_RCODE_NOERROR);
+        if (queryStatus != ARES_SUCCESS) {
+          return make_error_code(boost::asio::error::no_recovery);
+        }
 
-  queryStatus = ares_dns_record_query_add(dnsrecQuery, serviceName.c_str(), ARES_REC_TYPE_SRV, ARES_CLASS_IN);
-  if (queryStatus != ARES_SUCCESS) {
-    ares_dns_record_destroy(dnsrecQuery);
-    co_return std::unexpected(make_error_code(boost::asio::error::no_recovery));
-  }
+        queryStatus = ares_dns_record_query_add(dnsrecQuery, serviceName.c_str(), ARES_REC_TYPE_SRV, ARES_CLASS_IN);
+        if (queryStatus != ARES_SUCCESS) {
+          ares_dns_record_destroy(dnsrecQuery);
+          return make_error_code(boost::asio::error::no_recovery);
+        }
 
-  queryStatus = ares_search_dnsrec(runner->GetChannel(), dnsrecQuery,
-                                   LambdaBridge<decltype(SrvCallback), ares_status_t, size_t, const ares_dns_record_t*>,
-                                   &SrvCallback);
-  ares_dns_record_destroy(dnsrecQuery);
+        queryStatus = ares_search_dnsrec(
+            channel, dnsrecQuery, LambdaBridge<decltype(SrvCallback), ares_status_t, size_t, const ares_dns_record_t*>,
+            &SrvCallback);
+        ares_dns_record_destroy(dnsrecQuery);
 
-  if (queryStatus != ARES_SUCCESS) {
-    co_return std::unexpected(make_error_code(boost::asio::error::no_recovery));
-  }
+        if (queryStatus != ARES_SUCCESS) {
+          return make_error_code(boost::asio::error::no_recovery);
+        }
 
-  auto ec = co_await runner->RunChannel(executor, runner, cancel);
+        return ErrorCode{};
+      },
+      cancel);
+
   if (ec) {
     co_return std::unexpected(ec);
   }
