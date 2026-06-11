@@ -58,6 +58,8 @@ public:
   std::string GetService() override { return "great_hole_udp_dyn_mux"; }
   Protocol GetProtocol() override { return Protocol::Udp; }
 
+  void SetChannelNotification(ChannelNotification& notification) { _Notification = notification; }
+
   Omni::Fiber::Coroutine<std::shared_ptr<Channel>> CreateChannel(const UdpDynMux::PskType& psk);
   Omni::Fiber::Coroutine<std::shared_ptr<Channel>> CreateChannel(const UdpDynMux::PskType& psk,
                                                                  std::shared_ptr<ResolverEndpoint> resolver);
@@ -88,7 +90,7 @@ private:
   Omni::Fiber::Coroutine<void> SendControlInvalidChannel(const boost::asio::ip::udp::endpoint& peer,
                                                          uint16_t channelId);
 
-  ChannelNotification& _Notification;
+  std::reference_wrapper<ChannelNotification> _Notification;
   boost::asio::ip::udp::socket _Socket;
   boost::asio::ip::udp::endpoint _Local;
   std::map<UdpDynMux::PskType, std::shared_ptr<Channel>> _Channels;

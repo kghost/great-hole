@@ -50,7 +50,8 @@ Omni::Fiber::Coroutine<void> UdpDynMux::Channel::DoWork() {
     case State::kNegotiating: {
       _State = co_await DoWorkNegotiating();
       if (_State == State::kRunning && lastState != State::kRunning) {
-        co_await _Parent._Notification.OnChannelEstablished(std::dynamic_pointer_cast<Channel>(shared_from_this()));
+        co_await _Parent._Notification.get().OnChannelEstablished(
+            std::dynamic_pointer_cast<Channel>(shared_from_this()));
       }
       lastState = _State;
       break;
@@ -58,7 +59,7 @@ Omni::Fiber::Coroutine<void> UdpDynMux::Channel::DoWork() {
     case State::kRunning: {
       _State = co_await DoWorkRunning();
       if (_State != State::kRunning && lastState == State::kRunning) {
-        co_await _Parent._Notification.OnChannelClosed(std::dynamic_pointer_cast<Channel>(shared_from_this()));
+        co_await _Parent._Notification.get().OnChannelClosed(std::dynamic_pointer_cast<Channel>(shared_from_this()));
       }
       lastState = _State;
       break;
@@ -73,7 +74,7 @@ Omni::Fiber::Coroutine<void> UdpDynMux::Channel::DoWork() {
     }
   }
   if (lastState == State::kRunning) {
-    co_await _Parent._Notification.OnChannelClosed(std::dynamic_pointer_cast<Channel>(shared_from_this()));
+    co_await _Parent._Notification.get().OnChannelClosed(std::dynamic_pointer_cast<Channel>(shared_from_this()));
   }
   _State = State::kStopping;
 }
