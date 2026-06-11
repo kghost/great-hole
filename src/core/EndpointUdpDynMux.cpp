@@ -84,7 +84,8 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNego
                                        std::chrono::milliseconds(30000));
   while (!_Service.value()._Stop.IsTriggered()) {
     if (_Peer.has_value()) {
-      BOOST_LOG_TRIVIAL(info) << GetName() << " negotiating sending initiate to " << *_Peer;
+      BOOST_LOG_TRIVIAL(info) << std::format("{} negotiating sending initiate Local({}:{}@{})", GetName(), _LocalRxId,
+                                             _RemoteRxId, boost::lexical_cast<std::string>(_Peer));
       co_await _Parent.SendControlInitiate(_Peer.value(), _Psk, _LocalRxId, _RemoteRxId);
       boost::asio::steady_timer timer(_Parent._Socket.get_executor());
       timer.expires_after(duration());
@@ -238,19 +239,18 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
 
   if (msgType == static_cast<uint8_t>(UdpDynMuxProto::MsgType::kInitiate)) {
     if (auto init = UdpDynMuxProto::Initiate::Deserialize(packet.Data())) {
+      BOOST_LOG_TRIVIAL(info) << std::format("{} received initiate: Local({}:{}@{}) Peer({}:{}@{})", GetName(),
+                                             _LocalRxId, _RemoteRxId, boost::lexical_cast<std::string>(_Peer),
+                                             init->PeerRxId, init->RxId, boost::lexical_cast<std::string>(peer));
       bool myRxMatches = (init->PeerRxId == _LocalRxId);
       bool peerRxMatches = (init->RxId == _RemoteRxId && _Peer == peer);
       _LastSeen = now;
       if (!peerRxMatches) {
-        BOOST_LOG_TRIVIAL(info) << GetName() << " received initiate (tx mismatch) from " << peer;
         _RemoteRxId = init->RxId;
         _Peer = peer; // peer address is strictly updated only on receiving INITIATE
-      } else {
-        BOOST_LOG_TRIVIAL(info) << GetName() << " received initiate (tx matched) from " << peer;
       }
 
       if (!myRxMatches) {
-        BOOST_LOG_TRIVIAL(info) << GetName() << " received initiate (my rx mismatch) sending initiate to " << peer;
         co_await _Parent.SendControlInitiate(peer, init->Psk, _LocalRxId, _RemoteRxId);
       }
 
