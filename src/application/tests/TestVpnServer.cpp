@@ -14,6 +14,7 @@
 #include "GetCurrentFiber.hpp"
 #include "Pipeline.hpp"
 #include "ResolverStaticEndpoint.hpp"
+#include "Utils.hpp"
 #include "VpnServer.hpp"
 
 using namespace gh;
@@ -109,6 +110,26 @@ Packet CreateIPv6Packet(const boost::asio::ip::address_v6& src, const boost::asi
   return p;
 }
 
+Packet CreateIPv4Packet(const boost::asio::ip::address_v4& src, const boost::asio::ip::address_v4& dest,
+                        const std::string& payload) {
+  std::size_t totalLen = 20 + payload.size();
+  Packet p(totalLen);
+  auto data = p.Data();
+  std::fill(data.begin(), data.end(), 0);
+  data[0] = 0x45; // Version 4, IHL 5
+
+  // Total Length
+  data[2] = (totalLen >> 8) & 0xFF;
+  data[3] = totalLen & 0xFF;
+
+  auto srcBytes = src.to_bytes();
+  std::copy(srcBytes.begin(), srcBytes.end(), data.begin() + 12);
+  auto destBytes = dest.to_bytes();
+  std::copy(destBytes.begin(), destBytes.end(), data.begin() + 16);
+  std::copy(payload.begin(), payload.end(), data.begin() + 20);
+  return p;
+}
+
 TEST(VpnServerTest, EndToEndBidirectionalRouting) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io);
@@ -129,13 +150,15 @@ TEST(VpnServerTest, EndToEndBidirectionalRouting) {
   UdpDynMux::PskType psk = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
   auto clientIp = boost::asio::ip::make_address_v6("fd00::1");
   auto serverIp = boost::asio::ip::make_address_v6("fd00::2");
+  auto clientIpV4 = boost::asio::ip::make_address_v4("10.0.0.1");
+  auto serverIpV4 = boost::asio::ip::make_address_v4("10.0.0.2");
 
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
 
-    co_await vpnServer->RegisterPeer(psk, {clientIp});
+    co_await vpnServer->RegisterPeer(psk, {clientIp, MapToV6(clientIpV4)});
 
     // Start services
     EXPECT_FALSE(co_await tunClient->Start());
@@ -149,7 +172,7 @@ TEST(VpnServerTest, EndToEndBidirectionalRouting) {
     auto clientChannel = co_await udpClient->CreateChannel(psk, resolver);
     EXPECT_NE(clientChannel, nullptr);
 
-    auto clientTunChannel = co_await tunClient->CreateChannel({serverIp});
+    auto clientTunChannel = co_await tunClient->CreateChannel({serverIp, MapToV6(serverIpV4)});
     EXPECT_NE(clientTunChannel, nullptr);
 
     auto clientPipeline =
@@ -164,35 +187,73 @@ TEST(VpnServerTest, EndToEndBidirectionalRouting) {
     boost::asio::posix::stream_descriptor clientStack(io, fdsClient[1]);
     boost::asio::posix::stream_descriptor serverStack(io, fdsServer[1]);
 
-    // Direction 1: Client -> Server
-    auto p1 = CreateIPv6Packet(clientIp, serverIp, "Hello Server!");
-    auto [errWrite1, bytesWritten1] =
-        co_await clientStack.async_write_some(boost::asio::const_buffer(p1), Omni::Fiber::AsioUseFiber);
-    EXPECT_FALSE(errWrite1);
+    // Direction 1 (IPv6): Client -> Server
+    {
+      auto p1 = CreateIPv6Packet(clientIp, serverIp, "Hello Server!");
+      auto [errWrite1, bytesWritten1] =
+          co_await clientStack.async_write_some(boost::asio::const_buffer(p1), Omni::Fiber::AsioUseFiber);
+      EXPECT_FALSE(errWrite1);
 
-    Packet rxP1;
-    auto [errRead1, bytesRead1] =
-        co_await serverStack.async_read_some(boost::asio::mutable_buffer(rxP1), Omni::Fiber::AsioUseFiber);
-    EXPECT_FALSE(errRead1);
-    rxP1._Length = bytesRead1;
-    EXPECT_GE(rxP1.DataSize(), 40);
-    std::string payload1(reinterpret_cast<const char*>(rxP1.Data().data() + 40), rxP1.DataSize() - 40);
-    EXPECT_EQ(payload1, "Hello Server!");
+      Packet rxP1;
+      auto [errRead1, bytesRead1] =
+          co_await serverStack.async_read_some(boost::asio::mutable_buffer(rxP1), Omni::Fiber::AsioUseFiber);
+      EXPECT_FALSE(errRead1);
+      rxP1._Length = bytesRead1;
+      EXPECT_GE(rxP1.DataSize(), 40);
+      std::string payload1(reinterpret_cast<const char*>(rxP1.Data().data() + 40), rxP1.DataSize() - 40);
+      EXPECT_EQ(payload1, "Hello Server!");
+    }
 
-    // Direction 2: Server -> Client
-    auto p2 = CreateIPv6Packet(serverIp, clientIp, "Hello Client!");
-    auto [errWrite2, bytesWritten2] =
-        co_await serverStack.async_write_some(boost::asio::const_buffer(p2), Omni::Fiber::AsioUseFiber);
-    EXPECT_FALSE(errWrite2);
+    // Direction 2 (IPv6): Server -> Client
+    {
+      auto p2 = CreateIPv6Packet(serverIp, clientIp, "Hello Client!");
+      auto [errWrite2, bytesWritten2] =
+          co_await serverStack.async_write_some(boost::asio::const_buffer(p2), Omni::Fiber::AsioUseFiber);
+      EXPECT_FALSE(errWrite2);
 
-    Packet rxP2;
-    auto [errRead2, bytesRead2] =
-        co_await clientStack.async_read_some(boost::asio::mutable_buffer(rxP2), Omni::Fiber::AsioUseFiber);
-    EXPECT_FALSE(errRead2);
-    rxP2._Length = bytesRead2;
-    EXPECT_GE(rxP2.DataSize(), 40);
-    std::string payload2(reinterpret_cast<const char*>(rxP2.Data().data() + 40), rxP2.DataSize() - 40);
-    EXPECT_EQ(payload2, "Hello Client!");
+      Packet rxP2;
+      auto [errRead2, bytesRead2] =
+          co_await clientStack.async_read_some(boost::asio::mutable_buffer(rxP2), Omni::Fiber::AsioUseFiber);
+      EXPECT_FALSE(errRead2);
+      rxP2._Length = bytesRead2;
+      EXPECT_GE(rxP2.DataSize(), 40);
+      std::string payload2(reinterpret_cast<const char*>(rxP2.Data().data() + 40), rxP2.DataSize() - 40);
+      EXPECT_EQ(payload2, "Hello Client!");
+    }
+
+    // Direction 1 (IPv4): Client -> Server
+    {
+      auto p1 = CreateIPv4Packet(clientIpV4, serverIpV4, "Hello Server V4!");
+      auto [errWrite1, bytesWritten1] =
+          co_await clientStack.async_write_some(boost::asio::const_buffer(p1), Omni::Fiber::AsioUseFiber);
+      EXPECT_FALSE(errWrite1);
+
+      Packet rxP1;
+      auto [errRead1, bytesRead1] =
+          co_await serverStack.async_read_some(boost::asio::mutable_buffer(rxP1), Omni::Fiber::AsioUseFiber);
+      EXPECT_FALSE(errRead1);
+      rxP1._Length = bytesRead1;
+      EXPECT_GE(rxP1.DataSize(), 20);
+      std::string payload1(reinterpret_cast<const char*>(rxP1.Data().data() + 20), rxP1.DataSize() - 20);
+      EXPECT_EQ(payload1, "Hello Server V4!");
+    }
+
+    // Direction 2 (IPv4): Server -> Client
+    {
+      auto p2 = CreateIPv4Packet(serverIpV4, clientIpV4, "Hello Client V4!");
+      auto [errWrite2, bytesWritten2] =
+          co_await serverStack.async_write_some(boost::asio::const_buffer(p2), Omni::Fiber::AsioUseFiber);
+      EXPECT_FALSE(errWrite2);
+
+      Packet rxP2;
+      auto [errRead2, bytesRead2] =
+          co_await clientStack.async_read_some(boost::asio::mutable_buffer(rxP2), Omni::Fiber::AsioUseFiber);
+      EXPECT_FALSE(errRead2);
+      rxP2._Length = bytesRead2;
+      EXPECT_GE(rxP2.DataSize(), 20);
+      std::string payload2(reinterpret_cast<const char*>(rxP2.Data().data() + 20), rxP2.DataSize() - 20);
+      EXPECT_EQ(payload2, "Hello Client V4!");
+    }
 
     // Cleanup
     co_await clientPipeline->Stop();
