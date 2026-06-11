@@ -92,7 +92,7 @@ Omni::Fiber::Coroutine<void> EndpointTunSplitIp::DoWork() {
 
 Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::DoGracefulStop() {
   co_await _ChannelRpc.Close();
-  for (auto& channel : std::exchange(_Channels, {}) | std::views::values | std::ranges::to<std::set>()) {
+  for (auto& channel : std::exchange(_Channels, {}) | std::ranges::views::values | std::ranges::to<std::set>()) {
     co_await channel->Stop();
     co_await channel->WaitService();
   }
