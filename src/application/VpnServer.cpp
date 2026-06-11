@@ -73,13 +73,17 @@ Omni::Fiber::Coroutine<void> VpnServer::OnChannelClosed(std::shared_ptr<UdpDynMu
   });
 }
 
-Omni::Fiber::Coroutine<void> VpnServer::Run(Cancel& c) {
+std::string VpnServer::GetName() const { return "VpnServer"; }
+
+Omni::Fiber::Coroutine<ErrorCode> VpnServer::DoStart() { co_return ErrorCode{}; }
+
+Omni::Fiber::Coroutine<void> VpnServer::DoWork() {
   BOOST_LOG_TRIVIAL(info) << "VpnServer: run loop started";
 
   bool stopped = false;
   while (!stopped) {
     auto [stopResult, rpcResult] = co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}),
+        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] {}),
         Omni::Fiber::SelectPair(_ChannelCall.GetServiceAwaitor(), Omni::Fiber::RemoteCall::HandleRequest));
     if (stopResult) {
       stopped = true;
@@ -88,7 +92,9 @@ Omni::Fiber::Coroutine<void> VpnServer::Run(Cancel& c) {
       stopped = true;
     }
   }
+}
 
+Omni::Fiber::Coroutine<ErrorCode> VpnServer::DoGracefulStop() {
   // Cleanup all sessions on stop
   BOOST_LOG_TRIVIAL(info) << "VpnServer: Stopping all client sessions";
   for (auto& [channel, session] : _Sessions) {
@@ -99,6 +105,7 @@ Omni::Fiber::Coroutine<void> VpnServer::Run(Cancel& c) {
   co_await _ChannelCall.Close();
 
   BOOST_LOG_TRIVIAL(info) << "VpnServer: run loop exited";
+  co_return ErrorCode{};
 }
 
 } // namespace gh

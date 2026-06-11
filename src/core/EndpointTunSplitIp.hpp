@@ -32,7 +32,6 @@ public:
   EndpointTunSplitIp& operator=(EndpointTunSplitIp&&) = delete;
 
   Omni::Fiber::Coroutine<std::shared_ptr<Channel>> CreateChannel(const std::vector<boost::asio::ip::address_v6>& ips);
-  Omni::Fiber::Coroutine<void> RemoveChannel(const boost::asio::ip::address_v6& ip);
   Omni::Fiber::Coroutine<void> RemoveChannel(std::shared_ptr<Channel> channel);
 
 protected:

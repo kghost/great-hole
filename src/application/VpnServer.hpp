@@ -7,17 +7,17 @@
 #include <boost/asio.hpp>
 #include <boost/asio/ip/address_v6.hpp>
 
-#include "Cancel.hpp"
 #include "Coroutine.hpp"
 #include "EndpointTunSplitIp.hpp"
 #include "EndpointUdpDynMux.hpp"
 #include "Filter.hpp"
 #include "Pipeline.hpp"
 #include "RemoteCall.hpp"
+#include "ServiceBase.hpp"
 
 namespace gh {
 
-class VpnServer : public UdpDynMux::ChannelNotification, public std::enable_shared_from_this<VpnServer> {
+class VpnServer : public ServiceBase, public UdpDynMux::ChannelNotification {
 public:
   explicit VpnServer(std::shared_ptr<EndpointTunSplitIp> tunSplit, std::vector<std::shared_ptr<Filter>> filters = {});
   ~VpnServer() override;
@@ -27,13 +27,18 @@ public:
   VpnServer(VpnServer&&) = delete;
   VpnServer& operator=(VpnServer&&) = delete;
 
+  std::string GetName() const override;
+
   void RegisterPeer(const UdpDynMux::PskType& psk, const std::vector<boost::asio::ip::address_v6>& ips);
   void UnregisterPeer(const UdpDynMux::PskType& psk);
 
   Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override;
   Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override;
 
-  Omni::Fiber::Coroutine<void> Run(Cancel& c);
+protected:
+  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
+  Omni::Fiber::Coroutine<void> DoWork() override;
+  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 
 private:
   struct Session {

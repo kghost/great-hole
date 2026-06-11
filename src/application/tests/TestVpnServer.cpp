@@ -55,14 +55,17 @@ TEST(VpnServerTest, ConstructorStoresFiltersAndAppliesThem) {
     auto tunErr = co_await tunSplit->Start();
     EXPECT_FALSE(tunErr);
 
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
-    Cancel runCancel;
-    auto runFiber =
-        current.Spawn("vpn_run", [&]() -> Omni::Fiber::Coroutine<void> { co_await vpnServer->Run(runCancel); });
+    auto vpnErr = co_await vpnServer->Start();
+    EXPECT_FALSE(vpnErr);
 
-    runCancel.Trigger();
-    co_await current.Join(runFiber);
+    auto vpnStopErr = co_await vpnServer->Stop();
+    EXPECT_FALSE(vpnStopErr);
+
+    co_await vpnServer->WaitService();
+
     co_await tunSplit->Stop();
+
+    auto& current = co_await Omni::Fiber::GetCurrentFiber();
     co_await current.WaitAll();
 
     ::close(externalFd);

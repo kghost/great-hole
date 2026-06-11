@@ -1,7 +1,10 @@
-#include <vector>
-
 #include "LuaLibCommon.hpp"
 
+#include <vector>
+
+#include <boost/system/system_error.hpp>
+
+#include "ErrorCode.hpp"
 #include "VpnServer.hpp" // IWYU pragma: keep
 
 namespace gh {
@@ -66,12 +69,25 @@ static int VpnServerUnregisterPeer(lua_State* L) {
   return 0;
 }
 
-static void VpnServerRun(lua_State* L) {
+static void VpnServerStart(lua_State* L) {
   auto& srv = *LuaVpnServer::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   interface.Schedule([&interface, srv](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-    co_await srv->Run(interface.GetStopApplication());
+    ErrorCode err = co_await srv->Start();
+    if (err) {
+      throw boost::system::system_error(err, "vpn_server start error");
+    }
+    co_return 0;
+  });
+}
+
+static void VpnServerStop(lua_State* L) {
+  auto& srv = *LuaVpnServer::Get(L, 1);
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+
+  interface.Schedule([&interface, srv](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    co_await srv->Stop();
     co_return 0;
   });
 }
@@ -79,7 +95,8 @@ static void VpnServerRun(lua_State* L) {
 static const struct luaL_Reg kVpnServerMetatable[] = {{"__gc", SafeCall<LuaVpnServer::Gc>},
                                                       {"register_peer", SafeCall<VpnServerRegisterPeer>},
                                                       {"unregister_peer", SafeCall<VpnServerUnregisterPeer>},
-                                                      {"run", SafeYield<VpnServerRun>},
+                                                      {"start", SafeYield<VpnServerStart>},
+                                                      {"stop", SafeYield<VpnServerStop>},
                                                       {nullptr, nullptr}};
 
 void RegisterVpnServer(lua_State* L, LuaInterface& interface) {

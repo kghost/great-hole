@@ -20,12 +20,13 @@ vpn:register_peer(psk2, ips2)
 -- Create a dynamic UDP multiplexer on port 25525, associating it with our VpnServer callback
 udp_dyn = hole.udp_dyn_mux(25525, vpn)
 
+vpn:start()
+
 print("VPN Server started on port 25525...")
 
--- Start the VPN Server event processing loop.
--- This blocks the current Lua fiber and processes connection/disconnection events.
-vpn:run()
+hole.wait_for_exit()
 
+vpn:stop()
 udp_dyn:stop()
 tun_split:stop()
 

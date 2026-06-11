@@ -52,42 +52,35 @@ This overload retrieves the associated list of IP addresses from `channel->GetIp
 ```cpp
 namespace gh {
 
-class VpnServer : public UdpDynMux::ChannelNotification {
+class VpnServer : public ServiceBase, public UdpDynMux::ChannelNotification {
 public:
-  enum class EventType {
-    kEstablished,
-    kClosed
-  };
-
-  struct Event {
-    EventType Type;
-    std::shared_ptr<UdpDynMux::Channel> Channel;
-  };
-
   explicit VpnServer(std::shared_ptr<EndpointTunSplitIp> tunSplit);
   ~VpnServer() override;
+
+  std::string GetName() const override;
 
   void RegisterPeer(const UdpDynMux::PskType& psk, const std::vector<boost::asio::ip::address_v6>& ips);
   void UnregisterPeer(const UdpDynMux::PskType& psk);
 
-  // Connection callbacks (fill the internal event pipe)
+  // Connection callbacks
   Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override;
   Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override;
 
-  // The main run loop called from the Lua fiber.
-  // Processes connection/disconnection events, manages session pipelines and channels.
-  Omni::Fiber::Coroutine<void> Run(Cancel& c);
+protected:
+  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
+  Omni::Fiber::Coroutine<void> DoWork() override;
+  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 
 private:
   struct Session {
     std::shared_ptr<EndpointTunSplitIp::Channel> TunChannel;
-    std::shared_ptr<Pipeline> Pipe;
+    std::shared_ptr<Pipeline> Pipeline;
   };
 
   std::shared_ptr<EndpointTunSplitIp> _TunSplit;
   std::map<UdpDynMux::PskType, std::vector<boost::asio::ip::address_v6>> _Peers;
   std::map<std::shared_ptr<UdpDynMux::Channel>, Session> _Sessions;
-  Omni::Fiber::Pipe<Event> _Events;
+  Omni::Fiber::RemoteCall _ChannelCall;
 };
 
 } // namespace gh
@@ -97,5 +90,6 @@ private:
 
 1. Define a Lua `vpn_server` userdata wrapped around `std::shared_ptr<VpnServer>`.
 2. Register peers via `vpn_server:register_peer(psk, {ip1, ip2, ...})`.
-3. Invoke `vpn_server:run()`, which schedules the C++ coroutine `VpnServer::Run(Cancel& c)` to run on the Lua fiber.
-4. When `run()` is executing, connection/disconnection events will trigger dynamic allocation/deallocation of pipelines and tun-split channels entirely in C++, but within the execution scope of the Lua fiber.
+3. Start the service via `vpn_server:start()`, which starts the background fiber.
+4. When executing, connection/disconnection events will trigger dynamic allocation/deallocation of pipelines and tun-split channels entirely in C++.
+5. Stop the service via `vpn_server:stop()`.

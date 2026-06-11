@@ -115,8 +115,8 @@ TEST(TunSplitIpTest, DispatchAndVerifyIP) {
     auto channelV6 = co_await tunSplit->CreateChannel({ipV6});
     EXPECT_NE(channelV6, nullptr);
     if (channelV6 == nullptr) {
-      co_await tunSplit->RemoveChannel(MapToV6(ip1));
-      co_await tunSplit->RemoveChannel(MapToV6(ip2));
+      co_await tunSplit->RemoveChannel(channel1);
+      co_await tunSplit->RemoveChannel(channel2);
       co_await tunSplit->Stop();
       ::close(externalFd);
       co_return;
@@ -187,9 +187,9 @@ TEST(TunSplitIpTest, DispatchAndVerifyIP) {
     EXPECT_EQ(writeErr, ErrorCode(AppMinorErrorCategory::kSourceIpMismatch, kAppMinorError));
 
     // Cleanup channels
-    co_await tunSplit->RemoveChannel(MapToV6(ip1));
-    co_await tunSplit->RemoveChannel(MapToV6(ip2));
-    co_await tunSplit->RemoveChannel(MapToV6(ipV6));
+    co_await tunSplit->RemoveChannel(channel1);
+    co_await tunSplit->RemoveChannel(channel2);
+    co_await tunSplit->RemoveChannel(channelV6);
 
     auto stopErr = co_await tunSplit->Stop();
     EXPECT_FALSE(stopErr);
@@ -323,7 +323,7 @@ TEST(TunSplitIpTest, MultipleIPsPerChannel) {
     EXPECT_EQ(readBuf[15], 10);
 
     // Cleanup channels
-    co_await tunSplit->RemoveChannel(MapToV6(ip1)); // ip1 is one of channel's IPs, should remove it entirely
+    co_await tunSplit->RemoveChannel(channel);
     auto stopErr = co_await tunSplit->Stop();
     EXPECT_FALSE(stopErr);
 

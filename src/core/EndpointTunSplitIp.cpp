@@ -135,20 +135,6 @@ EndpointTunSplitIp::CreateChannel(const std::vector<boost::asio::ip::address_v6>
   co_return reply.value();
 }
 
-Omni::Fiber::Coroutine<void> EndpointTunSplitIp::RemoveChannel(const boost::asio::ip::address_v6& ip) {
-  co_await _ChannelRpc.Call([this, ip]() -> Omni::Fiber::Coroutine<void> {
-    auto it = _Channels.find(ip);
-    assert(it != _Channels.end());
-
-    auto channel = std::move(it->second);
-    for (auto const& chIp : channel->GetIps()) {
-      _Channels.erase(chIp);
-    }
-    co_await channel->Stop();
-    co_await channel->WaitService();
-  });
-}
-
 Omni::Fiber::Coroutine<void> EndpointTunSplitIp::RemoveChannel(std::shared_ptr<EndpointTunSplitIp::Channel> channel) {
   if (!channel) {
     co_return;
