@@ -1,5 +1,6 @@
 #include "VpnServer.hpp"
 
+#include <format>
 #include <utility>
 
 #include <boost/log/trivial.hpp>
@@ -53,24 +54,24 @@ Omni::Fiber::Coroutine<void> VpnServer::OnChannelEstablished(std::shared_ptr<Udp
     }
 
     BOOST_LOG_TRIVIAL(info) << "VpnServer: Creating split IP tunnel channel for client";
-    auto tunCh = co_await _TunSplit->CreateChannel(it->second);
-    if (!tunCh) {
+    auto tunChannel = co_await _TunSplit->CreateChannel(it->second);
+    if (!tunChannel) {
       BOOST_LOG_TRIVIAL(error) << "VpnServer: Failed to create TunSplitIp channel for client";
       co_return;
     }
 
     BOOST_LOG_TRIVIAL(info) << "VpnServer: Starting bidirectional pipeline";
-    auto pipe = std::make_shared<Pipeline>(channel, _Filters, tunCh);
+    auto pipe = std::make_shared<Pipeline>(channel, _Filters, tunChannel);
 
     auto err = co_await pipe->Start();
     if (err) {
       BOOST_LOG_TRIVIAL(error) << "VpnServer: Failed to start pipeline";
       co_await pipe->Stop();
-      co_await _TunSplit->RemoveChannel(tunCh);
+      co_await _TunSplit->RemoveChannel(tunChannel);
       co_return;
     }
 
-    _Sessions.emplace(std::move(channel), Session{std::move(tunCh), std::move(pipe)});
+    _Sessions.emplace(std::move(channel), Session{std::move(tunChannel), std::move(pipe)});
   });
 }
 
@@ -87,7 +88,9 @@ Omni::Fiber::Coroutine<void> VpnServer::OnChannelClosed(std::shared_ptr<UdpDynMu
   });
 }
 
-std::string VpnServer::GetName() const { return "VpnServer"; }
+std::string VpnServer::GetName() const {
+  return std::format("VpnServer:[{}-{}]", _UdpDynMux->GetName(), _TunSplit->GetName());
+}
 
 Omni::Fiber::Coroutine<ErrorCode> VpnServer::DoStart() {
   if (_UdpDynMux) {

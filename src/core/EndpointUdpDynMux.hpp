@@ -67,8 +67,9 @@ public:
   Omni::Fiber::Coroutine<ErrorCode> WriteTo(boost::asio::ip::udp::endpoint peer, Packet& p, Cancel& c);
   boost::asio::ip::udp::endpoint LocalEndpoint() const { return _Socket.local_endpoint(); }
 
-protected:
   std::string GetName() const override;
+
+protected:
   Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
   Omni::Fiber::Coroutine<void> DoWork() override;
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;

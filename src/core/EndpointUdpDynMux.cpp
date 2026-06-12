@@ -85,7 +85,7 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNego
   while (!_Service.value()._Stop.IsTriggered()) {
     if (_Peer.has_value()) {
       BOOST_LOG_TRIVIAL(info) << std::format("{} negotiating sending initiate Local({}:{}@{})", GetName(), _LocalRxId,
-                                             _RemoteRxId, boost::lexical_cast<std::string>(_Peer));
+                                             _RemoteRxId, boost::lexical_cast<std::string>(_Peer.value()));
       co_await _Parent.SendControlInitiate(_Peer.value(), _Psk, _LocalRxId, _RemoteRxId);
       boost::asio::steady_timer timer(_Parent._Socket.get_executor());
       timer.expires_after(duration());
@@ -239,9 +239,15 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
 
   if (msgType == static_cast<uint8_t>(UdpDynMuxProto::MsgType::kInitiate)) {
     if (auto init = UdpDynMuxProto::Initiate::Deserialize(packet.Data())) {
-      BOOST_LOG_TRIVIAL(info) << std::format("{} received initiate: Local({}:{}@{}) Peer({}:{}@{})", GetName(),
-                                             _LocalRxId, _RemoteRxId, boost::lexical_cast<std::string>(_Peer),
-                                             init->PeerRxId, init->RxId, boost::lexical_cast<std::string>(peer));
+      if (_Peer.has_value()) {
+        BOOST_LOG_TRIVIAL(info) << std::format("{} received initiate: Local({}:{}@{}) Peer({}:{}@{})", GetName(),
+                                               _LocalRxId, _RemoteRxId, boost::lexical_cast<std::string>(_Peer.value()),
+                                               init->PeerRxId, init->RxId, boost::lexical_cast<std::string>(peer));
+      } else {
+        BOOST_LOG_TRIVIAL(info) << std::format("{} received initiate: Local({}:{}@<none>) Peer({}:{}@{})", GetName(),
+                                               _LocalRxId, _RemoteRxId, init->PeerRxId, init->RxId,
+                                               boost::lexical_cast<std::string>(peer));
+      }
       bool myRxMatches = (init->PeerRxId == _LocalRxId);
       bool peerRxMatches = (init->RxId == _RemoteRxId && _Peer == peer);
       _LastSeen = now;

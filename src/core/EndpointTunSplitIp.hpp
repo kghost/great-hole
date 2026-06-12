@@ -34,8 +34,9 @@ public:
   Omni::Fiber::Coroutine<std::shared_ptr<Channel>> CreateChannel(const std::vector<boost::asio::ip::address_v6>& ips);
   Omni::Fiber::Coroutine<void> RemoveChannel(std::shared_ptr<Channel> channel);
 
-protected:
   std::string GetName() const override;
+
+protected:
   Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
   Omni::Fiber::Coroutine<void> DoWork() override;
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
