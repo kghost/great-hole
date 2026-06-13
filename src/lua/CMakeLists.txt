@@ -4,8 +4,8 @@ set(INIT_LUA_OBJ ${CMAKE_CURRENT_BINARY_DIR}/init.lua.bin.o)
 
 add_custom_command(
   OUTPUT ${INIT_LUA_OBJ}
-  COMMAND ld -r -o ${INIT_LUA_OBJ} -z noexecstack --format=binary init.lua
-  COMMAND objcopy --rename-section .data=.rodata,alloc,load,readonly,data,contents ${INIT_LUA_OBJ}
+  COMMAND ${CMAKE_LINKER} -r -o ${INIT_LUA_OBJ} -z noexecstack --format=binary init.lua
+  COMMAND ${CMAKE_OBJCOPY} --rename-section .data=.rodata,alloc,load,readonly,data,contents ${INIT_LUA_OBJ}
   DEPENDS ${INIT_LUA_SRC}
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )

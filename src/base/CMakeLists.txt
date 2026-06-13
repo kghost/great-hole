@@ -32,5 +32,7 @@ foreach(suffix "" "-asan")
   endif()
 endforeach()
 
-add_subdirectory(tests)
+if(BUILD_TESTING)
+  add_subdirectory(tests)
+endif()
 

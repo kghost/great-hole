@@ -21,8 +21,12 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(LUA REQUIRED IMPORTED_TARGET lua-5.4)
 pkg_check_modules(CARES REQUIRED IMPORTED_TARGET libcares)
 
-enable_testing()
-find_package(GTest REQUIRED)
+option(BUILD_TESTING "Build unit tests" ON)
+
+if(BUILD_TESTING)
+  enable_testing()
+  find_package(GTest REQUIRED)
+endif()
 
 
 if(GREAT_HOLE_RELATIVE_PATHS)
