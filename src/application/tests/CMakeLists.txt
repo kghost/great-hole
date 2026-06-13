@@ -1,6 +1,6 @@
 include(GoogleTest)
 
-add_executable(vpn_server_test TestVpnServer.cpp TestVpnConnTrack.cpp)
+add_executable(vpn_server_test TestVpnServer.cpp TestVpnClientMultiChannel.cpp TestConnectionTracker.cpp)
 target_link_libraries(vpn_server_test PRIVATE
   great-hole-application-asan
   great-hole-core-asan

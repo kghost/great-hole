@@ -34,13 +34,13 @@ public:
                                             const std::vector<boost::asio::ip::address_v6>& ips);
   Omni::Fiber::Coroutine<void> UnregisterPeer(const UdpDynMux::PskType& psk);
 
-  Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override;
-  Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override;
-
 protected:
   Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
   Omni::Fiber::Coroutine<void> DoWork() override;
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+
+  Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override;
+  Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override;
 
 private:
   struct Session {

@@ -9,14 +9,15 @@
 #include "Cancel.hpp"
 #include "Coroutine.hpp"
 #include "EndpointUdpDynMux.hpp"
+#include "EventQueue.hpp"
 #include "GetCurrentFiber.hpp"
 #include "Packet.hpp"
 #include "ResolverStaticEndpoint.hpp"
 #include "Select.hpp"
 #include "SelectPair.hpp"
 #include "Utils.hpp"
+#include "VpnClientMultiChannel.hpp"
 #include "Yield.hpp"
-#include "VpnConnTrack.hpp"
 
 using namespace gh;
 
@@ -140,7 +141,7 @@ private:
 
 } // namespace
 
-TEST(VpnConnTrackTest, PacketParsingAndCallbackInvocation) {
+TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io);
   Omni::Fiber::Manager manager(executor);
@@ -165,7 +166,7 @@ TEST(VpnConnTrackTest, PacketParsingAndCallbackInvocation) {
     };
 
     auto mockTun = std::make_shared<MockEndpoint>();
-    auto connTrack = std::make_shared<VpnConnTrack>(io, mockTun, nullptr, selector);
+    auto connTrack = std::make_shared<VpnClientMultiChannel>(io, mockTun, nullptr, selector);
     EXPECT_FALSE(co_await connTrack->Start());
 
     Cancel cancelObj;
@@ -257,7 +258,7 @@ TEST(VpnConnTrackTest, PacketParsingAndCallbackInvocation) {
   EXPECT_TRUE(testPassed);
 }
 
-TEST(VpnConnTrackTest, BidirectionalRoutingAndTimeoutPruning) {
+TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io);
   Omni::Fiber::Manager manager(executor);
@@ -279,7 +280,7 @@ TEST(VpnConnTrackTest, BidirectionalRoutingAndTimeoutPruning) {
   };
 
   auto mockTun = std::make_shared<MockEndpoint>();
-  auto connTrack = std::make_shared<VpnConnTrack>(io, mockTun, udpServer, selector);
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io, mockTun, udpServer, selector);
   connTrack->SetConntrackTimeoutForTesting(std::chrono::seconds(1));
 
   bool testPassed = false;

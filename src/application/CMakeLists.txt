@@ -9,7 +9,8 @@ foreach(suffix "" "-asan")
 
   add_library(${target} STATIC
     VpnServer.cpp
-    VpnConnTrack.cpp
+    VpnClientMultiChannel.cpp
+    ConnectionTracker.cpp
   )
 
   target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
