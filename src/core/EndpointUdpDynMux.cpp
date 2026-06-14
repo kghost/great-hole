@@ -26,6 +26,7 @@
 #include "Select.hpp"
 #include "SelectPair.hpp"
 #include "ServiceBase.hpp"
+#include "Utils.hpp"
 
 namespace gh {
 
@@ -193,6 +194,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::Read(Packet& p, Cancel& c)
                                      if (data.has_value()) {
                                        _LastSeen = std::chrono::steady_clock::now();
                                        p = std::move(data.value());
+                                       _RxBytes += p.DataSize();
                                        return ErrorCode{};
                                      } else {
                                        p._Length = 0;
@@ -227,6 +229,8 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::Write(Packet& p, Cancel& c
   }
 
   p.PushFront(_RemoteRxId);
+
+  _TxBytes += p.DataSize();
 
   co_return co_await _Parent.WriteTo(_Peer.value(), p, c);
 }
@@ -313,6 +317,11 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoStart() {
   ErrorCode ec;
   try {
     _Socket.open(boost::asio::ip::udp::v6());
+    if (gh::SocketProtector) {
+      if (!gh::SocketProtector(_Socket.native_handle())) {
+        throw SystemError(std::make_error_code(std::errc::permission_denied), "protect socket failed");
+      }
+    }
     _Socket.set_option(boost::asio::ip::v6_only(false));
     _Socket.bind(_Local);
     _Local = _Socket.local_endpoint();

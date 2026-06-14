@@ -8,5 +8,6 @@
 /debian/great-hole.postrm.debhelper
 
 /build/
+/build-android/
 /.cache/
 /openwrt-build/

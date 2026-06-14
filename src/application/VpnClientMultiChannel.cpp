@@ -302,4 +302,12 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelClosed(std::shared_
   });
 }
 
+std::pair<uint64_t, uint64_t> VpnClientMultiChannel::GetStats(const UdpDynMux::PskType& psk) const {
+  auto it = _Sessions.find(psk);
+  if (it != _Sessions.end() && it->second.Channel) {
+    return {it->second.Channel->GetTxBytes(), it->second.Channel->GetRxBytes()};
+  }
+  return {0, 0};
+}
+
 } // namespace gh

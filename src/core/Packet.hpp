@@ -6,6 +6,25 @@
 #include <span>
 #include <type_traits>
 #include <vector>
+#include <bit>
+
+#ifndef __cpp_lib_byteswap
+namespace std {
+template <typename T>
+constexpr T byteswap(T value) noexcept {
+  static_assert(std::is_integral_v<T>, "std::byteswap is only for integral types");
+  if constexpr (sizeof(T) == 1) {
+    return value;
+  } else if constexpr (sizeof(T) == 2) {
+    return __builtin_bswap16(static_cast<uint16_t>(value));
+  } else if constexpr (sizeof(T) == 4) {
+    return __builtin_bswap32(static_cast<uint32_t>(value));
+  } else if constexpr (sizeof(T) == 8) {
+    return __builtin_bswap64(static_cast<uint64_t>(value));
+  }
+}
+} // namespace std
+#endif
 
 #include <boost/asio/buffer.hpp>
 

@@ -10,9 +10,17 @@ namespace gh {
 
 Tun::Tun(boost::asio::any_io_executor executor, std::string const& name) : _TunFileDescriptor(executor), _Name(name) {}
 
+Tun::Tun(boost::asio::any_io_executor executor, int fd) : _TunFileDescriptor(executor), _Name("AndroidTun") {
+  _TunFileDescriptor.assign(fd);
+  _TunFileDescriptor.non_blocking(true);
+}
+
 std::string Tun::GetName() const { return "Tun:" + _Name; }
 
 Omni::Fiber::Coroutine<ErrorCode> Tun::DoStart() {
+  if (_TunFileDescriptor.is_open()) {
+    co_return ErrorCode{};
+  }
   int fd = ::open("/dev/net/tun", O_RDWR);
   if (fd < 0) {
     co_return ErrorCode(errno, system_category());

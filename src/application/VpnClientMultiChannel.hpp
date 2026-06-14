@@ -55,6 +55,8 @@ public:
                                                                           std::shared_ptr<ResolverEndpoint> resolver);
   Omni::Fiber::Coroutine<void> UnregisterChannel(const UdpDynMux::PskType& psk);
 
+  std::pair<uint64_t, uint64_t> GetStats(const UdpDynMux::PskType& psk) const;
+
   Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override;
   Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override;
 

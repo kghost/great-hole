@@ -15,7 +15,6 @@ foreach(suffix "" "-asan")
   target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
   target_compile_definitions(${target} PUBLIC
-    BOOST_ALL_DYN_LINK
     BOOST_ASIO_ENABLE_OLD_SERVICES
     BOOST_ASIO_DISABLE_HANDLER_TYPE_REQUIREMENTS
     BOOST_ASIO_HAS_MOVE
