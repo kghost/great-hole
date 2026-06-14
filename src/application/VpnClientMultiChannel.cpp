@@ -71,7 +71,7 @@ public:
     std::shared_ptr<UdpDynMux::Channel> Channel;
   };
 
-  explicit TunSideEndpoint(VpnClientMultiChannel& parent) : _Parent(parent) {}
+  explicit TunSideEndpoint(VpnClientMultiChannel& parent) : _Parent(parent), _ConnectionTracker(parent._Selector) {}
   ~TunSideEndpoint() override = default;
 
   std::string GetName() const override { return "VpnClientMultiChannel:TunSide"; }
@@ -80,7 +80,7 @@ public:
     _Queue.Push(QueueEntry{std::move(p), std::move(channel)});
   }
 
-  void RemoveChannel(const std::shared_ptr<UdpDynMux::Channel>& channel) { _ConnectionTracker.RemoveChannel(channel); }
+  void RemoveMark(const ConnectionMark& mark) { _ConnectionTracker.RemoveMark(mark); }
 
   void PruneConnections() { _ConnectionTracker.Prune(); }
 
@@ -104,7 +104,10 @@ public:
     p = std::move(entry.Pkt);
 
     // Perform connection tracking for incoming traffic
-    _ConnectionTracker.Update(p, entry.Channel, ConnectionDirection::kInput);
+    auto it = _Parent._Sessions.find(entry.Channel->GetPsk());
+    if (it != _Parent._Sessions.end()) {
+      _ConnectionTracker.Update(p, it->second, ConnectionDirection::kInput);
+    }
 
     co_return ErrorCode{};
   }
@@ -114,30 +117,21 @@ public:
       co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
     }
 
-    auto channel = std::dynamic_pointer_cast<UdpDynMux::Channel>(_ConnectionTracker.Lookup(
-        p, ConnectionDirection::kOutput,
-        [this](const std::shared_ptr<Endpoint>& chan) {
-          auto udpChan = std::dynamic_pointer_cast<UdpDynMux::Channel>(chan);
-          return udpChan && _Parent._Sessions.contains(udpChan);
-        },
-        [this](const boost::asio::ip::address_v6& src, const boost::asio::ip::address_v6& dst, uint16_t srcPort,
-               uint16_t dstPort, uint8_t protocol) -> std::shared_ptr<Endpoint> {
-          if (_Parent._Selector) {
-            return _Parent._Selector(src, dst, srcPort, dstPort, protocol);
-          }
-          return nullptr;
-        }));
+    auto mark = _ConnectionTracker.Lookup(p, ConnectionDirection::kOutput, [this](ConnectionMark& mark) -> bool {
+      auto& session = dynamic_cast<Session&>(mark);
+      return session.Channel && _Parent._Sessions.contains(session.Channel->GetPsk());
+    });
 
-    if (!channel) {
+    if (!mark.has_value()) {
       BOOST_LOG_TRIVIAL(debug) << _Parent.GetName() << ": No channel found or selected, dropping packet";
       co_return ErrorCode{};
     }
 
-    auto sessionIt = _Parent._Sessions.find(channel);
-    if (sessionIt != _Parent._Sessions.end()) {
-      sessionIt->second.ChannelSide->PushOutgoing(std::move(p));
+    auto& session = dynamic_cast<Session&>(mark.value().get());
+    if (session.ChannelSide) {
+      session.ChannelSide->PushOutgoing(std::move(p));
     } else {
-      BOOST_LOG_TRIVIAL(debug) << _Parent.GetName() << ": Session for channel not found, dropping packet";
+      BOOST_LOG_TRIVIAL(debug) << _Parent.GetName() << ": ChannelSide is null, dropping packet";
     }
 
     co_return ErrorCode{};
@@ -162,7 +156,8 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::ChannelSideEndpoint::Wr
 }
 
 VpnClientMultiChannel::VpnClientMultiChannel(boost::asio::io_context& ioContext, std::shared_ptr<Endpoint> tun,
-                                             std::shared_ptr<UdpDynMux> udpDynMux, PeerSelector selector,
+                                             std::shared_ptr<UdpDynMux> udpDynMux,
+                                             ConnectionTracker::SelectorType selector,
                                              std::vector<std::shared_ptr<Filter>> filters)
     : _IoContext(ioContext), _Tun(tun), _UdpDynMux(udpDynMux), _Selector(selector), _Filters(filters) {
   _TunSide = std::make_shared<TunSideEndpoint>(*this);
@@ -225,8 +220,10 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoGracefulStop() {
     _TunPipeline.reset();
   }
 
-  for (auto& [channel, session] : _Sessions) {
-    co_await session.Pipeline->Stop();
+  for (auto& [psk, session] : _Sessions) {
+    if (session.Pipeline) {
+      co_await session.Pipeline->Stop();
+    }
   }
   _Sessions.clear();
   _TunSide->ClearConnections();
@@ -237,34 +234,87 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoGracefulStop() {
   co_return ErrorCode{};
 }
 
+Omni::Fiber::Coroutine<std::reference_wrapper<VpnClientMultiChannel::Session>>
+VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver) {
+  auto reply =
+      co_await _ChannelCall.Call([this, psk, resolver]() -> Omni::Fiber::Coroutine<std::reference_wrapper<Session>> {
+        auto it = _Sessions.find(psk);
+        if (it != _Sessions.end()) {
+          co_return std::ref(it->second);
+        }
+
+        std::shared_ptr<UdpDynMux::Channel> channel;
+        if (_UdpDynMux) {
+          channel = co_await _UdpDynMux->CreateChannel(psk, resolver);
+        }
+
+        auto [sessionIt, inserted] = _Sessions.emplace(psk, Session{channel});
+        assert(inserted);
+        co_return std::ref(sessionIt->second);
+      });
+  assert(reply.has_value());
+  co_return reply.value();
+}
+
+Omni::Fiber::Coroutine<void> VpnClientMultiChannel::UnregisterChannel(const UdpDynMux::PskType& psk) {
+  co_await _ChannelCall.Call([this, psk]() -> Omni::Fiber::Coroutine<void> {
+    auto it = _Sessions.find(psk);
+    if (it != _Sessions.end()) {
+      auto session = std::move(it->second);
+      _Sessions.erase(it);
+      if (session.Pipeline) {
+        co_await session.Pipeline->Stop();
+      }
+      if (session.Channel && _UdpDynMux) {
+        co_await _UdpDynMux->RemoveChannel(psk);
+      }
+      _TunSide->RemoveMark(session);
+    }
+  });
+}
+
 Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) {
   BOOST_LOG_TRIVIAL(info) << GetName() << ": on channel established: " << channel->GetName();
   co_await _ChannelCall.Call([this, channel = std::move(channel)]() mutable -> Omni::Fiber::Coroutine<void> {
     if (_State != State::kRunning) {
       co_return;
     }
-    auto channelSide = std::make_shared<ChannelSideEndpoint>(*this, channel);
-    auto pipeline = std::make_shared<Pipeline>(channel, _Filters, channelSide);
-    auto err = co_await pipeline->Start();
-    if (err) {
-      BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel pipeline for " << channel->GetName();
-      co_await pipeline->Stop();
-      co_return;
-    }
+    auto it = _Sessions.find(channel->GetPsk());
+    if (it != _Sessions.end()) {
+      auto& session = it->second;
+      session.Channel = channel;
 
-    _Sessions.emplace(std::move(channel), Session{std::move(channelSide), std::move(pipeline)});
+      if (!session.Pipeline) {
+        auto channelSide = std::make_shared<ChannelSideEndpoint>(*this, channel);
+        auto pipeline = std::make_shared<Pipeline>(channel, _Filters, channelSide);
+        auto err = co_await pipeline->Start();
+        if (err) {
+          BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel pipeline for " << channel->GetName();
+          co_await pipeline->Stop();
+          co_return;
+        }
+        session.ChannelSide = std::move(channelSide);
+        session.Pipeline = std::move(pipeline);
+      }
+    } else {
+      BOOST_LOG_TRIVIAL(warning) << GetName() << ": Established channel for unregistered PSK, ignoring";
+    }
   });
 }
 
 Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) {
   BOOST_LOG_TRIVIAL(info) << GetName() << ": on channel closed: " << channel->GetName();
   co_await _ChannelCall.Call([this, channel = std::move(channel)]() mutable -> Omni::Fiber::Coroutine<void> {
-    auto it = _Sessions.find(channel);
+    auto it = _Sessions.find(channel->GetPsk());
     if (it != _Sessions.end()) {
-      co_await it->second.Pipeline->Stop();
-      _Sessions.erase(it);
+      auto& session = it->second;
+      if (session.Pipeline) {
+        co_await session.Pipeline->Stop();
+        session.Pipeline.reset();
+        session.ChannelSide.reset();
+      }
+      _TunSide->RemoveMark(session);
     }
-    _TunSide->RemoveChannel(channel);
   });
 }
 

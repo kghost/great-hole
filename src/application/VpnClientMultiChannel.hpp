@@ -8,6 +8,7 @@
 
 #include <boost/asio.hpp>
 
+#include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
 #include "Endpoint.hpp"
 #include "EndpointUdpDynMux.hpp"
@@ -21,12 +22,21 @@ namespace gh {
 
 class VpnClientMultiChannel : public ServiceBase, public UdpDynMux::ChannelNotification {
 public:
-  using PeerSelector = std::function<std::shared_ptr<UdpDynMux::Channel>(
-      const boost::asio::ip::address_v6& src, const boost::asio::ip::address_v6& dst, uint16_t srcPort,
-      uint16_t dstPort, uint8_t protocol)>;
+  class TunSideEndpoint;
+  class ChannelSideEndpoint;
+
+  class Session : public ConnectionMark {
+  public:
+    Session(std::shared_ptr<UdpDynMux::Channel> channel) : Channel(channel) {}
+    std::string GetDescription() const { return Channel ? Channel->GetName() : "Invalid Session"; }
+
+    std::shared_ptr<UdpDynMux::Channel> Channel;
+    std::shared_ptr<ChannelSideEndpoint> ChannelSide;
+    std::shared_ptr<Pipeline> Pipeline;
+  };
 
   VpnClientMultiChannel(boost::asio::io_context& ioContext, std::shared_ptr<Endpoint> tun,
-                        std::shared_ptr<UdpDynMux> udpDynMux, PeerSelector selector,
+                        std::shared_ptr<UdpDynMux> udpDynMux, ConnectionTracker::SelectorType selector,
                         std::vector<std::shared_ptr<Filter>> filters = {});
   ~VpnClientMultiChannel() override;
 
@@ -35,17 +45,13 @@ public:
   VpnClientMultiChannel(VpnClientMultiChannel&&) = delete;
   VpnClientMultiChannel& operator=(VpnClientMultiChannel&&) = delete;
 
-  class TunSideEndpoint;
-  class ChannelSideEndpoint;
-
-  struct Session {
-    std::shared_ptr<ChannelSideEndpoint> ChannelSide;
-    std::shared_ptr<Pipeline> Pipeline;
-  };
-
   void SetConntrackTimeoutForTesting(std::chrono::seconds timeout);
 
   std::string GetName() const override;
+
+  Omni::Fiber::Coroutine<std::reference_wrapper<Session>> RegisterChannel(const UdpDynMux::PskType& psk,
+                                                                          std::shared_ptr<ResolverEndpoint> resolver);
+  Omni::Fiber::Coroutine<void> UnregisterChannel(const UdpDynMux::PskType& psk);
 
   Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override;
   Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override;
@@ -61,13 +67,13 @@ private:
   boost::asio::io_context& _IoContext;
   std::shared_ptr<Endpoint> _Tun;
   std::shared_ptr<UdpDynMux> _UdpDynMux;
-  PeerSelector _Selector;
+  ConnectionTracker::SelectorType _Selector;
   std::vector<std::shared_ptr<Filter>> _Filters;
 
   std::shared_ptr<TunSideEndpoint> _TunSide;
   std::shared_ptr<Pipeline> _TunPipeline;
 
-  std::map<std::shared_ptr<UdpDynMux::Channel>, Session> _Sessions;
+  std::map<UdpDynMux::PskType, Session> _Sessions;
   Omni::Fiber::RemoteCall _ChannelCall;
 };
 

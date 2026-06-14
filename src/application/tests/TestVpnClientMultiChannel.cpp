@@ -138,6 +138,71 @@ private:
   Omni::Fiber::EventQueue<Packet> _ReadQueue;
   Omni::Fiber::EventQueue<Packet> _WriteQueue;
 };
+struct CallbackArgs {
+  boost::asio::ip::address_v6 Src;
+  boost::asio::ip::address_v6 Dst;
+  uint16_t SrcPort = 0;
+  uint16_t DstPort = 0;
+  uint8_t Protocol = 0;
+};
+
+class CallbackSelector : public ConnectionTracker::Selector {
+public:
+  CallbackSelector(std::vector<CallbackArgs>& invocations) : _Invocations(invocations) {}
+
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip4TcpKey& k) const override {
+    _Invocations.push_back(CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.LocalPort, k.RemotePort, 6});
+    return std::nullopt;
+  }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip6TcpKey& k) const override {
+    _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.LocalPort, k.RemotePort, 6});
+    return std::nullopt;
+  }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip4UdpKey& k) const override {
+    _Invocations.push_back(CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.LocalPort, k.RemotePort, 17});
+    return std::nullopt;
+  }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip6UdpKey& k) const override {
+    _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.LocalPort, k.RemotePort, 17});
+    return std::nullopt;
+  }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::IcmpKey& k) const override {
+    _Invocations.push_back(CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.Id, k.Id, 1});
+    return std::nullopt;
+  }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Icmp6Key& k) const override {
+    _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.Id, k.Id, 58});
+    return std::nullopt;
+  }
+
+private:
+  std::vector<CallbackArgs>& _Invocations;
+};
+
+class RoutingSelector : public ConnectionTracker::Selector {
+public:
+  RoutingSelector(std::optional<std::reference_wrapper<VpnClientMultiChannel::Session>>& resolvedSession, int& selectorCalls)
+      : _ResolvedSession(resolvedSession), _SelectorCalls(selectorCalls) {}
+
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip4TcpKey&) const override { return Handle(); }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip6TcpKey&) const override { return Handle(); }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip4UdpKey&) const override { return Handle(); }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip6UdpKey&) const override { return Handle(); }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::IcmpKey&) const override { return Handle(); }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Icmp6Key&) const override { return Handle(); }
+
+private:
+  std::optional<std::reference_wrapper<ConnectionMark>> Handle() const {
+    _SelectorCalls++;
+    if (_ResolvedSession.has_value()) {
+      return _ResolvedSession.value();
+    }
+    return std::nullopt;
+  }
+
+  std::optional<std::reference_wrapper<VpnClientMultiChannel::Session>>& _ResolvedSession;
+  int& _SelectorCalls;
+};
 
 } // namespace
 
@@ -149,21 +214,8 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    struct CallbackArgs {
-      boost::asio::ip::address_v6 Src;
-      boost::asio::ip::address_v6 Dst;
-      uint16_t SrcPort = 0;
-      uint16_t DstPort = 0;
-      uint8_t Protocol = 0;
-    };
-
     std::vector<CallbackArgs> invocations;
-
-    auto selector = [&](const boost::asio::ip::address_v6& src, const boost::asio::ip::address_v6& dst,
-                        uint16_t srcPort, uint16_t dstPort, uint8_t protocol) -> std::shared_ptr<UdpDynMux::Channel> {
-      invocations.push_back(CallbackArgs{src, dst, srcPort, dstPort, protocol});
-      return nullptr; // Drop all in this test
-    };
+    CallbackSelector selector(invocations);
 
     auto mockTun = std::make_shared<MockEndpoint>();
     auto connTrack = std::make_shared<VpnClientMultiChannel>(io, mockTun, nullptr, selector);
@@ -270,14 +322,10 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
 
   UdpDynMux::PskType psk = {9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6};
 
-  std::shared_ptr<UdpDynMux::Channel> resolvedChannel;
+  std::optional<std::reference_wrapper<VpnClientMultiChannel::Session>> resolvedSession;
   int selectorCalls = 0;
 
-  auto selector = [&](const boost::asio::ip::address_v6& /*src*/, const boost::asio::ip::address_v6& /*dst*/,
-                      uint16_t /*srcPort*/, uint16_t /*dstPort*/, uint8_t /*protocol*/) {
-    selectorCalls++;
-    return resolvedChannel;
-  };
+  RoutingSelector selector(resolvedSession, selectorCalls);
 
   auto mockTun = std::make_shared<MockEndpoint>();
   auto connTrack = std::make_shared<VpnClientMultiChannel>(io, mockTun, udpServer, selector);
@@ -294,11 +342,12 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     EXPECT_FALSE(co_await connTrack->Start());
 
     // Register channel on server side first so it can receive client initiates
-    resolvedChannel = co_await udpServer->CreateChannel(psk);
-    EXPECT_NE(resolvedChannel, nullptr);
-    if (resolvedChannel == nullptr) {
+    auto& session = (co_await connTrack->RegisterChannel(psk, nullptr)).get();
+    EXPECT_NE(session.Channel, nullptr);
+    if (session.Channel == nullptr) {
       co_return;
     }
+    resolvedSession = session;
 
     // Connect client to server
     auto resolver = std::make_shared<ResolverStaticEndpoint>(udpServer->LocalEndpoint());

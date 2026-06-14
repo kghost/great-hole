@@ -2,19 +2,22 @@
 
 #include <array>
 #include <chrono>
+#include <functional>
 #include <map>
-#include <memory>
 #include <optional>
 
 #include <boost/asio/ip/address_v6.hpp>
 
-#include "Utils.hpp"
-
 namespace gh {
 
-ConnectionTracker::ConnectionTracker(std::chrono::seconds timeout) : _Timeout(timeout) {}
+template <class... Ts> struct overloaded : Ts... {
+  using Ts::operator()...;
+};
 
-void ConnectionTracker::Update(const Packet& packet, std::shared_ptr<Endpoint> channel, ConnectionDirection direction) {
+ConnectionTracker::ConnectionTracker(SelectorType selector, std::chrono::seconds timeout)
+    : _Selector(selector), _Timeout(timeout) {}
+
+void ConnectionTracker::Update(const Packet& packet, ConnectionMark& mark, ConnectionDirection direction) {
   auto keyOpt = ParseConnectionKey(packet, direction);
   if (!keyOpt) {
     return;
@@ -23,33 +26,42 @@ void ConnectionTracker::Update(const Packet& packet, std::shared_ptr<Endpoint> c
   std::visit(
       [&](auto&& k) {
         using T = std::decay_t<decltype(k)>;
-        auto entry = ConnectionEntry{std::move(channel), std::chrono::steady_clock::now()};
-        if constexpr (std::is_same_v<T, Ip4TcpKey>) {
-          _Ip4TcpTable[k] = std::move(entry);
-        } else if constexpr (std::is_same_v<T, Ip6TcpKey>) {
-          _Ip6TcpTable[k] = std::move(entry);
-        } else if constexpr (std::is_same_v<T, Ip4UdpKey>) {
-          _Ip4UdpTable[k] = std::move(entry);
-        } else if constexpr (std::is_same_v<T, Ip6UdpKey>) {
-          _Ip6UdpTable[k] = std::move(entry);
-        } else if constexpr (std::is_same_v<T, IcmpKey>) {
-          _IcmpTable[k] = std::move(entry);
-        } else if constexpr (std::is_same_v<T, Icmp6Key>) {
-          _Icmp6Table[k] = std::move(entry);
+        auto& table = [&]() -> auto& {
+          if constexpr (std::is_same_v<T, Ip4TcpKey>) {
+            return _Ip4TcpTable;
+          } else if constexpr (std::is_same_v<T, Ip6TcpKey>) {
+            return _Ip6TcpTable;
+          } else if constexpr (std::is_same_v<T, Ip4UdpKey>) {
+            return _Ip4UdpTable;
+          } else if constexpr (std::is_same_v<T, Ip6UdpKey>) {
+            return _Ip6UdpTable;
+          } else if constexpr (std::is_same_v<T, IcmpKey>) {
+            return _IcmpTable;
+          } else if constexpr (std::is_same_v<T, Icmp6Key>) {
+            return _Icmp6Table;
+          }
+        }();
+
+        auto it = table.find(k);
+        auto now = std::chrono::steady_clock::now();
+        if (it != table.end()) {
+          it->second.LastActive = now;
+        } else {
+          table.emplace(k, ConnectionEntry{mark, now});
         }
       },
       *keyOpt);
 }
 
-std::shared_ptr<Endpoint> ConnectionTracker::Lookup(const Packet& packet, ConnectionDirection direction,
-                                                    ValidatorType validator, SelectorType selector) {
+std::optional<std::reference_wrapper<ConnectionMark>>
+ConnectionTracker::Lookup(const Packet& packet, ConnectionDirection direction, ValidatorType validator) {
   auto keyOpt = ParseConnectionKey(packet, direction);
   if (!keyOpt) {
-    return nullptr;
+    return std::nullopt;
   }
 
   auto now = std::chrono::steady_clock::now();
-  std::shared_ptr<Endpoint> channel = nullptr;
+  std::optional<std::reference_wrapper<ConnectionMark>> mark = std::nullopt;
 
   std::visit(
       [&](auto&& k) {
@@ -73,10 +85,10 @@ std::shared_ptr<Endpoint> ConnectionTracker::Lookup(const Packet& packet, Connec
         auto it = table.find(k);
         if (it != table.end()) {
           if (now - it->second.LastActive <= _Timeout) {
-            channel = it->second.Channel;
-            if (validator && !validator(channel)) {
+            mark = it->second.Mark;
+            if (validator && !validator(mark->get())) {
               table.erase(it);
-              channel = nullptr;
+              mark = std::nullopt;
             } else {
               it->second.LastActive = now;
             }
@@ -87,88 +99,44 @@ std::shared_ptr<Endpoint> ConnectionTracker::Lookup(const Packet& packet, Connec
       },
       *keyOpt);
 
-  if (!channel && selector) {
+  if (!mark.has_value()) {
     boost::asio::ip::address_v6 src;
     boost::asio::ip::address_v6 dst;
     uint16_t srcPort = 0;
     uint16_t dstPort = 0;
     uint8_t protocol = 0;
 
-    std::visit(
-        [&](auto&& k) {
-          using T = std::decay_t<decltype(k)>;
-          if constexpr (std::is_same_v<T, Ip4TcpKey>) {
-            src = MapToV6(k.LocalAddress);
-            dst = MapToV6(k.RemoteAddress);
-            srcPort = k.LocalPort;
-            dstPort = k.RemotePort;
-            protocol = 6;
-          } else if constexpr (std::is_same_v<T, Ip6TcpKey>) {
-            src = k.LocalAddress;
-            dst = k.RemoteAddress;
-            srcPort = k.LocalPort;
-            dstPort = k.RemotePort;
-            protocol = 6;
-          } else if constexpr (std::is_same_v<T, Ip4UdpKey>) {
-            src = MapToV6(k.LocalAddress);
-            dst = MapToV6(k.RemoteAddress);
-            srcPort = k.LocalPort;
-            dstPort = k.RemotePort;
-            protocol = 17;
-          } else if constexpr (std::is_same_v<T, Ip6UdpKey>) {
-            src = k.LocalAddress;
-            dst = k.RemoteAddress;
-            srcPort = k.LocalPort;
-            dstPort = k.RemotePort;
-            protocol = 17;
-          } else if constexpr (std::is_same_v<T, IcmpKey>) {
-            src = MapToV6(k.LocalAddress);
-            dst = MapToV6(k.RemoteAddress);
-            srcPort = k.Id;
-            dstPort = k.Id;
-            protocol = 1;
-          } else if constexpr (std::is_same_v<T, Icmp6Key>) {
-            src = k.LocalAddress;
-            dst = k.RemoteAddress;
-            srcPort = k.Id;
-            dstPort = k.Id;
-            protocol = 58;
-          }
-        },
-        *keyOpt);
-
-    auto selected = selector(src, dst, srcPort, dstPort, protocol);
-    if (selected) {
-      if (!validator || validator(selected)) {
+    auto selected = std::visit(_Selector, *keyOpt);
+    if (selected.has_value()) {
+      if (!validator || validator(selected.value().get())) {
         std::visit(
             [&](auto&& k) {
               using T = std::decay_t<decltype(k)>;
-              auto entry = ConnectionEntry{selected, now};
               if constexpr (std::is_same_v<T, Ip4TcpKey>) {
-                _Ip4TcpTable[k] = std::move(entry);
+                _Ip4TcpTable.emplace(k, ConnectionEntry{selected.value(), now});
               } else if constexpr (std::is_same_v<T, Ip6TcpKey>) {
-                _Ip6TcpTable[k] = std::move(entry);
+                _Ip6TcpTable.emplace(k, ConnectionEntry{selected.value(), now});
               } else if constexpr (std::is_same_v<T, Ip4UdpKey>) {
-                _Ip4UdpTable[k] = std::move(entry);
+                _Ip4UdpTable.emplace(k, ConnectionEntry{selected.value(), now});
               } else if constexpr (std::is_same_v<T, Ip6UdpKey>) {
-                _Ip6UdpTable[k] = std::move(entry);
+                _Ip6UdpTable.emplace(k, ConnectionEntry{selected.value(), now});
               } else if constexpr (std::is_same_v<T, IcmpKey>) {
-                _IcmpTable[k] = std::move(entry);
+                _IcmpTable.emplace(k, ConnectionEntry{selected.value(), now});
               } else if constexpr (std::is_same_v<T, Icmp6Key>) {
-                _Icmp6Table[k] = std::move(entry);
+                _Icmp6Table.emplace(k, ConnectionEntry{selected.value(), now});
               }
             },
             *keyOpt);
-        channel = std::move(selected);
+        mark = std::move(selected);
       }
     }
   }
 
-  return channel;
+  return mark;
 }
 
-void ConnectionTracker::RemoveChannel(const std::shared_ptr<Endpoint>& channel) {
-  auto predicate = [&channel](const auto& item) { return item.second.Channel == channel; };
+void ConnectionTracker::RemoveMark(const ConnectionMark& mark) {
+  auto predicate = [&mark](const auto& item) { return &item.second.Mark == &mark; };
   std::erase_if(_Ip4TcpTable, predicate);
   std::erase_if(_Ip6TcpTable, predicate);
   std::erase_if(_Ip4UdpTable, predicate);

@@ -1,52 +1,28 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
 #include <map>
-#include <memory>
 #include <optional>
 #include <variant>
 
 #include <boost/asio/ip/address_v4.hpp>
 #include <boost/asio/ip/address_v6.hpp>
 
-#include "Endpoint.hpp"
 #include "Packet.hpp"
 
 namespace gh {
 
 enum class ConnectionDirection { kOutput, kInput };
 
+class ConnectionMark {
+public:
+  virtual ~ConnectionMark() = default;
+  virtual std::string GetDescription() const = 0;
+};
+
 class ConnectionTracker {
 public:
-  using SelectorType = std::function<std::shared_ptr<Endpoint>(const boost::asio::ip::address_v6& src,
-                                                               const boost::asio::ip::address_v6& dst, uint16_t srcPort,
-                                                               uint16_t dstPort, uint8_t protocol)>;
-
-  using ValidatorType = std::function<bool(const std::shared_ptr<Endpoint>&)>;
-
-  explicit ConnectionTracker(std::chrono::seconds timeout = std::chrono::seconds(60));
-  ~ConnectionTracker() = default;
-
-  ConnectionTracker(const ConnectionTracker&) = delete;
-  ConnectionTracker& operator=(const ConnectionTracker&) = delete;
-  ConnectionTracker(ConnectionTracker&&) = delete;
-  ConnectionTracker& operator=(ConnectionTracker&&) = delete;
-
-  void Update(const Packet& packet, std::shared_ptr<Endpoint> channel, ConnectionDirection direction);
-
-  std::shared_ptr<Endpoint> Lookup(const Packet& packet, ConnectionDirection direction,
-                                   ValidatorType validator = nullptr, SelectorType selector = nullptr);
-
-  void RemoveChannel(const std::shared_ptr<Endpoint>& channel);
-
-  void Prune();
-
-  void Clear();
-
-  void SetTimeout(std::chrono::seconds timeout) { _Timeout = timeout; }
-  std::chrono::seconds GetTimeout() const { return _Timeout; }
-
-private:
   struct Ip4TcpKey {
     boost::asio::ip::address_v4 LocalAddress;
     boost::asio::ip::address_v4 RemoteAddress;
@@ -189,13 +165,52 @@ private:
 
   using ConnectionKey = std::variant<Ip4TcpKey, Ip6TcpKey, Ip4UdpKey, Ip6UdpKey, IcmpKey, Icmp6Key>;
 
+  class Selector {
+  public:
+    virtual ~Selector() = default;
+    virtual std::optional<std::reference_wrapper<ConnectionMark>> operator()(const Ip4TcpKey&) const = 0;
+    virtual std::optional<std::reference_wrapper<ConnectionMark>> operator()(const Ip6TcpKey&) const = 0;
+    virtual std::optional<std::reference_wrapper<ConnectionMark>> operator()(const Ip4UdpKey&) const = 0;
+    virtual std::optional<std::reference_wrapper<ConnectionMark>> operator()(const Ip6UdpKey&) const = 0;
+    virtual std::optional<std::reference_wrapper<ConnectionMark>> operator()(const IcmpKey&) const = 0;
+    virtual std::optional<std::reference_wrapper<ConnectionMark>> operator()(const Icmp6Key&) const = 0;
+  };
+
+  using SelectorType = Selector&;
+
+  using ValidatorType = std::function<bool(ConnectionMark&)>;
+
+  explicit ConnectionTracker(SelectorType selector, std::chrono::seconds timeout = std::chrono::seconds(60));
+  ~ConnectionTracker() = default;
+
+  ConnectionTracker(const ConnectionTracker&) = delete;
+  ConnectionTracker& operator=(const ConnectionTracker&) = delete;
+  ConnectionTracker(ConnectionTracker&&) = delete;
+  ConnectionTracker& operator=(ConnectionTracker&&) = delete;
+
+  void Update(const Packet& packet, ConnectionMark& mark, ConnectionDirection direction);
+
+  std::optional<std::reference_wrapper<ConnectionMark>> Lookup(const Packet& packet, ConnectionDirection direction,
+                                                               ValidatorType validator = nullptr);
+
+  void RemoveMark(const ConnectionMark& mark);
+
+  void Prune();
+
+  void Clear();
+
+  void SetTimeout(std::chrono::seconds timeout) { _Timeout = timeout; }
+  std::chrono::seconds GetTimeout() const { return _Timeout; }
+
+private:
   static std::optional<ConnectionKey> ParseConnectionKey(const Packet& p, ConnectionDirection direction);
 
   struct ConnectionEntry {
-    std::shared_ptr<Endpoint> Channel;
+    ConnectionMark& Mark;
     std::chrono::steady_clock::time_point LastActive;
   };
 
+  SelectorType _Selector;
   std::map<Ip4TcpKey, ConnectionEntry> _Ip4TcpTable;
   std::map<Ip6TcpKey, ConnectionEntry> _Ip6TcpTable;
   std::map<Ip4UdpKey, ConnectionEntry> _Ip4UdpTable;
