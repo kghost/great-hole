@@ -33,6 +33,7 @@ public:
     std::shared_ptr<UdpDynMux::Channel> Channel;
     std::shared_ptr<ChannelSideEndpoint> ChannelSide;
     std::shared_ptr<Pipeline> Pipeline;
+    bool Stopping = false;
   };
 
   VpnClientMultiChannel(boost::asio::io_context& ioContext, std::shared_ptr<Endpoint> tun,
@@ -62,8 +63,6 @@ protected:
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 
 private:
-  Omni::Fiber::Coroutine<void> PruneLoop();
-
   boost::asio::io_context& _IoContext;
   std::shared_ptr<Endpoint> _Tun;
   std::shared_ptr<UdpDynMux> _UdpDynMux;

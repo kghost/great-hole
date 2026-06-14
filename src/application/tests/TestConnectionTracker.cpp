@@ -85,7 +85,9 @@ TEST(ConnectionTrackerTest, BasicOperations) {
     MockConnectionMark mark2("mark2");
 
     MockSelector selector(std::nullopt);
-    ConnectionTracker tracker(selector, std::chrono::seconds(2));
+    auto tracker = std::make_shared<ConnectionTracker>(io, selector, std::chrono::seconds(2));
+    auto errStart = co_await tracker->Start();
+    EXPECT_FALSE(errStart);
 
     auto p1 = CreateIPv6Packet(boost::asio::ip::make_address_v6("fd00::1"), boost::asio::ip::make_address_v6("fd00::2"),
                                1234, 80, 6);
@@ -96,33 +98,37 @@ TEST(ConnectionTrackerTest, BasicOperations) {
                                5678, 443, 6);
 
     // Initially empty
-    EXPECT_FALSE(tracker.Lookup(p1, ConnectionDirection::kOutput).has_value());
+    EXPECT_FALSE(tracker->Lookup(p1, ConnectionDirection::kOutput).has_value());
 
     // Update/Insert p1
-    tracker.Update(p1, mark1, ConnectionDirection::kOutput);
-    auto res1 = tracker.Lookup(p1, ConnectionDirection::kOutput);
+    tracker->Update(p1, mark1, ConnectionDirection::kOutput);
+    auto res1 = tracker->Lookup(p1, ConnectionDirection::kOutput);
     EXPECT_TRUE(res1.has_value());
     EXPECT_EQ(&res1->get(), &mark1);
 
-    auto res1_reply = tracker.Lookup(p1_reply, ConnectionDirection::kInput);
+    auto res1_reply = tracker->Lookup(p1_reply, ConnectionDirection::kInput);
     EXPECT_TRUE(res1_reply.has_value());
     EXPECT_EQ(&res1_reply->get(), &mark1);
 
     // Update/Insert p2
-    tracker.Update(p2, mark2, ConnectionDirection::kOutput);
-    auto res2 = tracker.Lookup(p2, ConnectionDirection::kOutput);
+    tracker->Update(p2, mark2, ConnectionDirection::kOutput);
+    auto res2 = tracker->Lookup(p2, ConnectionDirection::kOutput);
     EXPECT_TRUE(res2.has_value());
     EXPECT_EQ(&res2->get(), &mark2);
 
     // Remove mark1
-    tracker.RemoveMark(mark1);
-    EXPECT_FALSE(tracker.Lookup(p1, ConnectionDirection::kOutput).has_value());
-    EXPECT_TRUE(tracker.Lookup(p2, ConnectionDirection::kOutput).has_value());
-    EXPECT_EQ(&tracker.Lookup(p2, ConnectionDirection::kOutput)->get(), &mark2);
+    tracker->RemoveMark(mark1);
+    EXPECT_FALSE(tracker->Lookup(p1, ConnectionDirection::kOutput).has_value());
+    EXPECT_TRUE(tracker->Lookup(p2, ConnectionDirection::kOutput).has_value());
+    EXPECT_EQ(&tracker->Lookup(p2, ConnectionDirection::kOutput)->get(), &mark2);
 
     // Clear
-    tracker.Clear();
-    EXPECT_FALSE(tracker.Lookup(p2, ConnectionDirection::kOutput).has_value());
+    tracker->Clear();
+    EXPECT_FALSE(tracker->Lookup(p2, ConnectionDirection::kOutput).has_value());
+
+    auto errStop = co_await tracker->Stop();
+    EXPECT_FALSE(errStop);
+    co_await tracker->WaitService();
 
     testPassed = true;
     co_return;
@@ -143,13 +149,15 @@ TEST(ConnectionTrackerTest, ExpirationAndPruning) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     MockConnectionMark mark1("mark1");
     MockSelector selector(std::nullopt);
-    ConnectionTracker tracker(selector, std::chrono::seconds(1));
+    auto tracker = std::make_shared<ConnectionTracker>(io, selector, std::chrono::seconds(1));
+    auto errStart = co_await tracker->Start();
+    EXPECT_FALSE(errStart);
 
     auto p1 = CreateIPv6Packet(boost::asio::ip::make_address_v6("fd00::1"), boost::asio::ip::make_address_v6("fd00::2"),
                                1234, 80, 6);
 
-    tracker.Update(p1, mark1, ConnectionDirection::kOutput);
-    auto res = tracker.Lookup(p1, ConnectionDirection::kOutput);
+    tracker->Update(p1, mark1, ConnectionDirection::kOutput);
+    auto res = tracker->Lookup(p1, ConnectionDirection::kOutput);
     EXPECT_TRUE(res.has_value());
     EXPECT_EQ(&res->get(), &mark1);
 
@@ -159,7 +167,11 @@ TEST(ConnectionTrackerTest, ExpirationAndPruning) {
     co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
 
     // Lookup should return std::nullopt and prune the entry
-    EXPECT_FALSE(tracker.Lookup(p1, ConnectionDirection::kOutput).has_value());
+    EXPECT_FALSE(tracker->Lookup(p1, ConnectionDirection::kOutput).has_value());
+
+    auto errStop = co_await tracker->Stop();
+    EXPECT_FALSE(errStop);
+    co_await tracker->WaitService();
 
     testPassed = true;
     co_return;
@@ -180,26 +192,33 @@ TEST(ConnectionTrackerTest, SelectorAndValidator) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     MockConnectionMark mark1("mark1");
     MockSelector selector(mark1);
-    ConnectionTracker tracker(selector, std::chrono::seconds(2));
+    auto tracker = std::make_shared<ConnectionTracker>(io, selector, std::chrono::seconds(2));
+    auto errStart = co_await tracker->Start();
+    EXPECT_FALSE(errStart);
+
     auto p1 = CreateIPv6Packet(boost::asio::ip::make_address_v6("fd00::1"), boost::asio::ip::make_address_v6("fd00::2"),
                                1234, 80, 6);
 
     // Lookup with selector
-    auto res = tracker.Lookup(p1, ConnectionDirection::kOutput);
+    auto res = tracker->Lookup(p1, ConnectionDirection::kOutput);
     EXPECT_TRUE(res.has_value());
     EXPECT_EQ(&res->get(), &mark1);
 
     // Subsequent lookup should find it directly
-    EXPECT_TRUE(tracker.Lookup(p1, ConnectionDirection::kOutput).has_value());
-    EXPECT_EQ(&tracker.Lookup(p1, ConnectionDirection::kOutput)->get(), &mark1);
+    EXPECT_TRUE(tracker->Lookup(p1, ConnectionDirection::kOutput).has_value());
+    EXPECT_EQ(&tracker->Lookup(p1, ConnectionDirection::kOutput)->get(), &mark1);
 
     // Lookup with validator that returns false
     selector.Result = std::nullopt;
-    res = tracker.Lookup(p1, ConnectionDirection::kOutput, [](ConnectionMark&) { return false; });
+    res = tracker->Lookup(p1, ConnectionDirection::kOutput, [](ConnectionMark&) { return false; });
     EXPECT_FALSE(res.has_value());
 
     // Should be erased now
-    EXPECT_FALSE(tracker.Lookup(p1, ConnectionDirection::kOutput).has_value());
+    EXPECT_FALSE(tracker->Lookup(p1, ConnectionDirection::kOutput).has_value());
+
+    auto errStop = co_await tracker->Stop();
+    EXPECT_FALSE(errStop);
+    co_await tracker->WaitService();
 
     testPassed = true;
     co_return;

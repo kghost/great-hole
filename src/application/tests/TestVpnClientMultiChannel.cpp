@@ -150,19 +150,25 @@ class CallbackSelector : public ConnectionTracker::Selector {
 public:
   CallbackSelector(std::vector<CallbackArgs>& invocations) : _Invocations(invocations) {}
 
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip4TcpKey& k) const override {
-    _Invocations.push_back(CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.LocalPort, k.RemotePort, 6});
+  std::optional<std::reference_wrapper<ConnectionMark>>
+  operator()(const ConnectionTracker::Ip4TcpKey& k) const override {
+    _Invocations.push_back(
+        CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.LocalPort, k.RemotePort, 6});
     return std::nullopt;
   }
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip6TcpKey& k) const override {
+  std::optional<std::reference_wrapper<ConnectionMark>>
+  operator()(const ConnectionTracker::Ip6TcpKey& k) const override {
     _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.LocalPort, k.RemotePort, 6});
     return std::nullopt;
   }
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip4UdpKey& k) const override {
-    _Invocations.push_back(CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.LocalPort, k.RemotePort, 17});
+  std::optional<std::reference_wrapper<ConnectionMark>>
+  operator()(const ConnectionTracker::Ip4UdpKey& k) const override {
+    _Invocations.push_back(
+        CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.LocalPort, k.RemotePort, 17});
     return std::nullopt;
   }
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip6UdpKey& k) const override {
+  std::optional<std::reference_wrapper<ConnectionMark>>
+  operator()(const ConnectionTracker::Ip6UdpKey& k) const override {
     _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.LocalPort, k.RemotePort, 17});
     return std::nullopt;
   }
@@ -170,7 +176,8 @@ public:
     _Invocations.push_back(CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.Id, k.Id, 1});
     return std::nullopt;
   }
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Icmp6Key& k) const override {
+  std::optional<std::reference_wrapper<ConnectionMark>>
+  operator()(const ConnectionTracker::Icmp6Key& k) const override {
     _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.Id, k.Id, 58});
     return std::nullopt;
   }
@@ -181,15 +188,28 @@ private:
 
 class RoutingSelector : public ConnectionTracker::Selector {
 public:
-  RoutingSelector(std::optional<std::reference_wrapper<VpnClientMultiChannel::Session>>& resolvedSession, int& selectorCalls)
+  RoutingSelector(std::optional<std::reference_wrapper<VpnClientMultiChannel::Session>>& resolvedSession,
+                  int& selectorCalls)
       : _ResolvedSession(resolvedSession), _SelectorCalls(selectorCalls) {}
 
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip4TcpKey&) const override { return Handle(); }
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip6TcpKey&) const override { return Handle(); }
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip4UdpKey&) const override { return Handle(); }
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip6UdpKey&) const override { return Handle(); }
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::IcmpKey&) const override { return Handle(); }
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Icmp6Key&) const override { return Handle(); }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip4TcpKey&) const override {
+    return Handle();
+  }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip6TcpKey&) const override {
+    return Handle();
+  }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip4UdpKey&) const override {
+    return Handle();
+  }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip6UdpKey&) const override {
+    return Handle();
+  }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::IcmpKey&) const override {
+    return Handle();
+  }
+  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Icmp6Key&) const override {
+    return Handle();
+  }
 
 private:
   std::optional<std::reference_wrapper<ConnectionMark>> Handle() const {
@@ -443,6 +463,98 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
       auto errRead = co_await clientChannel->Read(rxClient, cancelObj);
       EXPECT_FALSE(errRead);
       EXPECT_EQ(selectorCalls, 2); // Callback invoked again because entry timed out and was pruned!
+    }
+
+    // Cleanup
+    co_await connTrack->Stop();
+    co_await connTrack->WaitService();
+    co_await udpClient->Stop();
+    co_await udpClient->WaitService();
+    co_await udpServer->Stop();
+    co_await udpServer->WaitService();
+
+    co_await current.WaitAll();
+    testPassed = true;
+    co_return;
+  });
+
+  io.restart();
+  io.run();
+  EXPECT_TRUE(testPassed);
+}
+
+TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregisteredChannel) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::Manager manager(executor);
+
+  auto udpClient =
+      std::make_shared<UdpDynMux>(io, boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udpServer =
+      std::make_shared<UdpDynMux>(io, boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+
+  UdpDynMux::PskType psk = {1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6};
+
+  std::optional<std::reference_wrapper<VpnClientMultiChannel::Session>> resolvedSession;
+  int selectorCalls = 0;
+
+  RoutingSelector selector(resolvedSession, selectorCalls);
+
+  auto mockTun = std::make_shared<MockEndpoint>();
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io, mockTun, udpServer, selector);
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+
+    // Start all services
+    EXPECT_FALSE(co_await udpClient->Start());
+    EXPECT_FALSE(co_await udpServer->Start());
+    EXPECT_FALSE(co_await connTrack->Start());
+
+    // Register channel
+    auto& session = (co_await connTrack->RegisterChannel(psk, nullptr)).get();
+    EXPECT_NE(session.Channel, nullptr);
+    resolvedSession = session;
+
+    // Connect client to server
+    auto resolver = std::make_shared<ResolverStaticEndpoint>(udpServer->LocalEndpoint());
+    auto clientChannel = co_await udpClient->CreateChannel(psk, resolver);
+    EXPECT_NE(clientChannel, nullptr);
+
+    // Wait for OnChannelEstablished
+    boost::asio::steady_timer waitTimer(io);
+    waitTimer.expires_after(std::chrono::milliseconds(200));
+    co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+
+    Cancel cancelObj;
+
+    // 1. Send incoming packet to establish conntrack entry
+    auto srcIp = boost::asio::ip::make_address_v4("10.0.0.1");
+    auto dstIp = boost::asio::ip::make_address_v4("10.0.0.2");
+    {
+      auto p = CreateTestIPv4Packet(srcIp, dstIp, 17, CreateTcpUdpPayload(5000, 6000));
+      auto errWrite = co_await clientChannel->Write(p, cancelObj);
+      EXPECT_FALSE(errWrite);
+
+      Packet rxP = co_await mockTun->PopWrite(cancelObj);
+    }
+
+    // 2. Unregister the channel
+    co_await connTrack->UnregisterChannel(psk);
+    resolvedSession = std::nullopt;
+
+    // 3. Send an outgoing packet matching the established connection key
+    {
+      auto p = CreateTestIPv4Packet(dstIp, srcIp, 17, CreateTcpUdpPayload(6000, 5000));
+      mockTun->PushRead(std::move(p));
+
+      // Wait a brief moment to ensure no crash occurs and packet is dropped
+      waitTimer.expires_after(std::chrono::milliseconds(200));
+      co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+
+      EXPECT_EQ(selectorCalls, 1);
     }
 
     // Cleanup

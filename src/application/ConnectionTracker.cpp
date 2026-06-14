@@ -7,6 +7,7 @@
 #include <optional>
 
 #include <boost/asio/ip/address_v6.hpp>
+#include <boost/asio/steady_timer.hpp>
 
 namespace gh {
 
@@ -14,8 +15,28 @@ template <class... Ts> struct overloaded : Ts... {
   using Ts::operator()...;
 };
 
-ConnectionTracker::ConnectionTracker(SelectorType selector, std::chrono::seconds timeout)
-    : _Selector(selector), _Timeout(timeout) {}
+ConnectionTracker::ConnectionTracker(boost::asio::io_context& ioContext, SelectorType selector,
+                                     std::chrono::seconds timeout)
+    : _IoContext(ioContext), _Selector(selector), _Timeout(timeout) {}
+
+Omni::Fiber::Coroutine<ErrorCode> ConnectionTracker::DoStart() { co_return ErrorCode{}; }
+
+Omni::Fiber::Coroutine<void> ConnectionTracker::DoWork() {
+  boost::asio::steady_timer pruneTimer(_IoContext.get_executor());
+  while (_State == State::kRunning && !_Service.value()._Stop.IsTriggered()) {
+    pruneTimer.expires_after(std::chrono::seconds(5));
+    auto [err] = co_await pruneTimer.async_wait(_Service.value()._Stop.AsioSlot()());
+    if (err) {
+      break;
+    }
+    Prune();
+  }
+}
+
+Omni::Fiber::Coroutine<ErrorCode> ConnectionTracker::DoGracefulStop() {
+  Clear();
+  co_return ErrorCode{};
+}
 
 void ConnectionTracker::Update(const Packet& packet, ConnectionMark& mark, ConnectionDirection direction) {
   auto keyOpt = ParseConnectionKey(packet, direction);

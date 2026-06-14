@@ -6,10 +6,12 @@
 #include <optional>
 #include <variant>
 
+#include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/address_v4.hpp>
 #include <boost/asio/ip/address_v6.hpp>
 
 #include "Packet.hpp"
+#include "ServiceBase.hpp"
 
 namespace gh {
 
@@ -21,7 +23,7 @@ public:
   virtual std::string GetDescription() const = 0;
 };
 
-class ConnectionTracker {
+class ConnectionTracker : public ServiceBase {
 public:
   struct Ip4TcpKey {
     boost::asio::ip::address_v4 LocalAddress;
@@ -180,8 +182,9 @@ public:
 
   using ValidatorType = std::function<bool(ConnectionMark&)>;
 
-  explicit ConnectionTracker(SelectorType selector, std::chrono::seconds timeout = std::chrono::seconds(60));
-  ~ConnectionTracker() = default;
+  explicit ConnectionTracker(boost::asio::io_context& ioContext, SelectorType selector,
+                             std::chrono::seconds timeout = std::chrono::seconds(60));
+  ~ConnectionTracker() override = default;
 
   ConnectionTracker(const ConnectionTracker&) = delete;
   ConnectionTracker& operator=(const ConnectionTracker&) = delete;
@@ -202,6 +205,13 @@ public:
   void SetTimeout(std::chrono::seconds timeout) { _Timeout = timeout; }
   std::chrono::seconds GetTimeout() const { return _Timeout; }
 
+  std::string GetName() const override { return "ConnectionTracker"; }
+
+protected:
+  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
+  Omni::Fiber::Coroutine<void> DoWork() override;
+  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+
 private:
   static std::optional<ConnectionKey> ParseConnectionKey(const Packet& p, ConnectionDirection direction);
 
@@ -210,6 +220,7 @@ private:
     std::chrono::steady_clock::time_point LastActive;
   };
 
+  boost::asio::io_context& _IoContext;
   SelectorType _Selector;
   std::map<Ip4TcpKey, ConnectionEntry> _Ip4TcpTable;
   std::map<Ip6TcpKey, ConnectionEntry> _Ip6TcpTable;
