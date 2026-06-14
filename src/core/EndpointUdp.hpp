@@ -20,8 +20,8 @@ class Udp : public ServiceBase, public ResolveFor {
 public:
   class UdpChannel;
 
-  explicit Udp(boost::asio::io_context& ioContext);
-  explicit Udp(boost::asio::io_context& ioContext, boost::asio::ip::udp::endpoint bind);
+  explicit Udp(boost::asio::any_io_executor executor);
+  explicit Udp(boost::asio::any_io_executor executor, boost::asio::ip::udp::endpoint bind);
   ~Udp() override;
 
   Udp(Udp&) = delete;

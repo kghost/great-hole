@@ -22,8 +22,8 @@ class EndpointTunSplitIp : public ServiceBase {
 public:
   class Channel;
 
-  explicit EndpointTunSplitIp(boost::asio::io_context& ioContext, const std::string& name);
-  explicit EndpointTunSplitIp(boost::asio::io_context& ioContext, const std::string& name, int fd);
+  explicit EndpointTunSplitIp(boost::asio::any_io_executor executor, const std::string& name);
+  explicit EndpointTunSplitIp(boost::asio::any_io_executor executor, const std::string& name, int fd);
   ~EndpointTunSplitIp() override;
 
   EndpointTunSplitIp(const EndpointTunSplitIp&) = delete;

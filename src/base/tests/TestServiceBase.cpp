@@ -36,7 +36,7 @@ void RunEventLoop(boost::asio::io_context& io) {
 
 TEST(ServiceBaseTest, StopReentrantAfterWaitService) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   bool testPassed = false;

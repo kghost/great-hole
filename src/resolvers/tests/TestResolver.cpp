@@ -46,7 +46,7 @@ void RunEventLoop(boost::asio::io_context& io) {
 
 TEST(ResolverTest, StaticIpResolverSuccess) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   bool testPassed = false;
@@ -80,7 +80,7 @@ TEST(ResolverTest, StaticIpResolverSuccess) {
 
 TEST(ResolverTest, StaticPortResolverSuccess) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   bool testPassed = false;
@@ -121,7 +121,7 @@ TEST(ResolverTest, StaticPortResolverSuccess) {
 
 TEST(ResolverTest, StaticPortResolverFailure) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   bool testPassed = false;
@@ -148,7 +148,7 @@ TEST(ResolverTest, StaticPortResolverFailure) {
 
 TEST(ResolverTest, StaticDnsResolverSuccess) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   bool testPassed = false;
@@ -174,7 +174,7 @@ TEST(ResolverTest, StaticDnsResolverSuccess) {
 
 TEST(ResolverTest, ResolverEndpointSuccess) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   bool testPassed = false;
@@ -204,7 +204,7 @@ TEST(ResolverTest, ResolverEndpointSuccess) {
 
 TEST(ResolverTest, DnsServiceResolverNonExistent) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   bool testPassed = false;
@@ -232,7 +232,7 @@ TEST(ResolverTest, DnsServiceResolverNonExistent) {
 
 TEST(ResolverTest, ResolverCancellation) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   bool testPassed = false;
@@ -289,7 +289,7 @@ TEST(ResolverTest, ResolverCancellation) {
 
 TEST(ResolverTest, ResolverHelperTest) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   bool testPassed = false;

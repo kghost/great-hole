@@ -25,8 +25,9 @@
 namespace gh {
 
 // ==================== Udp ====================
-Udp::Udp(boost::asio::io_context& ioContext) : _Socket(ioContext), _Local(boost::asio::ip::udp::v6(), 0) {}
-Udp::Udp(boost::asio::io_context& ioContext, boost::asio::ip::udp::endpoint bind) : _Socket(ioContext), _Local(bind) {}
+Udp::Udp(boost::asio::any_io_executor executor) : _Socket(executor), _Local(boost::asio::ip::udp::v6(), 0) {}
+Udp::Udp(boost::asio::any_io_executor executor, boost::asio::ip::udp::endpoint bind)
+    : _Socket(executor), _Local(bind) {}
 Udp::~Udp() { assert(_Channels.empty()); }
 
 std::string Udp::GetName() const { return "Udp:" + boost::lexical_cast<std::string>(_Local); }

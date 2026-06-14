@@ -23,10 +23,10 @@
 namespace gh {
 
 // ==================== UdpMux ====================
-UdpMux::UdpMux(boost::asio::io_context& ioContext) : _Socket(ioContext), _Local(boost::asio::ip::udp::v6(), 0) {}
+UdpMux::UdpMux(boost::asio::any_io_executor executor) : _Socket(executor), _Local(boost::asio::ip::udp::v6(), 0) {}
 
-UdpMux::UdpMux(boost::asio::io_context& ioContext, boost::asio::ip::udp::endpoint bind)
-    : _Socket(ioContext), _Local(bind) {}
+UdpMux::UdpMux(boost::asio::any_io_executor executor, boost::asio::ip::udp::endpoint bind)
+    : _Socket(executor), _Local(bind) {}
 
 UdpMux::~UdpMux() { assert(_Channels.empty()); }
 

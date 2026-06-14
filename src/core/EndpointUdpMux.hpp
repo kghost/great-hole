@@ -20,8 +20,8 @@ class UdpMux : public ServiceBase, public ResolveFor {
 public:
   class Channel;
 
-  explicit UdpMux(boost::asio::io_context& ioContext);
-  explicit UdpMux(boost::asio::io_context& ioContext, boost::asio::ip::udp::endpoint bind);
+  explicit UdpMux(boost::asio::any_io_executor executor);
+  explicit UdpMux(boost::asio::any_io_executor executor, boost::asio::ip::udp::endpoint bind);
   ~UdpMux() override;
 
   UdpMux(const UdpMux&) = delete;

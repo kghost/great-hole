@@ -75,7 +75,7 @@ public:
 
 TEST(ConnectionTrackerTest, BasicOperations) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   bool testPassed = false;
@@ -85,7 +85,7 @@ TEST(ConnectionTrackerTest, BasicOperations) {
     MockConnectionMark mark2("mark2");
 
     MockSelector selector(std::nullopt);
-    auto tracker = std::make_shared<ConnectionTracker>(io, selector, std::chrono::seconds(2));
+    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector, std::chrono::seconds(2));
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
 
@@ -141,7 +141,7 @@ TEST(ConnectionTrackerTest, BasicOperations) {
 
 TEST(ConnectionTrackerTest, ExpirationAndPruning) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   bool testPassed = false;
@@ -149,7 +149,7 @@ TEST(ConnectionTrackerTest, ExpirationAndPruning) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     MockConnectionMark mark1("mark1");
     MockSelector selector(std::nullopt);
-    auto tracker = std::make_shared<ConnectionTracker>(io, selector, std::chrono::seconds(1));
+    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector, std::chrono::seconds(1));
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
 
@@ -184,7 +184,7 @@ TEST(ConnectionTrackerTest, ExpirationAndPruning) {
 
 TEST(ConnectionTrackerTest, SelectorAndValidator) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   bool testPassed = false;
@@ -192,7 +192,7 @@ TEST(ConnectionTrackerTest, SelectorAndValidator) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     MockConnectionMark mark1("mark1");
     MockSelector selector(mark1);
-    auto tracker = std::make_shared<ConnectionTracker>(io, selector, std::chrono::seconds(2));
+    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector, std::chrono::seconds(2));
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
 

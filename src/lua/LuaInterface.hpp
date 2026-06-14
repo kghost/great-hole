@@ -13,18 +13,18 @@ class Cancel;
 // Expose C++ interface to lua script
 class LuaInterface {
 public:
-  explicit LuaInterface(boost::asio::io_context& io_context, Cancel& stopApplication)
-      : _Context(io_context), _StopApplication(stopApplication) {}
+  explicit LuaInterface(boost::asio::any_io_executor& executor, Cancel& stopApplication)
+      : _Executor(executor), _StopApplication(stopApplication) {}
   ~LuaInterface() {}
 
-  boost::asio::io_context& GetContext() { return _Context; }
+  boost::asio::any_io_executor GetExecutor() { return _Executor; }
   Cancel& GetStopApplication() { return _StopApplication; }
 
   void Schedule(std::move_only_function<Omni::Fiber::Coroutine<int>(lua_State*, int)>&&);
   Omni::Fiber::Coroutine<int> Resume(lua_State*, int);
 
 private:
-  boost::asio::io_context& _Context;
+  boost::asio::any_io_executor _Executor;
   Cancel& _StopApplication;
   std::optional<std::move_only_function<Omni::Fiber::Coroutine<int>(lua_State*, int)>> _PendingYield;
 };

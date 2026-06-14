@@ -42,7 +42,7 @@ static int TunNew(lua_State* L) {
     throw std::runtime_error("tun: not enough arguments");
   }
 
-  LuaEndpoint::MakeShared<Tun>(L, interface.GetContext(), lua_tostring(L, 1));
+  LuaEndpoint::MakeShared<Tun>(L, interface.GetExecutor(), lua_tostring(L, 1));
   luaL_getmetatable(L, LuaEndpoint::GetTypeTag());
   lua_setmetatable(L, -2);
   return 1;

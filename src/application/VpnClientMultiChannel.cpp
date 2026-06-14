@@ -1,6 +1,7 @@
 #include "VpnClientMultiChannel.hpp"
 
 #include <array>
+#include <boost/asio/any_io_executor.hpp>
 #include <chrono>
 #include <functional>
 #include <map>
@@ -71,7 +72,7 @@ public:
   };
 
   explicit TunSideEndpoint(VpnClientMultiChannel& parent)
-      : _Parent(parent), _ConnectionTracker(std::make_shared<ConnectionTracker>(parent._IoContext, parent._Selector)) {}
+      : _Parent(parent), _ConnectionTracker(std::make_shared<ConnectionTracker>(parent._Executor, parent._Selector)) {}
   ~TunSideEndpoint() override = default;
 
   std::string GetName() const override { return "VpnClientMultiChannel:TunSide"; }
@@ -158,11 +159,11 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::ChannelSideEndpoint::Wr
   co_return ErrorCode{};
 }
 
-VpnClientMultiChannel::VpnClientMultiChannel(boost::asio::io_context& ioContext, std::shared_ptr<Endpoint> tun,
+VpnClientMultiChannel::VpnClientMultiChannel(boost::asio::any_io_executor executor, std::shared_ptr<Endpoint> tun,
                                              std::shared_ptr<UdpDynMux> udpDynMux,
                                              ConnectionTracker::SelectorType selector,
                                              std::vector<std::shared_ptr<Filter>> filters)
-    : _IoContext(ioContext), _Tun(tun), _UdpDynMux(udpDynMux), _Selector(selector), _Filters(filters) {
+    : _Executor(executor), _Tun(tun), _UdpDynMux(udpDynMux), _Selector(selector), _Filters(filters) {
   _TunSide = std::make_shared<TunSideEndpoint>(*this);
   _UdpDynMux->SetChannelNotification(*this);
 }

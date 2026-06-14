@@ -32,11 +32,11 @@
 namespace gh {
 
 // ==================== EndpointTunSplitIp ====================
-EndpointTunSplitIp::EndpointTunSplitIp(boost::asio::io_context& ioContext, const std::string& name)
-    : _TunFileDescriptor(ioContext), _TunName(name) {}
+EndpointTunSplitIp::EndpointTunSplitIp(boost::asio::any_io_executor executor, const std::string& name)
+    : _TunFileDescriptor(executor), _TunName(name) {}
 
-EndpointTunSplitIp::EndpointTunSplitIp(boost::asio::io_context& ioContext, const std::string& name, int fd)
-    : _TunFileDescriptor(ioContext), _TunName(name) {
+EndpointTunSplitIp::EndpointTunSplitIp(boost::asio::any_io_executor executor, const std::string& name, int fd)
+    : _TunFileDescriptor(executor), _TunName(name) {
   _TunFileDescriptor.assign(fd);
 }
 

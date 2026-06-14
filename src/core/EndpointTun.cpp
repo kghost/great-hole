@@ -8,7 +8,7 @@
 
 namespace gh {
 
-Tun::Tun(boost::asio::io_context& io_context, std::string const& name) : _TunFileDescriptor(io_context), _Name(name) {}
+Tun::Tun(boost::asio::any_io_executor executor, std::string const& name) : _TunFileDescriptor(executor), _Name(name) {}
 
 std::string Tun::GetName() const { return "Tun:" + _Name; }
 

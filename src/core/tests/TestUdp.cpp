@@ -29,11 +29,11 @@ void RunEventLoop(boost::asio::io_context& io) {
 
 TEST(UdpFiberTest, SuccessfulChannelCreationAndDataTransfer) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto udp1 = std::make_shared<Udp>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  auto udp2 = std::make_shared<Udp>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udp1 = std::make_shared<Udp>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udp2 = std::make_shared<Udp>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
 
   bool testPassed = false;
 
@@ -126,10 +126,10 @@ TEST(UdpFiberTest, SuccessfulChannelCreationAndDataTransfer) {
 
 TEST(UdpFiberTest, StartFailureOnDuplicateBind) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto udp1 = std::make_shared<Udp>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udp1 = std::make_shared<Udp>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -142,7 +142,7 @@ TEST(UdpFiberTest, StartFailureOnDuplicateBind) {
     }
 
     auto ep1 = udp1->LocalEndpoint();
-    auto udp2 = std::make_shared<Udp>(io, ep1);
+    auto udp2 = std::make_shared<Udp>(io.get_executor(), ep1);
 
     auto err2 = co_await udp2->Start();
     EXPECT_TRUE(err2); // Duplicate bind should return error
@@ -162,11 +162,11 @@ TEST(UdpFiberTest, StartFailureOnDuplicateBind) {
 
 TEST(UdpFiberTest, ReadCancellation) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto udp1 = std::make_shared<Udp>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  auto udp2 = std::make_shared<Udp>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udp1 = std::make_shared<Udp>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udp2 = std::make_shared<Udp>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
 
   bool testPassed = false;
 
@@ -232,11 +232,11 @@ TEST(UdpFiberTest, ReadCancellation) {
 
 TEST(UdpFiberTest, WriteCancellation) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto udp1 = std::make_shared<Udp>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  auto udp2 = std::make_shared<Udp>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udp1 = std::make_shared<Udp>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udp2 = std::make_shared<Udp>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
 
   bool testPassed = false;
 
@@ -291,11 +291,11 @@ TEST(UdpFiberTest, WriteCancellation) {
 
 TEST(UdpFiberTest, MultiplePacketsPingPong) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto udp1 = std::make_shared<Udp>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  auto udp2 = std::make_shared<Udp>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udp1 = std::make_shared<Udp>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udp2 = std::make_shared<Udp>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
 
   bool testPassed = false;
 
@@ -405,11 +405,11 @@ TEST(UdpFiberTest, MultiplePacketsPingPong) {
 
 TEST(UdpFiberTest, CreateChannelFromResolverEndpoint) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto udp1 = std::make_shared<Udp>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  auto udp2 = std::make_shared<Udp>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udp1 = std::make_shared<Udp>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udp2 = std::make_shared<Udp>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
 
   bool testPassed = false;
 

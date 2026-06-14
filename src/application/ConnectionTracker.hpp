@@ -182,7 +182,7 @@ public:
 
   using ValidatorType = std::function<bool(ConnectionMark&)>;
 
-  explicit ConnectionTracker(boost::asio::io_context& ioContext, SelectorType selector,
+  explicit ConnectionTracker(boost::asio::any_io_executor executor, SelectorType selector,
                              std::chrono::seconds timeout = std::chrono::seconds(60));
   ~ConnectionTracker() override = default;
 
@@ -218,7 +218,7 @@ private:
     std::chrono::steady_clock::time_point LastActive;
   };
 
-  boost::asio::io_context& _IoContext;
+  boost::asio::any_io_executor _Executor;
   SelectorType _Selector;
   std::map<Ip4TcpKey, ConnectionEntry> _Ip4TcpTable;
   std::map<Ip6TcpKey, ConnectionEntry> _Ip6TcpTable;

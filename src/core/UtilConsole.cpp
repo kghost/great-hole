@@ -10,7 +10,7 @@ namespace gh {
 
 class Input : public EndpointInput {
 public:
-  explicit Input(boost::asio::io_context& io_context, decltype(STDERR_FILENO) f) : _S(io_context, f) {}
+  explicit Input(boost::asio::any_io_executor executor, decltype(STDERR_FILENO) f) : _S(executor, f) {}
 
   Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override {
     auto [err, bytes_transferred] =
@@ -28,7 +28,7 @@ private:
 
 class Output : public EndpointOutput {
 public:
-  explicit Output(boost::asio::io_context& io_context, decltype(STDERR_FILENO) f) : _S(io_context, f) {}
+  explicit Output(boost::asio::any_io_executor executor, decltype(STDERR_FILENO) f) : _S(executor, f) {}
 
   Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel& c) override {
     std::size_t sent = 0;
@@ -51,34 +51,34 @@ static std::weak_ptr<EndpointInput> _In;
 static std::weak_ptr<EndpointOutput> _Out;
 static std::weak_ptr<EndpointOutput> _Err;
 
-std::shared_ptr<EndpointInput> GetCin(boost::asio::io_context& io_context) {
+std::shared_ptr<EndpointInput> GetCin(boost::asio::any_io_executor executor) {
   auto p = _In.lock();
   if (p) {
     return p;
   } else {
-    auto o = std::make_shared<Input>(io_context, STDIN_FILENO);
+    auto o = std::make_shared<Input>(executor, STDIN_FILENO);
     _In = o;
     return o;
   }
 }
 
-std::shared_ptr<EndpointOutput> GetCout(boost::asio::io_context& io_context) {
+std::shared_ptr<EndpointOutput> GetCout(boost::asio::any_io_executor executor) {
   auto p = _Out.lock();
   if (p) {
     return p;
   } else {
-    auto o = std::make_shared<Output>(io_context, STDOUT_FILENO);
+    auto o = std::make_shared<Output>(executor, STDOUT_FILENO);
     _Out = o;
     return o;
   }
 }
 
-std::shared_ptr<EndpointOutput> GetCerr(boost::asio::io_context& io_context) {
+std::shared_ptr<EndpointOutput> GetCerr(boost::asio::any_io_executor executor) {
   auto p = _Err.lock();
   if (p) {
     return p;
   } else {
-    auto o = std::make_shared<Output>(io_context, STDERR_FILENO);
+    auto o = std::make_shared<Output>(executor, STDERR_FILENO);
     _Err = o;
     return o;
   }

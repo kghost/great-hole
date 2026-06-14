@@ -10,7 +10,7 @@ namespace gh {
 static int TunSplitIpNew(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
   if (lua_gettop(L) == 1) {
-    LuaTunSplitIp::MakeShared(L, interface.GetContext(), lua_tostring(L, 1));
+    LuaTunSplitIp::MakeShared(L, interface.GetExecutor(), lua_tostring(L, 1));
   } else {
     throw std::runtime_error("tun_split_ip: invalid arguments");
   }

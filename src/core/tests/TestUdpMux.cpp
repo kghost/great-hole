@@ -29,10 +29,10 @@ void RunEventLoop(boost::asio::io_context& io) {
 
 TEST(UdpMuxTest, IgnoresStrayPackets) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto server = std::make_shared<UdpMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto server = std::make_shared<UdpMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -66,7 +66,7 @@ TEST(UdpMuxTest, IgnoresStrayPackets) {
     });
 
     // Create a plain raw UDP socket to send raw empty, wrong, and valid packets
-    udp::socket rawSocket(io, udp::v6());
+    udp::socket rawSocket(io.get_executor(), udp::v6());
 
     // Send a 0-byte packet
     rawSocket.send_to(boost::asio::buffer("", 0), server->LocalEndpoint());
@@ -96,10 +96,10 @@ TEST(UdpMuxTest, IgnoresStrayPackets) {
 
 TEST(UdpMuxTest, ReadCancellation) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto server = std::make_shared<UdpMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto server = std::make_shared<UdpMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -154,10 +154,10 @@ TEST(UdpMuxTest, ReadCancellation) {
 
 TEST(UdpMuxTest, WriteCancellation) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto server = std::make_shared<UdpMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto server = std::make_shared<UdpMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -201,11 +201,11 @@ TEST(UdpMuxTest, WriteCancellation) {
 
 TEST(UdpMuxTest, DirectServerToServerMux) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto serverA = std::make_shared<UdpMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  auto serverB = std::make_shared<UdpMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto serverA = std::make_shared<UdpMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto serverB = std::make_shared<UdpMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {

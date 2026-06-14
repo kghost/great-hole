@@ -39,7 +39,7 @@ private:
 
 TEST(VpnServerTest, ConstructorStoresFiltersAndAppliesThem) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   int fds[2];
@@ -47,8 +47,8 @@ TEST(VpnServerTest, ConstructorStoresFiltersAndAppliesThem) {
   int testFd = fds[0];
   int externalFd = fds[1];
 
-  auto tunSplit = std::make_shared<EndpointTunSplitIp>(io, "test", testFd);
-  auto udpDynMux = std::make_shared<UdpDynMux>(io);
+  auto tunSplit = std::make_shared<EndpointTunSplitIp>(io.get_executor(), "test", testFd);
+  auto udpDynMux = std::make_shared<UdpDynMux>(io.get_executor());
   int filterCounter = 0;
   auto mockFilter = std::make_shared<MockFilter>(filterCounter);
   std::vector<std::shared_ptr<Filter>> filters = {mockFilter};
@@ -132,19 +132,19 @@ Packet CreateIPv4Packet(const boost::asio::ip::address_v4& src, const boost::asi
 
 TEST(VpnServerTest, EndToEndBidirectionalRouting) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   int fdsClient[2], fdsServer[2];
   ASSERT_GE(::socketpair(AF_UNIX, SOCK_SEQPACKET, 0, fdsClient), 0);
   ASSERT_GE(::socketpair(AF_UNIX, SOCK_SEQPACKET, 0, fdsServer), 0);
 
-  auto tunClient = std::make_shared<EndpointTunSplitIp>(io, "client_tun", fdsClient[0]);
-  auto tunServer = std::make_shared<EndpointTunSplitIp>(io, "server_tun", fdsServer[0]);
-  auto udpClient =
-      std::make_shared<UdpDynMux>(io, boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  auto udpServer =
-      std::make_shared<UdpDynMux>(io, boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto tunClient = std::make_shared<EndpointTunSplitIp>(io.get_executor(), "client_tun", fdsClient[0]);
+  auto tunServer = std::make_shared<EndpointTunSplitIp>(io.get_executor(), "server_tun", fdsServer[0]);
+  auto udpClient = std::make_shared<UdpDynMux>(
+      io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udpServer = std::make_shared<UdpDynMux>(
+      io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
   auto vpnServer = std::make_shared<VpnServer>(tunServer, udpServer);
 
   UdpDynMux::PskType psk = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
@@ -180,12 +180,12 @@ TEST(VpnServerTest, EndToEndBidirectionalRouting) {
     EXPECT_FALSE(co_await clientPipeline->Start());
 
     // Wait for server notification / pipelines to set up
-    boost::asio::steady_timer waitTimer(io);
+    boost::asio::steady_timer waitTimer(io.get_executor());
     waitTimer.expires_after(std::chrono::milliseconds(100));
     co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
 
-    boost::asio::posix::stream_descriptor clientStack(io, fdsClient[1]);
-    boost::asio::posix::stream_descriptor serverStack(io, fdsServer[1]);
+    boost::asio::posix::stream_descriptor clientStack(io.get_executor(), fdsClient[1]);
+    boost::asio::posix::stream_descriptor serverStack(io.get_executor(), fdsServer[1]);
 
     // Direction 1 (IPv6): Client -> Server
     {

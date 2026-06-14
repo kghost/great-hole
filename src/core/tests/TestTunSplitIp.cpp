@@ -31,7 +31,7 @@ void RunEventLoop(boost::asio::io_context& io) {
 
 TEST(TunSplitIpTest, DispatchAndVerifyIP) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   int fds[2];
@@ -40,7 +40,7 @@ TEST(TunSplitIpTest, DispatchAndVerifyIP) {
   int testFd = fds[0];
   int externalFd = fds[1];
 
-  auto tunSplit = std::make_shared<EndpointTunSplitIp>(io, "test", testFd);
+  auto tunSplit = std::make_shared<EndpointTunSplitIp>(io.get_executor(), "test", testFd);
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -206,7 +206,7 @@ TEST(TunSplitIpTest, DispatchAndVerifyIP) {
 
 TEST(TunSplitIpTest, MultipleIPsPerChannel) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   int fds[2];
@@ -215,7 +215,7 @@ TEST(TunSplitIpTest, MultipleIPsPerChannel) {
   int testFd = fds[0];
   int externalFd = fds[1];
 
-  auto tunSplit = std::make_shared<EndpointTunSplitIp>(io, "test", testFd);
+  auto tunSplit = std::make_shared<EndpointTunSplitIp>(io.get_executor(), "test", testFd);
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {

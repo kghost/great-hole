@@ -295,12 +295,12 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
 
 // ==================== UdpDynMux ====================
 
-UdpDynMux::UdpDynMux(boost::asio::io_context& ioContext, ChannelNotification& notification)
-    : UdpDynMux(ioContext, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), 0), notification) {}
+UdpDynMux::UdpDynMux(boost::asio::any_io_executor executor, ChannelNotification& notification)
+    : UdpDynMux(executor, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), 0), notification) {}
 
-UdpDynMux::UdpDynMux(boost::asio::io_context& ioContext, boost::asio::ip::udp::endpoint bind,
+UdpDynMux::UdpDynMux(boost::asio::any_io_executor executor, boost::asio::ip::udp::endpoint bind,
                      ChannelNotification& notification)
-    : _Notification(notification), _Socket(ioContext), _Local(bind) {
+    : _Notification(notification), _Socket(executor), _Local(bind) {
   std::random_device rd;
   _Prng.seed(rd());
 }

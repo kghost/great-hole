@@ -15,14 +15,14 @@ template <class... Ts> struct overloaded : Ts... {
   using Ts::operator()...;
 };
 
-ConnectionTracker::ConnectionTracker(boost::asio::io_context& ioContext, SelectorType selector,
+ConnectionTracker::ConnectionTracker(boost::asio::any_io_executor executor, SelectorType selector,
                                      std::chrono::seconds timeout)
-    : _IoContext(ioContext), _Selector(selector), _Timeout(timeout) {}
+    : _Executor(executor), _Selector(selector), _Timeout(timeout) {}
 
 Omni::Fiber::Coroutine<ErrorCode> ConnectionTracker::DoStart() { co_return ErrorCode{}; }
 
 Omni::Fiber::Coroutine<void> ConnectionTracker::DoWork() {
-  boost::asio::steady_timer pruneTimer(_IoContext.get_executor());
+  boost::asio::steady_timer pruneTimer(_Executor);
   while (_State == State::kRunning && !_Service.value()._Stop.IsTriggered()) {
     pruneTimer.expires_after(std::chrono::seconds(5));
     auto [err] = co_await pruneTimer.async_wait(_Service.value()._Stop.AsioSlot()());

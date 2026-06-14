@@ -43,8 +43,9 @@ public:
   };
   static NoopChannelNotification _NoopChannelNotification;
 
-  explicit UdpDynMux(boost::asio::io_context& ioContext, ChannelNotification& notification = _NoopChannelNotification);
-  explicit UdpDynMux(boost::asio::io_context& ioContext, boost::asio::ip::udp::endpoint bind,
+  explicit UdpDynMux(boost::asio::any_io_executor executor,
+                     ChannelNotification& notification = _NoopChannelNotification);
+  explicit UdpDynMux(boost::asio::any_io_executor executor, boost::asio::ip::udp::endpoint bind,
                      ChannelNotification& notification = _NoopChannelNotification);
   ~UdpDynMux() override;
 

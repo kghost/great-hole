@@ -93,12 +93,13 @@ static int UdpDynMuxSetChannelNotification(lua_State* L) {
   return 0;
 }
 
-static const struct luaL_Reg kUdpDynMuxMetatable[] = {{"__gc", SafeCall<LuaUdpDynMux::Gc>},
-                                                      {"create_channel", SafeYield<UdpDynMuxCreateChannel>},
-                                                      {"set_channel_notification", SafeCall<UdpDynMuxSetChannelNotification>},
-                                                      {"start", SafeYield<UdpDynMuxStart>},
-                                                      {"stop", SafeYield<UdpDynMuxStop>},
-                                                      {nullptr, nullptr}};
+static const struct luaL_Reg kUdpDynMuxMetatable[] = {
+    {"__gc", SafeCall<LuaUdpDynMux::Gc>},
+    {"create_channel", SafeYield<UdpDynMuxCreateChannel>},
+    {"set_channel_notification", SafeCall<UdpDynMuxSetChannelNotification>},
+    {"start", SafeYield<UdpDynMuxStart>},
+    {"stop", SafeYield<UdpDynMuxStop>},
+    {nullptr, nullptr}};
 
 static int UdpDynMuxNew(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
@@ -113,9 +114,9 @@ static int UdpDynMuxNew(lua_State* L) {
 
   if (port.has_value()) {
     auto bind = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), *port);
-    LuaUdpDynMux::MakeShared(L, interface.GetContext(), bind);
+    LuaUdpDynMux::MakeShared(L, interface.GetExecutor(), bind);
   } else {
-    LuaUdpDynMux::MakeShared(L, interface.GetContext());
+    LuaUdpDynMux::MakeShared(L, interface.GetExecutor());
   }
 
   luaL_getmetatable(L, LuaUdpDynMux::GetTypeTag());

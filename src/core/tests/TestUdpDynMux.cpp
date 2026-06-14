@@ -31,11 +31,11 @@ void RunEventLoop(boost::asio::io_context& io) {
 
 TEST(UdpDynMuxTest, SuccessfulChannelCreationAndDataTransfer) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto dev1 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  auto dev2 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev1 = std::make_shared<UdpDynMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev2 = std::make_shared<UdpDynMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
 
   bool testPassed = false;
 
@@ -58,7 +58,7 @@ TEST(UdpDynMuxTest, SuccessfulChannelCreationAndDataTransfer) {
 
     Cancel cancelObj;
     co_await Omni::Fiber::Yield();
-    boost::asio::steady_timer waitTimer(io);
+    boost::asio::steady_timer waitTimer(io.get_executor());
     waitTimer.expires_after(std::chrono::milliseconds(20));
     co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
     co_await Omni::Fiber::Yield();
@@ -141,11 +141,11 @@ TEST(UdpDynMuxTest, SuccessfulChannelCreationAndDataTransfer) {
 
 TEST(UdpDynMuxTest, SimultaneousConnectionStart) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto dev1 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  auto dev2 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev1 = std::make_shared<UdpDynMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev2 = std::make_shared<UdpDynMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
 
   bool testPassed = false;
 
@@ -170,7 +170,7 @@ TEST(UdpDynMuxTest, SimultaneousConnectionStart) {
 
     Cancel cancelObj;
     co_await Omni::Fiber::Yield();
-    boost::asio::steady_timer timer(io);
+    boost::asio::steady_timer timer(io.get_executor());
     timer.expires_after(std::chrono::milliseconds(20));
     co_await timer.async_wait(Omni::Fiber::AsioUseFiber);
     co_await Omni::Fiber::Yield();
@@ -221,11 +221,11 @@ TEST(UdpDynMuxTest, SimultaneousConnectionStart) {
 
 TEST(UdpDynMuxTest, AddressMigration) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto dev1 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  auto dev2 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev1 = std::make_shared<UdpDynMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev2 = std::make_shared<UdpDynMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
 
   bool testPassed = false;
 
@@ -245,7 +245,7 @@ TEST(UdpDynMuxTest, AddressMigration) {
 
     Cancel cancelObj;
     co_await Omni::Fiber::Yield();
-    boost::asio::steady_timer waitTimer(io);
+    boost::asio::steady_timer waitTimer(io.get_executor());
     waitTimer.expires_after(std::chrono::milliseconds(20));
     co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
     co_await Omni::Fiber::Yield();
@@ -267,14 +267,15 @@ TEST(UdpDynMuxTest, AddressMigration) {
     EXPECT_FALSE(readErr);
     co_await current.Join(initialWriter);
 
-    auto dev2New = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+    auto dev2New =
+        std::make_shared<UdpDynMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
     auto err3 = co_await dev2New->Start();
     EXPECT_FALSE(err3);
 
     auto ch2New = co_await dev2New->CreateChannel(psk, res2);
 
     co_await Omni::Fiber::Yield();
-    boost::asio::steady_timer waitTimer2(io);
+    boost::asio::steady_timer waitTimer2(io.get_executor());
     waitTimer2.expires_after(std::chrono::milliseconds(20));
     co_await waitTimer2.async_wait(Omni::Fiber::AsioUseFiber);
     co_await Omni::Fiber::Yield();
@@ -321,10 +322,11 @@ TEST(UdpDynMuxTest, AddressMigration) {
 
 TEST(UdpDynMuxTest, ReadCancellation) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto server = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto server =
+      std::make_shared<UdpDynMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -373,10 +375,11 @@ TEST(UdpDynMuxTest, ReadCancellation) {
 
 TEST(UdpDynMuxTest, WriteCancellation) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto server = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto server =
+      std::make_shared<UdpDynMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -415,11 +418,11 @@ TEST(UdpDynMuxTest, WriteCancellation) {
 
 TEST(UdpDynMuxTest, InvalidChannelAndRenegotiation) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto dev1 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  auto dev2 = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev1 = std::make_shared<UdpDynMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto dev2 = std::make_shared<UdpDynMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
 
   bool testPassed = false;
 
@@ -442,7 +445,7 @@ TEST(UdpDynMuxTest, InvalidChannelAndRenegotiation) {
 
     Cancel cancelObj;
     co_await Omni::Fiber::Yield();
-    boost::asio::steady_timer waitTimer(io);
+    boost::asio::steady_timer waitTimer(io.get_executor());
     waitTimer.expires_after(std::chrono::milliseconds(20));
     co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
     co_await Omni::Fiber::Yield();
@@ -466,7 +469,8 @@ TEST(UdpDynMuxTest, InvalidChannelAndRenegotiation) {
     auto dev1Port = dev1->LocalEndpoint().port();
     co_await dev1->Stop();
 
-    auto dev1New = std::make_shared<UdpDynMux>(io, udp::endpoint(boost::asio::ip::address_v6::loopback(), dev1Port));
+    auto dev1New = std::make_shared<UdpDynMux>(io.get_executor(),
+                                               udp::endpoint(boost::asio::ip::address_v6::loopback(), dev1Port));
     auto err3 = co_await dev1New->Start();
     EXPECT_FALSE(err3);
 
@@ -479,7 +483,7 @@ TEST(UdpDynMuxTest, InvalidChannelAndRenegotiation) {
     co_await ch2->Write(p_dummy, cancelObj);
 
     co_await Omni::Fiber::Yield();
-    boost::asio::steady_timer waitTimer2(io);
+    boost::asio::steady_timer waitTimer2(io.get_executor());
     waitTimer2.expires_after(std::chrono::milliseconds(200));
     co_await waitTimer2.async_wait(Omni::Fiber::AsioUseFiber);
     co_await Omni::Fiber::Yield();
@@ -506,7 +510,7 @@ TEST(UdpDynMuxTest, InvalidChannelAndRenegotiation) {
     });
 
     co_await Omni::Fiber::Yield();
-    boost::asio::steady_timer waitTimer3(io);
+    boost::asio::steady_timer waitTimer3(io.get_executor());
     waitTimer3.expires_after(std::chrono::milliseconds(20));
     co_await waitTimer3.async_wait(Omni::Fiber::AsioUseFiber);
     cancelObj2.Trigger();

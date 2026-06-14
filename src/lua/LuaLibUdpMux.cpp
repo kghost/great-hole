@@ -87,11 +87,11 @@ static int UdpMuxServerNew(lua_State* L) {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
   switch (lua_gettop(L)) {
   case 0:
-    LuaUdpMux::MakeShared(L, interface.GetContext());
+    LuaUdpMux::MakeShared(L, interface.GetExecutor());
     break;
   case 1: {
     auto bind = boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), (int)lua_tonumber(L, 1));
-    LuaUdpMux::MakeShared(L, interface.GetContext(), bind);
+    LuaUdpMux::MakeShared(L, interface.GetExecutor(), bind);
     break;
   }
   default:

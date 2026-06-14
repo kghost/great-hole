@@ -56,8 +56,8 @@ int main(int ac, char** av) {
     return 1;
   }
 
-  boost::asio::io_context io_context;
-  Omni::Fiber::AsioExecutor executor(io_context);
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   auto fiber_root = manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -65,18 +65,17 @@ int main(int ac, char** av) {
     Cancel stopSignals;
 
     auto& current = co_await Omni::Fiber::GetCurrentFiber();
-    auto fiberLua =
-        current.Spawn("LuaEngine", [&io_context, &stopApplication, &start]() -> Omni::Fiber::Coroutine<void> {
-          {
-            LuaEngine engine(io_context, stopApplication);
-            co_await engine.DoFile(start);
-          }
-          auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
-          co_await fiber.WaitAll();
-        });
+    auto fiberLua = current.Spawn("LuaEngine", [&io, &stopApplication, &start]() -> Omni::Fiber::Coroutine<void> {
+      {
+        LuaEngine engine(io.get_executor(), stopApplication);
+        co_await engine.DoFile(start);
+      }
+      auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
+      co_await fiber.WaitAll();
+    });
 
     auto fiberSignal = current.Spawn("signals", [&] -> Omni::Fiber::Coroutine<void> {
-      boost::asio::signal_set signals(io_context, SIGINT, SIGTERM, SIGUSR2);
+      boost::asio::signal_set signals(io.get_executor(), SIGINT, SIGTERM, SIGUSR2);
       while (!stopSignals.IsTriggered()) {
         auto [err, signal_number] = co_await signals.async_wait(stopSignals.AsioSlot()());
         if (!err) {
@@ -108,7 +107,7 @@ int main(int ac, char** av) {
     co_return;
   });
 
-  io_context.run();
+  io.run();
 
   boost::log::core::get()->remove_all_sinks();
 

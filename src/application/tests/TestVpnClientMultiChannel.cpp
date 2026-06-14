@@ -228,7 +228,7 @@ private:
 
 TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
   bool testPassed = false;
@@ -238,10 +238,10 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
     CallbackSelector selector(invocations);
 
     auto mockTun = std::make_shared<MockEndpoint>();
-    auto udpServer =
-        std::make_shared<UdpDynMux>(io, boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+    auto udpServer = std::make_shared<UdpDynMux>(
+        io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
     co_await udpServer->Start();
-    auto connTrack = std::make_shared<VpnClientMultiChannel>(io, mockTun, udpServer, selector);
+    auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, selector);
     EXPECT_FALSE(co_await connTrack->Start());
 
     Cancel cancelObj;
@@ -337,13 +337,13 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
 
 TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto udpClient =
-      std::make_shared<UdpDynMux>(io, boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  auto udpServer =
-      std::make_shared<UdpDynMux>(io, boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udpClient = std::make_shared<UdpDynMux>(
+      io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udpServer = std::make_shared<UdpDynMux>(
+      io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
 
   UdpDynMux::PskType psk = {9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6};
 
@@ -353,7 +353,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
   RoutingSelector selector(resolvedSession, selectorCalls);
 
   auto mockTun = std::make_shared<MockEndpoint>();
-  auto connTrack = std::make_shared<VpnClientMultiChannel>(io, mockTun, udpServer, selector);
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, selector);
   connTrack->SetConntrackTimeoutForTesting(std::chrono::seconds(1));
 
   bool testPassed = false;
@@ -384,7 +384,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
 
     // Wait for OnChannelEstablished to be invoked on connTrack
     // Server should accept client channel
-    boost::asio::steady_timer waitTimer(io);
+    boost::asio::steady_timer waitTimer(io.get_executor());
     waitTimer.expires_after(std::chrono::milliseconds(200));
     co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
 
@@ -490,13 +490,13 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
 
 TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregisteredChannel) {
   boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io);
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  auto udpClient =
-      std::make_shared<UdpDynMux>(io, boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-  auto udpServer =
-      std::make_shared<UdpDynMux>(io, boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udpClient = std::make_shared<UdpDynMux>(
+      io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udpServer = std::make_shared<UdpDynMux>(
+      io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
 
   UdpDynMux::PskType psk = {1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6};
 
@@ -506,7 +506,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
   RoutingSelector selector(resolvedSession, selectorCalls);
 
   auto mockTun = std::make_shared<MockEndpoint>();
-  auto connTrack = std::make_shared<VpnClientMultiChannel>(io, mockTun, udpServer, selector);
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, selector);
 
   bool testPassed = false;
 
@@ -529,7 +529,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
     EXPECT_NE(clientChannel, nullptr);
 
     // Wait for OnChannelEstablished
-    boost::asio::steady_timer waitTimer(io);
+    boost::asio::steady_timer waitTimer(io.get_executor());
     waitTimer.expires_after(std::chrono::milliseconds(200));
     co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
 

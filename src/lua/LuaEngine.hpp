@@ -1,5 +1,6 @@
 #pragma once
 
+#include <boost/asio/any_io_executor.hpp>
 #include <lua.hpp>
 
 #include "Coroutine.hpp"
@@ -9,8 +10,8 @@ namespace gh {
 
 class LuaEngine {
 public:
-  LuaEngine(boost::asio::io_context& io_context, Cancel& stopApplication)
-      : _Interface(io_context, stopApplication), _LuaState(luaL_newstate(), [](lua_State* L) { lua_close(L); }) {
+  LuaEngine(boost::asio::any_io_executor executor, Cancel& stopApplication)
+      : _Interface(executor, stopApplication), _LuaState(luaL_newstate(), [](lua_State* L) { lua_close(L); }) {
     luaL_openlibs(_LuaState.get());
   }
 
