@@ -1,0 +1,10 @@
+# Default configuration for the whole project
+CompileFlags:
+  CompilationDatabase: "build/"
+
+---
+# Override configuration specifically for the "tests" directory
+If:
+  PathMatch: src/android/.*
+CompileFlags:
+  CompilationDatabase: "build-android/"
