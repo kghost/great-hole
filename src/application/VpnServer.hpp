@@ -45,7 +45,7 @@ protected:
 private:
   struct Session {
     std::shared_ptr<EndpointTunSplitIp::Channel> TunChannel;
-    std::shared_ptr<Pipeline> Pipeline;
+    std::shared_ptr<Pipeline> SessionPipeline;
   };
 
   std::shared_ptr<EndpointTunSplitIp> _TunSplit;

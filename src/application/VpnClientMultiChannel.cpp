@@ -223,8 +223,8 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoGracefulStop() {
   }
 
   for (auto& [psk, session] : _Sessions) {
-    if (session.Pipeline) {
-      co_await session.Pipeline->Stop();
+    if (session.SessionPipeline) {
+      co_await session.SessionPipeline->Stop();
     }
   }
   _Sessions.clear();
@@ -268,7 +268,7 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelEstablished(std::sh
       session.Channel = channel;
       session.Running = true;
 
-      if (!session.Pipeline) {
+      if (!session.SessionPipeline) {
         auto channelSide = std::make_shared<ChannelSideEndpoint>(*this, channel);
         auto pipeline = std::make_shared<Pipeline>(channel, _Filters, channelSide);
         auto err = co_await pipeline->Start();
@@ -278,7 +278,7 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelEstablished(std::sh
           co_return;
         }
         session.ChannelSide = std::move(channelSide);
-        session.Pipeline = std::move(pipeline);
+        session.SessionPipeline = std::move(pipeline);
       }
     } else {
       BOOST_LOG_TRIVIAL(warning) << GetName() << ": Established channel for unregistered PSK, ignoring";
@@ -292,10 +292,10 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelClosed(std::shared_
     auto it = _Sessions.find(channel->GetPsk());
     if (it != _Sessions.end()) {
       it->second.Running = false;
-      if (it->second.Pipeline) {
-        co_await it->second.Pipeline->Stop();
+      if (it->second.SessionPipeline) {
+        co_await it->second.SessionPipeline->Stop();
       }
-      it->second.Pipeline.reset();
+      it->second.SessionPipeline.reset();
       it->second.ChannelSide.reset();
       _TunSide->RemoveMark(it->second);
     }

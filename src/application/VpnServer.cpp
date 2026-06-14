@@ -48,7 +48,7 @@ Omni::Fiber::Coroutine<void> VpnServer::OnChannelEstablished(std::shared_ptr<Udp
     if (_Sessions.contains(channel)) {
       BOOST_LOG_TRIVIAL(warning) << "VpnServer: Client session already exists, cleaning up old session";
       auto& oldSession = _Sessions[channel];
-      co_await oldSession.Pipeline->Stop();
+      co_await oldSession.SessionPipeline->Stop();
       co_await _TunSplit->RemoveChannel(oldSession.TunChannel);
       _Sessions.erase(channel);
     }
@@ -81,7 +81,7 @@ Omni::Fiber::Coroutine<void> VpnServer::OnChannelClosed(std::shared_ptr<UdpDynMu
     auto it = _Sessions.find(channel);
     if (it != _Sessions.end()) {
       BOOST_LOG_TRIVIAL(info) << "VpnServer: Cleaning up disconnected client session";
-      co_await it->second.Pipeline->Stop();
+      co_await it->second.SessionPipeline->Stop();
       co_await _TunSplit->RemoveChannel(it->second.TunChannel);
       _Sessions.erase(it);
     }
@@ -122,7 +122,7 @@ Omni::Fiber::Coroutine<ErrorCode> VpnServer::DoGracefulStop() {
   // Cleanup all sessions on stop
   BOOST_LOG_TRIVIAL(info) << "VpnServer: Stopping all client sessions";
   for (auto& [channel, session] : _Sessions) {
-    co_await session.Pipeline->Stop();
+    co_await session.SessionPipeline->Stop();
     co_await _TunSplit->RemoveChannel(session.TunChannel);
   }
   _Sessions.clear();

@@ -33,7 +33,7 @@ public:
 
     std::shared_ptr<UdpDynMux::Channel> Channel;
     std::shared_ptr<ChannelSideEndpoint> ChannelSide;
-    std::shared_ptr<Pipeline> Pipeline;
+    std::shared_ptr<Pipeline> SessionPipeline;
     bool Running = true;
   };
 

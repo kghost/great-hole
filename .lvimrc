@@ -1,2 +1,0 @@
-let g:syntastic_cpp_compiler_options='-std=gnu++14 -Ilibs'
-set noexpandtab
