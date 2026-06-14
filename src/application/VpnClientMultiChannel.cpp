@@ -90,10 +90,6 @@ public:
 
   void RemoveMark(const ConnectionMark& mark) { _ConnectionTracker->RemoveMark(mark); }
 
-  void PruneConnections() { _ConnectionTracker->Prune(); }
-
-  void ClearConnections() { _ConnectionTracker->Clear(); }
-
   void SetConntrackTimeout(std::chrono::seconds timeout) { _ConnectionTracker->SetTimeout(timeout); }
 
   Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override {
@@ -126,8 +122,7 @@ public:
     }
 
     auto mark = _ConnectionTracker->Lookup(p, ConnectionDirection::kOutput, [this](ConnectionMark& mark) -> bool {
-      auto& session = dynamic_cast<Session&>(mark);
-      return !session.Stopping && session.Channel && _Parent._Sessions.contains(session.Channel->GetPsk());
+      return dynamic_cast<Session&>(mark).Running;
     });
 
     if (!mark.has_value()) {
@@ -267,7 +262,7 @@ VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, std::share
 Omni::Fiber::Coroutine<void> VpnClientMultiChannel::UnregisterChannel(const UdpDynMux::PskType& psk) {
   auto it = _Sessions.find(psk);
   if (it != _Sessions.end()) {
-    it->second.Stopping = true;
+    it->second.Running = false;
     if (it->second.Pipeline) {
       co_await _ChannelCall.Call(
           [pipeline = it->second.Pipeline]() -> Omni::Fiber::Coroutine<void> { co_await pipeline->Stop(); });
@@ -298,7 +293,7 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelEstablished(std::sh
     if (it != _Sessions.end()) {
       auto& session = it->second;
       session.Channel = channel;
-      session.Stopping = false;
+      session.Running = true;
 
       if (!session.Pipeline) {
         auto channelSide = std::make_shared<ChannelSideEndpoint>(*this, channel);
@@ -323,7 +318,7 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelClosed(std::shared_
   co_await _ChannelCall.Call([this, channel = std::move(channel)]() mutable -> Omni::Fiber::Coroutine<void> {
     auto it = _Sessions.find(channel->GetPsk());
     if (it != _Sessions.end()) {
-      it->second.Stopping = true;
+      it->second.Running = false;
       if (it->second.Pipeline) {
         co_await it->second.Pipeline->Stop();
       }

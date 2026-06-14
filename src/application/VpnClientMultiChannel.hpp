@@ -33,7 +33,7 @@ public:
     std::shared_ptr<UdpDynMux::Channel> Channel;
     std::shared_ptr<ChannelSideEndpoint> ChannelSide;
     std::shared_ptr<Pipeline> Pipeline;
-    bool Stopping = false;
+    bool Running = true;
   };
 
   VpnClientMultiChannel(boost::asio::io_context& ioContext, std::shared_ptr<Endpoint> tun,
