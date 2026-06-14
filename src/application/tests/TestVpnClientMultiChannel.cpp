@@ -238,7 +238,10 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
     CallbackSelector selector(invocations);
 
     auto mockTun = std::make_shared<MockEndpoint>();
-    auto connTrack = std::make_shared<VpnClientMultiChannel>(io, mockTun, nullptr, selector);
+    auto udpServer =
+        std::make_shared<UdpDynMux>(io, boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+    co_await udpServer->Start();
+    auto connTrack = std::make_shared<VpnClientMultiChannel>(io, mockTun, udpServer, selector);
     EXPECT_FALSE(co_await connTrack->Start());
 
     Cancel cancelObj;
@@ -321,6 +324,8 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
 
     co_await connTrack->Stop();
     co_await connTrack->WaitService();
+    co_await udpServer->Stop();
+    co_await udpServer->WaitService();
     testPassed = true;
     co_return;
   });

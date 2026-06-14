@@ -29,7 +29,14 @@ Omni::Fiber::Coroutine<void> ConnectionTracker::DoWork() {
     if (err) {
       break;
     }
-    Prune();
+    auto now = std::chrono::steady_clock::now();
+    auto predicate = [this, now](const auto& item) { return now - item.second.LastActive > _Timeout; };
+    std::erase_if(_Ip4TcpTable, predicate);
+    std::erase_if(_Ip6TcpTable, predicate);
+    std::erase_if(_Ip4UdpTable, predicate);
+    std::erase_if(_Ip6UdpTable, predicate);
+    std::erase_if(_IcmpTable, predicate);
+    std::erase_if(_Icmp6Table, predicate);
   }
 }
 
@@ -158,17 +165,6 @@ ConnectionTracker::Lookup(const Packet& packet, ConnectionDirection direction, V
 
 void ConnectionTracker::RemoveMark(const ConnectionMark& mark) {
   auto predicate = [&mark](const auto& item) { return &item.second.Mark == &mark; };
-  std::erase_if(_Ip4TcpTable, predicate);
-  std::erase_if(_Ip6TcpTable, predicate);
-  std::erase_if(_Ip4UdpTable, predicate);
-  std::erase_if(_Ip6UdpTable, predicate);
-  std::erase_if(_IcmpTable, predicate);
-  std::erase_if(_Icmp6Table, predicate);
-}
-
-void ConnectionTracker::Prune() {
-  auto now = std::chrono::steady_clock::now();
-  auto predicate = [this, now](const auto& item) { return now - item.second.LastActive > _Timeout; };
   std::erase_if(_Ip4TcpTable, predicate);
   std::erase_if(_Ip6TcpTable, predicate);
   std::erase_if(_Ip4UdpTable, predicate);

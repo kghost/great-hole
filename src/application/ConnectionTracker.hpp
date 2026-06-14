@@ -198,8 +198,6 @@ public:
 
   void RemoveMark(const ConnectionMark& mark);
 
-  void Prune();
-
   void Clear();
 
   void SetTimeout(std::chrono::seconds timeout) { _Timeout = timeout; }

@@ -164,9 +164,7 @@ VpnClientMultiChannel::VpnClientMultiChannel(boost::asio::io_context& ioContext,
                                              std::vector<std::shared_ptr<Filter>> filters)
     : _IoContext(ioContext), _Tun(tun), _UdpDynMux(udpDynMux), _Selector(selector), _Filters(filters) {
   _TunSide = std::make_shared<TunSideEndpoint>(*this);
-  if (_UdpDynMux) {
-    _UdpDynMux->SetChannelNotification(*this);
-  }
+  _UdpDynMux->SetChannelNotification(*this);
 }
 
 VpnClientMultiChannel::~VpnClientMultiChannel() { assert(_Sessions.empty()); }
@@ -176,7 +174,7 @@ void VpnClientMultiChannel::SetConntrackTimeoutForTesting(std::chrono::seconds t
 }
 
 std::string VpnClientMultiChannel::GetName() const {
-  return std::format("VpnClientMultiChannel:[{}]", _UdpDynMux ? _UdpDynMux->GetName() : "null");
+  return std::format("VpnClientMultiChannel:[{}]", _UdpDynMux->GetName());
 }
 
 Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoStart() {
@@ -230,7 +228,6 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoGracefulStop() {
   }
   _Sessions.clear();
   co_await _TunSide->Stop();
-
   co_await _ChannelCall.Close();
 
   BOOST_LOG_TRIVIAL(info) << GetName() << " stopped";
@@ -239,46 +236,21 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoGracefulStop() {
 
 Omni::Fiber::Coroutine<std::reference_wrapper<VpnClientMultiChannel::Session>>
 VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver) {
-  auto it = _Sessions.find(psk);
-  if (it != _Sessions.end()) {
+  auto [it, inserted] = _Sessions.emplace(psk, Session{});
+  if (!inserted) {
     co_return std::ref(it->second);
   }
-
-  std::shared_ptr<UdpDynMux::Channel> channel;
-  if (_UdpDynMux) {
-    channel = co_await _UdpDynMux->CreateChannel(psk, resolver);
-  }
-
-  it = _Sessions.find(psk);
-  if (it != _Sessions.end()) {
-    co_return std::ref(it->second);
-  }
-
-  auto [sessionIt, inserted] = _Sessions.emplace(psk, Session{channel});
-  assert(inserted);
-  co_return std::ref(sessionIt->second);
+  it->second.Channel = co_await _UdpDynMux->CreateChannel(psk, resolver);
+  co_return std::ref(it->second);
 }
 
 Omni::Fiber::Coroutine<void> VpnClientMultiChannel::UnregisterChannel(const UdpDynMux::PskType& psk) {
   auto it = _Sessions.find(psk);
   if (it != _Sessions.end()) {
     it->second.Running = false;
-    if (it->second.Pipeline) {
-      co_await _ChannelCall.Call(
-          [pipeline = it->second.Pipeline]() -> Omni::Fiber::Coroutine<void> { co_await pipeline->Stop(); });
-    }
-    it = _Sessions.find(psk);
-    if (it == _Sessions.end()) {
-      co_return;
-    }
-    if (it->second.Channel && _UdpDynMux) {
+    if (it->second.Channel) {
       co_await _UdpDynMux->RemoveChannel(psk);
     }
-    it = _Sessions.find(psk);
-    if (it == _Sessions.end()) {
-      co_return;
-    }
-    _TunSide->RemoveMark(it->second);
     _Sessions.erase(it);
   }
 }
@@ -322,12 +294,9 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelClosed(std::shared_
       if (it->second.Pipeline) {
         co_await it->second.Pipeline->Stop();
       }
-      it = _Sessions.find(channel->GetPsk());
-      if (it != _Sessions.end()) {
-        it->second.Pipeline.reset();
-        it->second.ChannelSide.reset();
-        _TunSide->RemoveMark(it->second);
-      }
+      it->second.Pipeline.reset();
+      it->second.ChannelSide.reset();
+      _TunSide->RemoveMark(it->second);
     }
   });
 }

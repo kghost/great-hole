@@ -27,7 +27,7 @@ public:
 
   class Session : public ConnectionMark {
   public:
-    Session(std::shared_ptr<UdpDynMux::Channel> channel) : Channel(channel) {}
+    Session() {}
     std::string GetDescription() const { return Channel ? Channel->GetName() : "Invalid Session"; }
 
     std::shared_ptr<UdpDynMux::Channel> Channel;
