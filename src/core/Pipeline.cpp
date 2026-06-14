@@ -40,7 +40,7 @@ Omni::Fiber::Coroutine<void> Pipeline::RunDirection(std::shared_ptr<Endpoint> in
   struct ActivePipelineGuard {
     PipielineUsageCounter& In;
     PipielineUsageCounter& Out;
-    ActivePipelineGuard(EndpointInput& in, EndpointOutput& out)
+    ActivePipelineGuard(Endpoint& in, Endpoint& out)
         : In(in.GetPipielineUsageCounter()), Out(out.GetPipielineUsageCounter()) {
       In.AddPipeline();
       Out.AddPipeline();

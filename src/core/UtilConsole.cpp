@@ -8,7 +8,7 @@
 
 namespace gh {
 
-class Input : public EndpointSkipStart<EndpointInput> {
+class Input : public EndpointInput {
 public:
   explicit Input(boost::asio::io_context& io_context, decltype(STDERR_FILENO) f) : _S(io_context, f) {}
 
@@ -26,7 +26,7 @@ private:
   boost::asio::posix::stream_descriptor _S;
 };
 
-class Output : public EndpointSkipStart<EndpointOutput> {
+class Output : public EndpointOutput {
 public:
   explicit Output(boost::asio::io_context& io_context, decltype(STDERR_FILENO) f) : _S(io_context, f) {}
 

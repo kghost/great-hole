@@ -82,7 +82,7 @@ std::vector<uint8_t> CreateIcmpEchoPayload(uint8_t type, uint16_t identifier) {
   return payload;
 }
 
-class MockEndpoint : public EndpointSkipStart<Endpoint> {
+class MockEndpoint : public Endpoint {
 public:
   MockEndpoint() = default;
   ~MockEndpoint() override = default;
