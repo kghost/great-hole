@@ -1,23 +1,29 @@
 #include "info_kghost_android_hole_vpn_dataplane_JniTunnelDataPlaneNative.h"
 
-#include <chrono>
-#include <map>
+#include <android/log.h>
+#include <atomic>
+#include <future>
+#include <jni.h>
 #include <memory>
-#include <mutex>
 #include <string>
 #include <thread>
 
 #include <boost/asio.hpp>
+#include <boost/log/core.hpp>
+#include <boost/log/expressions.hpp>
+#include <boost/log/sinks/basic_sink_backend.hpp>
+#include <boost/log/sinks/sync_frontend.hpp>
 #include <boost/log/trivial.hpp>
-#include <jni.h>
+#include <boost/make_shared.hpp>
+
+#include <EventQueue.hpp>
+#include <MoveOnlyFunction.hpp>
 
 #include "Asio.hpp"
 #include "Coroutine.hpp"
-#include "EndpointTun.hpp"
-#include "EndpointUdpDynMux.hpp"
-#include "ResolverHelper.hpp"
 #include "Utils.hpp"
-#include "VpnClientMultiChannel.hpp"
+
+#include "TunnelDataPlane.hpp"
 
 static JavaVM* g_JavaVM = nullptr;
 static jclass g_CallbacksClass = nullptr;
@@ -35,6 +41,64 @@ static jobject g_StateFailed = nullptr;
 namespace gh {
 
 class JniSession;
+class JniSelector;
+
+class JniSession : public DataPlaneCallbacks {
+public:
+  using Task = Omni::Fiber::move_only_function<Omni::Fiber::Coroutine<void>(TunnelDataPlane&, bool&)>;
+
+  JniSession(JNIEnv* env, jobject callbacks);
+  ~JniSession() override;
+
+  JniSession(const JniSession&) = delete;
+  JniSession& operator=(const JniSession&) = delete;
+  JniSession(JniSession&&) = delete;
+  JniSession& operator=(JniSession&&) = delete;
+
+  static JNIEnv* GetEnv() {
+    JNIEnv* env = nullptr;
+    jint res = g_JavaVM->GetEnv((void**)&env, JNI_VERSION_1_6);
+    if (res == JNI_EDETACHED) {
+      g_JavaVM->AttachCurrentThreadAsDaemon(&env, nullptr);
+    }
+    return env;
+  }
+
+  void Start(int tunFd, int mtu);
+  void Stop();
+  jlong AddEndpoint(const std::string& displayName, const std::string& host, int port);
+  void RemoveEndpoint(jlong handle);
+  void StartEndpoint(jlong handle);
+  void StopEndpoint(jlong handle);
+
+  jobject GetCallbacks() const { return _Callbacks; }
+  TunnelDataPlane* GetDataPlane() const { return _DataPlane; }
+
+  bool ProtectSocket(int fd);
+  void UpdateState(TunnelState state, const std::string& message) override;
+  void OnTrafficStats(int64_t endpointHandle, uint64_t txBytes, uint64_t rxBytes) override;
+
+  template <typename Func> void PostTask(Func&& func) {
+    _IoContext.post([this, func = std::forward<Func>(func)]() mutable {
+      _TaskQueue.Push([func = std::move(func)](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+        co_await func(dp, stop);
+      });
+    });
+  }
+
+private:
+  jobject _Callbacks = nullptr;
+  boost::asio::io_context _IoContext;
+  std::unique_ptr<boost::asio::io_context::work> _Work;
+  std::thread _Thread;
+
+  std::unique_ptr<JniSelector> _Selector;
+  Omni::Fiber::EventQueue<Task> _TaskQueue;
+  std::shared_ptr<Omni::Fiber::Fiber> _RootFiber;
+  TunnelDataPlane* _DataPlane = nullptr;
+
+  std::atomic<bool> _Stopped{false};
+};
 
 class JniSelector : public ConnectionTracker::Selector {
 public:
@@ -62,287 +126,7 @@ private:
   JniSession& _Session;
 };
 
-class JniSession {
-public:
-  explicit JniSession(jobject callbacks) {
-    JNIEnv* env = GetEnv();
-    _Callbacks = env->NewGlobalRef(callbacks);
-  }
-
-  ~JniSession() {
-    JNIEnv* env = GetEnv();
-    if (_Callbacks && env) {
-      env->DeleteGlobalRef(_Callbacks);
-    }
-  }
-
-  static JNIEnv* GetEnv() {
-    JNIEnv* env = nullptr;
-    jint res = g_JavaVM->GetEnv((void**)&env, JNI_VERSION_1_6);
-    if (res == JNI_EDETACHED) {
-      g_JavaVM->AttachCurrentThreadAsDaemon(&env, nullptr);
-    }
-    return env;
-  }
-
-  void Start(int tunFd, int mtu) {
-    _Work = std::make_unique<boost::asio::io_context::work>(_IoContext);
-    _Thread = std::thread([this, tunFd, mtu]() {
-      JNIEnv* env = GetEnv();
-      JavaVMAttachArgs args;
-      args.version = JNI_VERSION_1_6;
-      args.name = (char*)"great_hole_worker";
-      args.group = nullptr;
-      g_JavaVM->AttachCurrentThreadAsDaemon(&env, &args);
-
-      gh::SocketProtector = [this](int fd) -> bool {
-        JNIEnv* localEnv = GetEnv();
-        if (!localEnv || !_Callbacks) {
-          return false;
-        }
-        return localEnv->CallBooleanMethod(_Callbacks, g_MidProtectSocket, fd);
-      };
-
-      auto ioExecutor = _IoContext.get_executor();
-      Omni::Fiber::AsioExecutor executor(ioExecutor);
-      Omni::Fiber::Manager manager(executor);
-
-      _Tun = std::make_shared<Tun>(ioExecutor, tunFd);
-      _UdpDynMux = std::make_shared<UdpDynMux>(ioExecutor);
-      _Selector = std::make_unique<JniSelector>(*this);
-      _Client = std::make_shared<VpnClientMultiChannel>(ioExecutor, _Tun, _UdpDynMux, *_Selector);
-
-      _RootFiber = manager.SpawnRoot("root", [this]() -> Omni::Fiber::Coroutine<void> {
-        UpdateState(g_StateConnecting, "VPN starting");
-
-        auto ec = co_await _Tun->Start();
-        if (ec) {
-          BOOST_LOG_TRIVIAL(error) << "Failed to start Tun: " << ec.message();
-          UpdateState(g_StateFailed, ec.message().c_str());
-          co_return;
-        }
-
-        ec = co_await _UdpDynMux->Start();
-        if (ec) {
-          BOOST_LOG_TRIVIAL(error) << "Failed to start UdpDynMux: " << ec.message();
-          UpdateState(g_StateFailed, ec.message().c_str());
-          co_return;
-        }
-
-        ec = co_await _Client->Start();
-        if (ec) {
-          BOOST_LOG_TRIVIAL(error) << "Failed to start VpnClientMultiChannel: " << ec.message();
-          UpdateState(g_StateFailed, ec.message().c_str());
-          co_return;
-        }
-
-        UpdateState(g_StateConnected, "VPN tunnel established");
-
-        _StatsTimer = std::make_shared<boost::asio::steady_timer>(_IoContext);
-        StartStatsLoop();
-
-        co_await _StopEvent.GetConsumer();
-
-        if (_StatsTimer) {
-          _StatsTimer->cancel();
-          _StatsTimer.reset();
-        }
-
-        co_await _Client->Stop();
-        co_await _Client->WaitService();
-
-        co_await _UdpDynMux->Stop();
-        co_await _UdpDynMux->WaitService();
-
-        co_await _Tun->Stop();
-        co_await _Tun->WaitService();
-
-        gh::SocketProtector = nullptr;
-        UpdateState(g_StateDisconnected, "VPN tunnel stopped");
-        co_return;
-      });
-
-      _IoContext.run();
-    });
-  }
-
-  void Stop() {
-    _IoContext.post([this]() {
-      if (_RootFiber) {
-        _RootFiber->Spawn("stop", [this]() -> Omni::Fiber::Coroutine<void> {
-          co_await _StopEvent.GetProducer().Put(true);
-          co_return;
-        });
-      }
-      _Work.reset();
-    });
-    if (_Thread.joinable()) {
-      _Thread.join();
-    }
-  }
-
-  void UpdateState(jobject state, const char* message) {
-    if (!state || !_Callbacks) {
-      return;
-    }
-    JNIEnv* env = GetEnv();
-    jstring msgStr = message ? env->NewStringUTF(message) : nullptr;
-    env->CallVoidMethod(_Callbacks, g_MidOnStateChanged, state, msgStr);
-    if (msgStr) {
-      env->DeleteLocalRef(msgStr);
-    }
-  }
-
-  jlong AddEndpoint(const std::string& displayName, const std::string& host, int port) {
-    std::lock_guard<std::mutex> lock(_Mutex);
-    jlong handle = ++_NextHandle;
-    auto psk = ParsePsk(displayName);
-
-    _IoContext.post([this, handle, psk, host, port]() {
-      if (_RootFiber) {
-        _RootFiber->Spawn("add_endpoint", [this, handle, psk, host, port]() -> Omni::Fiber::Coroutine<void> {
-          std::shared_ptr<ResolverEndpoint> resolver;
-          if (_UdpDynMux) {
-            std::string addrStr = host + ":" + std::to_string(port);
-            resolver = FindResolverEndpoint(addrStr, *_UdpDynMux);
-          }
-          if (_Client) {
-            auto refSession = co_await _Client->RegisterChannel(psk, resolver);
-            std::lock_guard<std::mutex> lock2(_Mutex);
-            _Endpoints.emplace(handle, EndpointEntry{psk, refSession});
-          }
-          co_return;
-        });
-      }
-    });
-
-    return handle;
-  }
-
-  void RemoveEndpoint(jlong handle) {
-    std::lock_guard<std::mutex> lock(_Mutex);
-    auto it = _Endpoints.find(handle);
-    if (it != _Endpoints.end()) {
-      auto psk = it->second.Psk;
-      _Endpoints.erase(it);
-      _IoContext.post([this, psk]() {
-        if (_RootFiber) {
-          _RootFiber->Spawn("remove_endpoint", [this, psk]() -> Omni::Fiber::Coroutine<void> {
-            if (_Client) {
-              co_await _Client->UnregisterChannel(psk);
-            }
-            co_return;
-          });
-        }
-      });
-    }
-  }
-
-  void StartEndpoint(jlong handle) {
-    // Negotiation is automatically started on register/setup
-  }
-
-  void StopEndpoint(jlong handle) {
-    // Handled via remove or stop
-  }
-
-  jobject GetCallbacks() const { return _Callbacks; }
-
-  std::optional<std::reference_wrapper<ConnectionMark>> FindSessionByHandle(jlong handle) {
-    std::lock_guard<std::mutex> lock(_Mutex);
-    auto it = _Endpoints.find(handle);
-    if (it != _Endpoints.end()) {
-      return it->second.SessionRef;
-    }
-    return std::nullopt;
-  }
-
-private:
-  UdpDynMux::PskType ParsePsk(const std::string& displayName) {
-    UdpDynMux::PskType psk{};
-    if (displayName.length() == 32) {
-      bool valid = true;
-      for (size_t i = 0; i < 16; ++i) {
-        std::string byteString = displayName.substr(i * 2, 2);
-        char* end;
-        long val = std::strtol(byteString.c_str(), &end, 16);
-        if (*end != '\0') {
-          valid = false;
-          break;
-        }
-        psk[i] = static_cast<uint8_t>(val);
-      }
-      if (valid) {
-        return psk;
-      }
-    }
-    uint64_t hash1 = 14695981039346656037ULL;
-    uint64_t hash2 = 14695981039346656037ULL;
-    for (char c : displayName) {
-      hash1 = (hash1 ^ c) * 1099511628211ULL;
-    }
-    for (size_t i = 0; i < displayName.length(); ++i) {
-      hash2 = (hash2 ^ displayName[displayName.length() - 1 - i]) * 1099511628211ULL;
-    }
-    std::memcpy(psk.data(), &hash1, 8);
-    std::memcpy(psk.data() + 8, &hash2, 8);
-    return psk;
-  }
-
-  void StartStatsLoop() {
-    if (!_StatsTimer) {
-      return;
-    }
-    _StatsTimer->expires_after(std::chrono::seconds(2));
-    _StatsTimer->async_wait([this](const boost::system::error_code& ec) {
-      if (ec) {
-        return;
-      }
-      ReportStats();
-      StartStatsLoop();
-    });
-  }
-
-  void ReportStats() {
-    if (!_Client) {
-      return;
-    }
-    JNIEnv* env = GetEnv();
-    if (!env || !_Callbacks) {
-      return;
-    }
-
-    std::lock_guard<std::mutex> lock(_Mutex);
-    for (auto& [handle, entry] : _Endpoints) {
-      auto [tx, rx] = _Client->GetStats(entry.Psk);
-      if (tx > 0 || rx > 0) {
-        env->CallVoidMethod(_Callbacks, g_MidOnTrafficStats, handle, static_cast<jlong>(tx), static_cast<jlong>(rx));
-      }
-    }
-  }
-
-  struct EndpointEntry {
-    UdpDynMux::PskType Psk;
-    std::reference_wrapper<VpnClientMultiChannel::Session> SessionRef;
-  };
-
-  jobject _Callbacks = nullptr;
-  boost::asio::io_context _IoContext;
-  std::unique_ptr<boost::asio::io_context::work> _Work;
-  std::thread _Thread;
-
-  std::shared_ptr<Tun> _Tun;
-  std::shared_ptr<UdpDynMux> _UdpDynMux;
-  std::unique_ptr<JniSelector> _Selector;
-  std::shared_ptr<VpnClientMultiChannel> _Client;
-  std::shared_ptr<Omni::Fiber::Fiber> _RootFiber;
-  Omni::Fiber::Pipe<bool> _StopEvent;
-  std::shared_ptr<boost::asio::steady_timer> _StatsTimer;
-
-  std::mutex _Mutex;
-  jlong _NextHandle = 0;
-  std::map<jlong, EndpointEntry> _Endpoints;
-};
+// JniSelector Implementation
 
 std::optional<std::reference_wrapper<ConnectionMark>>
 JniSelector::FindTunnel(int protocol, const boost::asio::ip::address& localAddr, uint16_t localPort,
@@ -354,21 +138,45 @@ JniSelector::FindTunnel(int protocol, const boost::asio::ip::address& localAddr,
   }
 
   jbyteArray localBytes = env->NewByteArray(16);
+  if (!localBytes || env->ExceptionCheck()) {
+    BOOST_LOG_TRIVIAL(warning) << "JNI exception or allocation failure for localBytes in FindTunnel";
+    if (env->ExceptionCheck()) {
+      env->ExceptionClear();
+    }
+    return std::nullopt;
+  }
   auto v6Local = MapToV6(localAddr).to_bytes();
   env->SetByteArrayRegion(localBytes, 0, 16, reinterpret_cast<const jbyte*>(v6Local.data()));
 
   jbyteArray remoteBytes = env->NewByteArray(16);
+  if (!remoteBytes || env->ExceptionCheck()) {
+    BOOST_LOG_TRIVIAL(warning) << "JNI exception or allocation failure for remoteBytes in FindTunnel";
+    if (env->ExceptionCheck()) {
+      env->ExceptionClear();
+    }
+    env->DeleteLocalRef(localBytes);
+    return std::nullopt;
+  }
   auto v6Remote = MapToV6(remoteAddr).to_bytes();
   env->SetByteArrayRegion(remoteBytes, 0, 16, reinterpret_cast<const jbyte*>(v6Remote.data()));
 
   jlong endpointHandle = env->CallLongMethod(_Session.GetCallbacks(), g_MidFindTunnelForFlow, protocol, localBytes,
                                              static_cast<jint>(localPort), remoteBytes, static_cast<jint>(remotePort));
+  if (env->ExceptionCheck()) {
+    BOOST_LOG_TRIVIAL(warning) << "JNI exception in FindTunnel (findTunnelForFlow) for protocol " << protocol;
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+    endpointHandle = 0;
+  }
 
   env->DeleteLocalRef(localBytes);
   env->DeleteLocalRef(remoteBytes);
 
-  if (endpointHandle > 0) {
-    return _Session.FindSessionByHandle(endpointHandle);
+  if (endpointHandle != 0) {
+    auto dp = _Session.GetDataPlane();
+    if (dp) {
+      return dp->FindSessionByHandle(reinterpret_cast<VpnClientMultiChannel::Session*>(endpointHandle));
+    }
   }
   return std::nullopt;
 }
@@ -398,20 +206,231 @@ JniSelector::operator()(const ConnectionTracker::Icmp6Key& key) const {
   return FindTunnel(58, key.LocalAddress, key.Id, key.RemoteAddress, 0);
 }
 
+// JniSession Implementation
+
+JniSession::JniSession(JNIEnv* env, jobject callbacks) {
+  _Callbacks = env->NewGlobalRef(callbacks);
+  _Work = std::make_unique<boost::asio::io_context::work>(_IoContext);
+  _Thread = std::thread([this]() {
+    JNIEnv* localEnv = nullptr;
+    JavaVMAttachArgs args;
+    args.version = JNI_VERSION_1_6;
+    args.name = (char*)"great_hole_worker";
+    args.group = nullptr;
+    g_JavaVM->AttachCurrentThreadAsDaemon(&localEnv, &args);
+
+    gh::SocketProtector = [this](int fd) -> bool { return ProtectSocket(fd); };
+
+    auto ioExecutor = _IoContext.get_executor();
+    Omni::Fiber::AsioExecutor executor(ioExecutor);
+    Omni::Fiber::Manager manager(executor);
+
+    _Selector = std::make_unique<JniSelector>(*this);
+
+    _RootFiber = manager.SpawnRoot("root", [this]() -> Omni::Fiber::Coroutine<void> {
+      TunnelDataPlane dp(_IoContext.get_executor(), *_Selector, *this);
+      _DataPlane = &dp;
+
+      bool stop = false;
+      while (!stop) {
+        co_await _TaskQueue;
+        while (!_TaskQueue.IsEmpty()) {
+          auto task = _TaskQueue.PopFront();
+          co_await task(dp, stop);
+        }
+      }
+
+      _DataPlane = nullptr;
+      co_return;
+    });
+
+    _IoContext.run();
+    gh::SocketProtector = nullptr;
+  });
+}
+
+JniSession::~JniSession() {
+  Stop();
+  JNIEnv* env = GetEnv();
+  if (_Callbacks && env) {
+    env->DeleteGlobalRef(_Callbacks);
+  }
+}
+
+void JniSession::Start(int tunFd, int mtu) {
+  PostTask([tunFd, mtu](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    co_await dp.Start(tunFd, mtu);
+    co_return;
+  });
+}
+
+void JniSession::Stop() {
+  bool expected = false;
+  if (!_Stopped.compare_exchange_strong(expected, true)) {
+    return;
+  }
+
+  std::promise<void> promise;
+  auto future = promise.get_future();
+
+  PostTask([&promise](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    co_await dp.Stop();
+    stop = true;
+    promise.set_value();
+    co_return;
+  });
+
+  future.get();
+
+  _Work.reset();
+  if (_Thread.joinable()) {
+    _Thread.join();
+  }
+}
+
+jlong JniSession::AddEndpoint(const std::string& displayName, const std::string& host, int port) {
+  std::promise<jlong> promise;
+  auto future = promise.get_future();
+
+  PostTask([&promise, displayName, host, port](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    VpnClientMultiChannel::Session* session = co_await dp.AddEndpoint(displayName, host, port);
+    promise.set_value(reinterpret_cast<jlong>(session));
+    co_return;
+  });
+
+  return future.get();
+}
+
+void JniSession::RemoveEndpoint(jlong handle) {
+  std::promise<void> promise;
+  auto future = promise.get_future();
+
+  PostTask([&promise, handle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    co_await dp.RemoveEndpoint(reinterpret_cast<VpnClientMultiChannel::Session*>(handle));
+    promise.set_value();
+    co_return;
+  });
+
+  future.get();
+}
+
+void JniSession::StartEndpoint(jlong handle) {
+  // Negotiation is automatically started on setup
+}
+
+void JniSession::StopEndpoint(jlong handle) {
+  // Managed by remove or stop
+}
+
+bool JniSession::ProtectSocket(int fd) {
+  JNIEnv* env = GetEnv();
+  if (!env || !_Callbacks) {
+    return false;
+  }
+  jboolean result = env->CallBooleanMethod(_Callbacks, g_MidProtectSocket, fd);
+  if (env->ExceptionCheck()) {
+    BOOST_LOG_TRIVIAL(warning) << "JNI exception in protectSocket";
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+    return false;
+  }
+  return result;
+}
+
+void JniSession::UpdateState(TunnelState state, const std::string& message) {
+  jobject stateObj = nullptr;
+  switch (state) {
+  case TunnelState::Connecting:
+    stateObj = g_StateConnecting;
+    break;
+  case TunnelState::Connected:
+    stateObj = g_StateConnected;
+    break;
+  case TunnelState::Disconnected:
+    stateObj = g_StateDisconnected;
+    break;
+  case TunnelState::Failed:
+    stateObj = g_StateFailed;
+    break;
+  }
+  if (!stateObj || !_Callbacks) {
+    return;
+  }
+  JNIEnv* env = GetEnv();
+  jstring msgStr = !message.empty() ? env->NewStringUTF(message.c_str()) : nullptr;
+  if (env->ExceptionCheck()) {
+    BOOST_LOG_TRIVIAL(warning) << "JNI exception in UpdateState (NewStringUTF)";
+    env->ExceptionClear();
+  }
+  env->CallVoidMethod(_Callbacks, g_MidOnStateChanged, stateObj, msgStr);
+  if (env->ExceptionCheck()) {
+    BOOST_LOG_TRIVIAL(warning) << "JNI exception in UpdateState (onStateChanged)";
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+  }
+  if (msgStr) {
+    env->DeleteLocalRef(msgStr);
+  }
+}
+
+void JniSession::OnTrafficStats(int64_t endpointHandle, uint64_t txBytes, uint64_t rxBytes) {
+  JNIEnv* env = GetEnv();
+  if (!env || !_Callbacks) {
+    return;
+  }
+  env->CallVoidMethod(_Callbacks, g_MidOnTrafficStats, static_cast<jlong>(endpointHandle), static_cast<jlong>(txBytes),
+                      static_cast<jlong>(rxBytes));
+  if (env->ExceptionCheck()) {
+    BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnTrafficStats (onTrafficStats)";
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+  }
+}
+
 } // namespace gh
 
-static std::mutex g_SessionsMutex;
-static std::map<jlong, std::shared_ptr<gh::JniSession>> g_Sessions;
-static jlong g_NextSessionId = 1;
+static gh::JniSession* GetSession(jlong handle) { return reinterpret_cast<gh::JniSession*>(handle); }
 
-static std::shared_ptr<gh::JniSession> GetSession(jlong handle) {
-  std::lock_guard<std::mutex> lock(g_SessionsMutex);
-  auto it = g_Sessions.find(handle);
-  if (it != g_Sessions.end()) {
-    return it->second;
+namespace {
+
+class AndroidLogBackend
+    : public boost::log::sinks::basic_formatted_sink_backend<char, boost::log::sinks::synchronized_feeding> {
+public:
+  void consume(const boost::log::record_view& rec, const string_type& formattedMessage) {
+    android_LogPriority priority = ANDROID_LOG_INFO;
+    if (auto severity = rec[boost::log::trivial::severity]) {
+      switch (*severity) {
+      case boost::log::trivial::trace:
+        priority = ANDROID_LOG_VERBOSE;
+        break;
+      case boost::log::trivial::debug:
+        priority = ANDROID_LOG_DEBUG;
+        break;
+      case boost::log::trivial::info:
+        priority = ANDROID_LOG_INFO;
+        break;
+      case boost::log::trivial::warning:
+        priority = ANDROID_LOG_WARN;
+        break;
+      case boost::log::trivial::error:
+        priority = ANDROID_LOG_ERROR;
+        break;
+      case boost::log::trivial::fatal:
+        priority = ANDROID_LOG_FATAL;
+        break;
+      }
+    }
+    __android_log_write(priority, "GreatHoleNDK", formattedMessage.c_str());
   }
-  return nullptr;
+};
+
+void SetupLogging() {
+  using SinkType = boost::log::sinks::synchronous_sink<AndroidLogBackend>;
+  auto sink = boost::make_shared<SinkType>();
+  boost::log::core::get()->add_sink(sink);
 }
+
+} // namespace
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
   g_JavaVM = vm;
@@ -419,6 +438,8 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
   if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) {
     return JNI_ERR;
   }
+
+  SetupLogging();
 
   jclass localCallbacksClass = env->FindClass("info/kghost/android_hole/vpn/dataplane/TunnelDataPlaneCallbacks");
   if (!localCallbacksClass) {
@@ -489,11 +510,8 @@ extern "C" {
 
 JNIEXPORT jlong JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeCreate(
     JNIEnv* env, jclass clazz, jobject callbacks) {
-  auto session = std::shared_ptr<gh::JniSession>(new gh::JniSession(callbacks));
-  std::lock_guard<std::mutex> lock(g_SessionsMutex);
-  jlong handle = g_NextSessionId++;
-  g_Sessions[handle] = session;
-  return handle;
+  auto* session = new gh::JniSession(env, callbacks);
+  return reinterpret_cast<jlong>(session);
 }
 
 JNIEXPORT void JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeStart(
@@ -554,17 +572,10 @@ JNIEXPORT void JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDat
 
 JNIEXPORT void JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeDestroy(
     JNIEnv* env, jclass clazz, jlong sessionHandle) {
-  std::shared_ptr<gh::JniSession> session;
-  {
-    std::lock_guard<std::mutex> lock(g_SessionsMutex);
-    auto it = g_Sessions.find(sessionHandle);
-    if (it != g_Sessions.end()) {
-      session = it->second;
-      g_Sessions.erase(it);
-    }
-  }
+  auto* session = reinterpret_cast<gh::JniSession*>(sessionHandle);
   if (session) {
     session->Stop();
+    delete session;
   }
 }
 

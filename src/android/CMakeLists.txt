@@ -2,6 +2,7 @@
 
 add_library(androidhole_dataplane SHARED
   JniTunnelDataPlaneNative.cpp
+  TunnelDataPlane.cpp
 )
 
 target_include_directories(androidhole_dataplane PRIVATE

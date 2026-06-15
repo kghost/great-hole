@@ -245,15 +245,11 @@ VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, std::share
   co_return std::ref(it->second);
 }
 
-Omni::Fiber::Coroutine<void> VpnClientMultiChannel::UnregisterChannel(const UdpDynMux::PskType& psk) {
-  auto it = _Sessions.find(psk);
-  if (it != _Sessions.end()) {
-    it->second.Running = false;
-    if (it->second.Channel) {
-      co_await _UdpDynMux->RemoveChannel(psk);
-    }
-    _Sessions.erase(it);
-  }
+Omni::Fiber::Coroutine<void> VpnClientMultiChannel::UnregisterChannel(Session& session) {
+  session.Running = false;
+  auto psk = session.Channel->GetPsk();
+  co_await _UdpDynMux->RemoveChannel(psk);
+  _Sessions.erase(psk);
 }
 
 Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) {
@@ -302,12 +298,8 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelClosed(std::shared_
   });
 }
 
-std::pair<uint64_t, uint64_t> VpnClientMultiChannel::GetStats(const UdpDynMux::PskType& psk) const {
-  auto it = _Sessions.find(psk);
-  if (it != _Sessions.end() && it->second.Channel) {
-    return {it->second.Channel->GetTxBytes(), it->second.Channel->GetRxBytes()};
-  }
-  return {0, 0};
+std::pair<uint64_t, uint64_t> VpnClientMultiChannel::GetStats(Session& session) const {
+  return {session.Channel->GetTxBytes(), session.Channel->GetRxBytes()};
 }
 
 } // namespace gh
