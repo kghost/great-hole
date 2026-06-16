@@ -1,6 +1,7 @@
 #include "info_kghost_android_hole_vpn_dataplane_JniTunnelDataPlaneNative.h"
 
 #include <android/log.h>
+#include <ares.h>
 #include <atomic>
 #include <future>
 #include <jni.h>
@@ -47,7 +48,7 @@ class JniSession : public DataPlaneCallbacks {
 public:
   using Task = Omni::Fiber::move_only_function<Omni::Fiber::Coroutine<void>(TunnelDataPlane&, bool&)>;
 
-  JniSession(JNIEnv* env, jobject callbacks);
+  JniSession(JNIEnv* env, jobject callbacks, jobject connectivityManager);
   ~JniSession() override;
 
   JniSession(const JniSession&) = delete;
@@ -88,6 +89,7 @@ public:
 
 private:
   jobject _Callbacks = nullptr;
+  jobject _ConnectivityManager = nullptr;
   boost::asio::io_context _IoContext;
   std::unique_ptr<boost::asio::io_context::work> _Work;
   std::thread _Thread;
@@ -208,8 +210,14 @@ JniSelector::operator()(const ConnectionTracker::Icmp6Key& key) const {
 
 // JniSession Implementation
 
-JniSession::JniSession(JNIEnv* env, jobject callbacks) {
+JniSession::JniSession(JNIEnv* env, jobject callbacks, jobject connectivityManager) {
   _Callbacks = env->NewGlobalRef(callbacks);
+  _ConnectivityManager = env->NewGlobalRef(connectivityManager);
+
+  int res = ares_library_init_android(_ConnectivityManager);
+  if (res != ARES_SUCCESS) {
+    BOOST_LOG_TRIVIAL(warning) << "ares_library_init_android failed: " << res;
+  }
   _Work = std::make_unique<boost::asio::io_context::work>(_IoContext);
   _Thread = std::thread([this]() {
     JNIEnv* localEnv = nullptr;
@@ -252,8 +260,13 @@ JniSession::JniSession(JNIEnv* env, jobject callbacks) {
 JniSession::~JniSession() {
   Stop();
   JNIEnv* env = GetEnv();
-  if (_Callbacks && env) {
-    env->DeleteGlobalRef(_Callbacks);
+  if (env) {
+    if (_Callbacks) {
+      env->DeleteGlobalRef(_Callbacks);
+    }
+    if (_ConnectivityManager) {
+      env->DeleteGlobalRef(_ConnectivityManager);
+    }
   }
 }
 
@@ -441,6 +454,8 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
 
   SetupLogging();
 
+  ares_library_init_jvm(vm);
+
   jclass localCallbacksClass = env->FindClass("info/kghost/android_hole/vpn/dataplane/TunnelDataPlaneCallbacks");
   if (!localCallbacksClass) {
     return JNI_ERR;
@@ -509,8 +524,8 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
 extern "C" {
 
 JNIEXPORT jlong JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeCreate(
-    JNIEnv* env, jclass clazz, jobject callbacks) {
-  auto* session = new gh::JniSession(env, callbacks);
+    JNIEnv* env, jclass clazz, jobject callbacks, jobject connectivityManager) {
+  auto* session = new gh::JniSession(env, callbacks, connectivityManager);
   return reinterpret_cast<jlong>(session);
 }
 

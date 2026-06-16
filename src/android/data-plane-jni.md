@@ -17,7 +17,7 @@ Handles are passed as `jlong` in JNI. The native implementation should cast thes
 
 - **Allocation**: `nativeCreate` must allocate a session object and return its pointer as a `jlong`. `nativeAddEndpoint` returns a handle for an endpoint.
 - **Validity**: Handles remain valid until their corresponding `nativeDestroy` (for sessions) or `nativeRemoveEndpoint` (for endpoints) call. The Java layer guarantees that `nativeDestroy` is called exactly once for each successful `nativeCreate`.
-- **References**: Native code must create a JNI `GlobalRef` for the `callbacks` object if it intends to use it outside the scope of `nativeCreate`. This reference must be released in `nativeDestroy`.
+- **References**: Native code must create JNI `GlobalRef`s for the `callbacks` and `connectivity_manager` objects if it intends to use them outside the scope of `nativeCreate`. These references must be released in `nativeDestroy`.
 
 ---
 
@@ -27,11 +27,11 @@ Handles are passed as `jlong` in JNI. The native implementation should cast thes
 ```c
 JNIEXPORT jlong JNICALL
 Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeCreate(
-    JNIEnv* env, jclass clazz, jobject callbacks);
+    JNIEnv* env, jclass clazz, jobject callbacks, jobject connectivity_manager);
 ```
 - **Thread**: Called on a Java background service thread.
 - **Precondition**: None.
-- **Postcondition**: Returns a unique session handle. Native resources are allocated but idle. Stores a `GlobalRef` to the `callbacks` object.
+- **Postcondition**: Returns a unique session handle. Native resources are allocated but idle. Stores a `GlobalRef` to the `callbacks` and `connectivity_manager` objects.
 - **Notes**: Store the `JavaVM*` (from `env->GetJavaVM`) for later use in background threads.
 
 ### `nativeStart`

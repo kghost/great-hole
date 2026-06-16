@@ -10,10 +10,10 @@ extern "C" {
 /*
  * Class:     info_kghost_android_hole_vpn_dataplane_JniTunnelDataPlaneNative
  * Method:    nativeCreate
- * Signature: (Linfo/kghost/android_hole/vpn/dataplane/TunnelDataPlaneCallbacks;)J
+ * Signature: (Linfo/kghost/android_hole/vpn/dataplane/TunnelDataPlaneCallbacks;Landroid/net/ConnectivityManager;)J
  */
 JNIEXPORT jlong JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeCreate
-  (JNIEnv *, jclass, jobject);
+  (JNIEnv *, jclass, jobject, jobject);
 
 /*
  * Class:     info_kghost_android_hole_vpn_dataplane_JniTunnelDataPlaneNative
