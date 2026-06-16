@@ -37,7 +37,7 @@ public:
 
   Omni::Fiber::Coroutine<void> Start(int tunFd, int mtu);
   Omni::Fiber::Coroutine<void> Stop();
-  Omni::Fiber::Coroutine<VpnClientMultiChannel::Session*> AddEndpoint(const std::string& displayName,
+  Omni::Fiber::Coroutine<VpnClientMultiChannel::Session*> AddEndpoint(const UdpDynMux::PskType& psk,
                                                                       const std::string& host, int port);
   Omni::Fiber::Coroutine<void> RemoveEndpoint(VpnClientMultiChannel::Session* handle);
 
@@ -46,7 +46,6 @@ public:
   void ReportStats();
 
 private:
-  UdpDynMux::PskType ParsePsk(const std::string& displayName);
   void StartStatsLoop();
 
   boost::asio::any_io_executor _Executor;

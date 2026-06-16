@@ -67,7 +67,7 @@ public:
 
   void Start(int tunFd, int mtu);
   void Stop();
-  jlong AddEndpoint(const std::string& displayName, const std::string& host, int port);
+  jlong AddEndpoint(const UdpDynMux::PskType& psk, const std::string& host, int port);
   void RemoveEndpoint(jlong handle);
   void StartEndpoint(jlong handle);
   void StopEndpoint(jlong handle);
@@ -301,12 +301,12 @@ void JniSession::Stop() {
   }
 }
 
-jlong JniSession::AddEndpoint(const std::string& displayName, const std::string& host, int port) {
+jlong JniSession::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& host, int port) {
   std::promise<jlong> promise;
   auto future = promise.get_future();
 
-  PostTask([&promise, displayName, host, port](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
-    VpnClientMultiChannel::Session* session = co_await dp.AddEndpoint(displayName, host, port);
+  PostTask([&promise, psk, host, port](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    VpnClientMultiChannel::Session* session = co_await dp.AddEndpoint(psk, host, port);
     promise.set_value(reinterpret_cast<jlong>(session));
     co_return;
   });
@@ -538,17 +538,28 @@ JNIEXPORT void JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDat
 }
 
 JNIEXPORT jlong JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeAddEndpoint(
-    JNIEnv* env, jclass clazz, jlong sessionHandle, jstring displayName, jstring host, jint port) {
+    JNIEnv* env, jclass clazz, jlong sessionHandle, jbyteArray psk, jstring host, jint port) {
   auto session = GetSession(sessionHandle);
   if (session) {
-    const char* dNameChars = env->GetStringUTFChars(displayName, nullptr);
+    if (!psk) {
+      BOOST_LOG_TRIVIAL(error) << "nativeAddEndpoint: psk is null";
+      return 0;
+    }
+
+    gh::UdpDynMux::PskType pskArray{};
+    jsize len = env->GetArrayLength(psk);
+    if (len == 16) {
+      env->GetByteArrayRegion(psk, 0, 16, reinterpret_cast<jbyte*>(pskArray.data()));
+    } else {
+      BOOST_LOG_TRIVIAL(error) << "Invalid PSK length: " << len << " (expected 16)";
+      return 0;
+    }
+
     const char* hostChars = env->GetStringUTFChars(host, nullptr);
-    std::string displayNameStr(dNameChars);
     std::string hostStr(hostChars);
-    env->ReleaseStringUTFChars(displayName, dNameChars);
     env->ReleaseStringUTFChars(host, hostChars);
 
-    return session->AddEndpoint(displayNameStr, hostStr, port);
+    return session->AddEndpoint(pskArray, hostStr, port);
   }
   return 0;
 }

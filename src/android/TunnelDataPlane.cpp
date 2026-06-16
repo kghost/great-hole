@@ -94,9 +94,7 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Stop() {
 }
 
 Omni::Fiber::Coroutine<VpnClientMultiChannel::Session*>
-TunnelDataPlane::AddEndpoint(const std::string& displayName, const std::string& host, int port) {
-  auto psk = ParsePsk(displayName);
-
+TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& host, int port) {
   std::shared_ptr<ResolverEndpoint> resolver;
   if (_UdpDynMux) {
     std::string addrStr = host + ":" + std::to_string(port);
@@ -127,37 +125,6 @@ TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannel::Session* session) {
     return *session;
   }
   return std::nullopt;
-}
-
-UdpDynMux::PskType TunnelDataPlane::ParsePsk(const std::string& displayName) {
-  UdpDynMux::PskType psk{};
-  if (displayName.length() == 32) {
-    bool valid = true;
-    for (size_t i = 0; i < 16; ++i) {
-      std::string byteString = displayName.substr(i * 2, 2);
-      char* end;
-      long val = std::strtol(byteString.c_str(), &end, 16);
-      if (*end != '\0') {
-        valid = false;
-        break;
-      }
-      psk[i] = static_cast<uint8_t>(val);
-    }
-    if (valid) {
-      return psk;
-    }
-  }
-  uint64_t hash1 = 14695981039346656037ULL;
-  uint64_t hash2 = 14695981039346656037ULL;
-  for (char c : displayName) {
-    hash1 = (hash1 ^ c) * 1099511628211ULL;
-  }
-  for (size_t i = 0; i < displayName.length(); ++i) {
-    hash2 = (hash2 ^ displayName[displayName.length() - 1 - i]) * 1099511628211ULL;
-  }
-  std::memcpy(psk.data(), &hash1, 8);
-  std::memcpy(psk.data() + 8, &hash2, 8);
-  return psk;
 }
 
 void TunnelDataPlane::StartStatsLoop() {

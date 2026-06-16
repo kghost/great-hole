@@ -52,9 +52,10 @@ Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeStar
 ```c
 JNIEXPORT jlong JNICALL
 Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeAddEndpoint(
-    JNIEnv* env, jclass clazz, jlong session_handle, jstring display_name, jstring host, jint port);
+    JNIEnv* env, jclass clazz, jlong session_handle, jbyteArray psk, jstring host, jint port);
 ```
 - **Returns**: A unique handle for the endpoint.
+- **Parameters**: `psk` is a 16-byte pre-shared key.
 
 #### `nativeRemoveEndpoint`
 ```c
