@@ -216,9 +216,7 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoGracefulStop() {
   }
 
   for (auto& [psk, session] : _Sessions) {
-    if (session.SessionPipeline) {
-      co_await session.SessionPipeline->Stop();
-    }
+    co_await _UdpDynMux->RemoveChannel(psk);
   }
   _Sessions.clear();
   co_await _TunSide->Stop();

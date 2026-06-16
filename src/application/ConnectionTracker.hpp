@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <compare>
 #include <functional>
 #include <optional>
 #include <set>
@@ -31,23 +32,8 @@ public:
     uint16_t LocalPort = 0;
     uint16_t RemotePort = 0;
 
-    bool operator==(const Ip4TcpKey& other) const {
-      return LocalAddress == other.LocalAddress && RemoteAddress == other.RemoteAddress &&
-             LocalPort == other.LocalPort && RemotePort == other.RemotePort;
-    }
-
-    bool operator<(const Ip4TcpKey& other) const {
-      if (LocalAddress != other.LocalAddress) {
-        return LocalAddress < other.LocalAddress;
-      }
-      if (RemoteAddress != other.RemoteAddress) {
-        return RemoteAddress < other.RemoteAddress;
-      }
-      if (LocalPort != other.LocalPort) {
-        return LocalPort < other.LocalPort;
-      }
-      return RemotePort < other.RemotePort;
-    }
+    std::strong_ordering operator<=>(const Ip4TcpKey& other) const = default;
+    bool operator==(const Ip4TcpKey&) const = default;
   };
 
   struct Ip6TcpKey {
@@ -56,23 +42,8 @@ public:
     uint16_t LocalPort = 0;
     uint16_t RemotePort = 0;
 
-    bool operator==(const Ip6TcpKey& other) const {
-      return LocalAddress == other.LocalAddress && RemoteAddress == other.RemoteAddress &&
-             LocalPort == other.LocalPort && RemotePort == other.RemotePort;
-    }
-
-    bool operator<(const Ip6TcpKey& other) const {
-      if (LocalAddress != other.LocalAddress) {
-        return LocalAddress < other.LocalAddress;
-      }
-      if (RemoteAddress != other.RemoteAddress) {
-        return RemoteAddress < other.RemoteAddress;
-      }
-      if (LocalPort != other.LocalPort) {
-        return LocalPort < other.LocalPort;
-      }
-      return RemotePort < other.RemotePort;
-    }
+    std::strong_ordering operator<=>(const Ip6TcpKey& other) const = default;
+    bool operator==(const Ip6TcpKey&) const = default;
   };
 
   struct Ip4UdpKey {
@@ -81,23 +52,8 @@ public:
     uint16_t LocalPort = 0;
     uint16_t RemotePort = 0;
 
-    bool operator==(const Ip4UdpKey& other) const {
-      return LocalAddress == other.LocalAddress && RemoteAddress == other.RemoteAddress &&
-             LocalPort == other.LocalPort && RemotePort == other.RemotePort;
-    }
-
-    bool operator<(const Ip4UdpKey& other) const {
-      if (LocalAddress != other.LocalAddress) {
-        return LocalAddress < other.LocalAddress;
-      }
-      if (RemoteAddress != other.RemoteAddress) {
-        return RemoteAddress < other.RemoteAddress;
-      }
-      if (LocalPort != other.LocalPort) {
-        return LocalPort < other.LocalPort;
-      }
-      return RemotePort < other.RemotePort;
-    }
+    std::strong_ordering operator<=>(const Ip4UdpKey& other) const = default;
+    bool operator==(const Ip4UdpKey&) const = default;
   };
 
   struct Ip6UdpKey {
@@ -106,23 +62,8 @@ public:
     uint16_t LocalPort = 0;
     uint16_t RemotePort = 0;
 
-    bool operator==(const Ip6UdpKey& other) const {
-      return LocalAddress == other.LocalAddress && RemoteAddress == other.RemoteAddress &&
-             LocalPort == other.LocalPort && RemotePort == other.RemotePort;
-    }
-
-    bool operator<(const Ip6UdpKey& other) const {
-      if (LocalAddress != other.LocalAddress) {
-        return LocalAddress < other.LocalAddress;
-      }
-      if (RemoteAddress != other.RemoteAddress) {
-        return RemoteAddress < other.RemoteAddress;
-      }
-      if (LocalPort != other.LocalPort) {
-        return LocalPort < other.LocalPort;
-      }
-      return RemotePort < other.RemotePort;
-    }
+    std::strong_ordering operator<=>(const Ip6UdpKey& other) const = default;
+    bool operator==(const Ip6UdpKey&) const = default;
   };
 
   struct IcmpKey {
@@ -130,19 +71,8 @@ public:
     boost::asio::ip::address_v4 RemoteAddress;
     uint16_t Id = 0;
 
-    bool operator==(const IcmpKey& other) const {
-      return LocalAddress == other.LocalAddress && RemoteAddress == other.RemoteAddress && Id == other.Id;
-    }
-
-    bool operator<(const IcmpKey& other) const {
-      if (LocalAddress != other.LocalAddress) {
-        return LocalAddress < other.LocalAddress;
-      }
-      if (RemoteAddress != other.RemoteAddress) {
-        return RemoteAddress < other.RemoteAddress;
-      }
-      return Id < other.Id;
-    }
+    std::strong_ordering operator<=>(const IcmpKey& other) const = default;
+    bool operator==(const IcmpKey&) const = default;
   };
 
   struct Icmp6Key {
@@ -150,19 +80,8 @@ public:
     boost::asio::ip::address_v6 RemoteAddress;
     uint16_t Id = 0;
 
-    bool operator==(const Icmp6Key& other) const {
-      return LocalAddress == other.LocalAddress && RemoteAddress == other.RemoteAddress && Id == other.Id;
-    }
-
-    bool operator<(const Icmp6Key& other) const {
-      if (LocalAddress != other.LocalAddress) {
-        return LocalAddress < other.LocalAddress;
-      }
-      if (RemoteAddress != other.RemoteAddress) {
-        return RemoteAddress < other.RemoteAddress;
-      }
-      return Id < other.Id;
-    }
+    std::strong_ordering operator<=>(const Icmp6Key& other) const = default;
+    bool operator==(const Icmp6Key&) const = default;
   };
 
   enum class TcpState { kSynSent, kEstablished, kFinWait, kClosed };
