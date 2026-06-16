@@ -354,7 +354,11 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
 
   auto mockTun = std::make_shared<MockEndpoint>();
   auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, selector);
-  connTrack->SetConntrackTimeoutForTesting(std::chrono::seconds(1));
+  ConnectionTracker::TcpEntry::SynTimeout = std::chrono::seconds(1);
+  ConnectionTracker::TcpEntry::EstablishedTimeout = std::chrono::seconds(1);
+  ConnectionTracker::TcpEntry::FinTimeout = std::chrono::seconds(1);
+  ConnectionTracker::UdpEntry::Timeout = std::chrono::seconds(1);
+  ConnectionTracker::IcmpConnEntry::Timeout = std::chrono::seconds(1);
 
   bool testPassed = false;
 
@@ -478,6 +482,13 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     co_await udpServer->Stop();
     co_await udpServer->WaitService();
 
+    // Restore default timeouts
+    ConnectionTracker::TcpEntry::SynTimeout = std::chrono::seconds(60);
+    ConnectionTracker::TcpEntry::EstablishedTimeout = std::chrono::seconds(1200);
+    ConnectionTracker::TcpEntry::FinTimeout = std::chrono::seconds(30);
+    ConnectionTracker::UdpEntry::Timeout = std::chrono::seconds(30);
+    ConnectionTracker::IcmpConnEntry::Timeout = std::chrono::seconds(30);
+
     co_await current.WaitAll();
     testPassed = true;
     co_return;
@@ -547,7 +558,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
     }
 
     // 2. Unregister the channel
-    co_await connTrack->UnregisterChannel(psk);
+    co_await connTrack->UnregisterChannel(session);
     resolvedSession = std::nullopt;
 
     // 3. Send an outgoing packet matching the established connection key

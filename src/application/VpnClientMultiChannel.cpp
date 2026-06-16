@@ -2,7 +2,6 @@
 
 #include <array>
 #include <boost/asio/any_io_executor.hpp>
-#include <chrono>
 #include <functional>
 #include <map>
 #include <memory>
@@ -91,8 +90,6 @@ public:
 
   void RemoveMark(const ConnectionMark& mark) { _ConnectionTracker->RemoveMark(mark); }
 
-  void SetConntrackTimeout(std::chrono::seconds timeout) { _ConnectionTracker->SetTimeout(timeout); }
-
   Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override {
     while (_Queue.IsEmpty()) {
       if (c.IsTriggered()) {
@@ -169,10 +166,6 @@ VpnClientMultiChannel::VpnClientMultiChannel(boost::asio::any_io_executor execut
 }
 
 VpnClientMultiChannel::~VpnClientMultiChannel() { assert(_Sessions.empty()); }
-
-void VpnClientMultiChannel::SetConntrackTimeoutForTesting(std::chrono::seconds timeout) {
-  _TunSide->SetConntrackTimeout(timeout);
-}
 
 std::string VpnClientMultiChannel::GetName() const {
   return std::format("VpnClientMultiChannel:[{}]", _UdpDynMux->GetName());

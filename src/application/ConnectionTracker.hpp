@@ -2,8 +2,8 @@
 
 #include <chrono>
 #include <functional>
-#include <map>
 #include <optional>
+#include <set>
 #include <variant>
 
 #include <boost/asio/io_context.hpp>
@@ -165,6 +165,8 @@ public:
     }
   };
 
+  enum class TcpState { kSynSent, kEstablished, kFinWait, kClosed };
+
   using ConnectionKey = std::variant<Ip4TcpKey, Ip6TcpKey, Ip4UdpKey, Ip6UdpKey, IcmpKey, Icmp6Key>;
 
   class Selector {
@@ -182,9 +184,75 @@ public:
 
   using ValidatorType = std::function<bool(ConnectionMark&)>;
 
-  explicit ConnectionTracker(boost::asio::any_io_executor executor, SelectorType selector,
-                             std::chrono::seconds timeout = std::chrono::seconds(60));
+  explicit ConnectionTracker(boost::asio::any_io_executor executor, SelectorType selector);
   ~ConnectionTracker() override = default;
+
+  struct ConnectionEntry {
+    ConnectionMark& Mark;
+    mutable std::chrono::steady_clock::time_point LastActive;
+  };
+
+  struct TcpEntry : public ConnectionEntry {
+    TcpEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive,
+             TcpState state = TcpState::kSynSent)
+        : ConnectionEntry{mark, lastActive}, State(state) {}
+
+    mutable TcpState State = TcpState::kSynSent;
+    static std::chrono::seconds SynTimeout;
+    static std::chrono::seconds EstablishedTimeout;
+    static std::chrono::seconds FinTimeout;
+  };
+
+  struct UdpEntry : public ConnectionEntry {
+    UdpEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive)
+        : ConnectionEntry{mark, lastActive} {}
+    static std::chrono::seconds Timeout;
+  };
+
+  struct IcmpConnEntry : public ConnectionEntry {
+    IcmpConnEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive)
+        : ConnectionEntry{mark, lastActive} {}
+    static std::chrono::seconds Timeout;
+  };
+
+  struct Ip4TcpEntry {
+    Ip4TcpKey Key;
+    mutable TcpEntry Entry;
+  };
+
+  struct Ip6TcpEntry {
+    Ip6TcpKey Key;
+    mutable TcpEntry Entry;
+  };
+
+  struct Ip4UdpEntry {
+    Ip4UdpKey Key;
+    mutable UdpEntry Entry;
+  };
+
+  struct Ip6UdpEntry {
+    Ip6UdpKey Key;
+    mutable UdpEntry Entry;
+  };
+
+  struct IcmpEntry {
+    IcmpKey Key;
+    mutable IcmpConnEntry Entry;
+  };
+
+  struct Icmp6Entry {
+    Icmp6Key Key;
+    mutable IcmpConnEntry Entry;
+  };
+
+  template <typename EntryType> struct EntryCompare {
+    using is_transparent = void;
+    using KeyType = std::decay_t<decltype(std::declval<EntryType>().Key)>;
+
+    bool operator()(const EntryType& lhs, const EntryType& rhs) const { return lhs.Key < rhs.Key; }
+    bool operator()(const EntryType& lhs, const KeyType& rhs) const { return lhs.Key < rhs; }
+    bool operator()(const KeyType& lhs, const EntryType& rhs) const { return lhs < rhs.Key; }
+  };
 
   ConnectionTracker(const ConnectionTracker&) = delete;
   ConnectionTracker& operator=(const ConnectionTracker&) = delete;
@@ -200,9 +268,6 @@ public:
 
   void Clear();
 
-  void SetTimeout(std::chrono::seconds timeout) { _Timeout = timeout; }
-  std::chrono::seconds GetTimeout() const { return _Timeout; }
-
   std::string GetName() const override { return "ConnectionTracker"; }
 
 protected:
@@ -212,21 +277,30 @@ protected:
 
 private:
   static std::optional<ConnectionKey> ParseConnectionKey(const Packet& p, ConnectionDirection direction);
+  static std::optional<uint8_t> GetTcpFlags(const Packet& p);
 
-  struct ConnectionEntry {
-    ConnectionMark& Mark;
-    std::chrono::steady_clock::time_point LastActive;
-  };
+  static void UpdateTcpState(TcpEntry& entry, uint8_t flags) {
+    if (flags & 0x04) { // RST
+      entry.State = TcpState::kClosed;
+    } else if (flags & 0x01) { // FIN
+      entry.State = TcpState::kFinWait;
+    } else if ((flags & 0x02) && !(flags & 0x10)) { // SYN only
+      entry.State = TcpState::kSynSent;
+    } else if (flags & 0x10) { // ACK
+      if (entry.State == TcpState::kSynSent) {
+        entry.State = TcpState::kEstablished;
+      }
+    }
+  }
 
   boost::asio::any_io_executor _Executor;
   SelectorType _Selector;
-  std::map<Ip4TcpKey, ConnectionEntry> _Ip4TcpTable;
-  std::map<Ip6TcpKey, ConnectionEntry> _Ip6TcpTable;
-  std::map<Ip4UdpKey, ConnectionEntry> _Ip4UdpTable;
-  std::map<Ip6UdpKey, ConnectionEntry> _Ip6UdpTable;
-  std::map<IcmpKey, ConnectionEntry> _IcmpTable;
-  std::map<Icmp6Key, ConnectionEntry> _Icmp6Table;
-  std::chrono::seconds _Timeout;
+  std::set<Ip4TcpEntry, EntryCompare<Ip4TcpEntry>> _Ip4TcpTable;
+  std::set<Ip6TcpEntry, EntryCompare<Ip6TcpEntry>> _Ip6TcpTable;
+  std::set<Ip4UdpEntry, EntryCompare<Ip4UdpEntry>> _Ip4UdpTable;
+  std::set<Ip6UdpEntry, EntryCompare<Ip6UdpEntry>> _Ip6UdpTable;
+  std::set<IcmpEntry, EntryCompare<IcmpEntry>> _IcmpTable;
+  std::set<Icmp6Entry, EntryCompare<Icmp6Entry>> _Icmp6Table;
 };
 
 } // namespace gh

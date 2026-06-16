@@ -1,7 +1,6 @@
 #pragma once
 
 #include <boost/asio/any_io_executor.hpp>
-#include <chrono>
 #include <functional>
 #include <map>
 #include <memory>
@@ -46,8 +45,6 @@ public:
   VpnClientMultiChannel& operator=(const VpnClientMultiChannel&) = delete;
   VpnClientMultiChannel(VpnClientMultiChannel&&) = delete;
   VpnClientMultiChannel& operator=(VpnClientMultiChannel&&) = delete;
-
-  void SetConntrackTimeoutForTesting(std::chrono::seconds timeout);
 
   std::string GetName() const override;
 
