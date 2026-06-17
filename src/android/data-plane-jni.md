@@ -124,9 +124,25 @@ fun findTunnelForFlow(protocol: Int, localAddress: ByteArray, localPort: Int,
 - **Parameters**: `localAddress` and `remoteAddress` are `ByteArray` (16 bytes for IPv6, IPv4 are mapped into IPv6).
 
 ```kotlin
-fun onStateChanged(state: NativeTunnelState, message: String?)
+fun onTunnelStateChanged(endpointHandle: Long, state: Int, error: String?)
 ```
-- **Usage**: Notifies the UI/Service of life-cycle changes or errors.
+- **Usage**: Notifies the UI/Service of life-cycle changes or errors for a specific endpoint.
+- **`state` Values**:
+  | Name | Value | Description |
+  | :--- | :--- | :--- |
+  | `Starting` | 0 | Endpoint is initializing. |
+  | `Running` | 1 | Endpoint is active and processing packets. |
+  | `Stopping` | 2 | Shutdown has been requested for this endpoint. |
+  | `Stopped` | 3 | Endpoint has fully stopped. |
+  | `Failed` | 4 | A terminal error occurred on this endpoint. |
+- **`error`**: Optional error message when state is `Failed`.
+
+```kotlin
+fun onVpnStateChanged(state: Int, error: String?)
+```
+- **Usage**: Notifies the UI/Service of session-level life-cycle changes or errors.
+- **`state` Values**: (Defined by native implementation)
+- **`error`**: Optional error message.
 
 ```kotlin
 fun onTrafficStats(endpointHandle: Long, txBytes: Long, rxBytes: Long)

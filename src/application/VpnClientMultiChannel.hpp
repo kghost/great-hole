@@ -36,9 +36,31 @@ public:
     bool Running = true;
   };
 
+  class SessionStateListener {
+  public:
+    virtual ~SessionStateListener() = default;
+    virtual void OnSessionStarting(Session& session) = 0;
+    virtual void OnSessionRunning(Session& session) = 0;
+    virtual void OnSessionStopping(Session& session) = 0;
+    virtual void OnSessionStopped(Session& session) = 0;
+    virtual void OnSessionFailed(Session& session, const std::string& error) = 0;
+  };
+
+  class NoopSessionStateListener : public SessionStateListener {
+  public:
+    ~NoopSessionStateListener() override = default;
+    void OnSessionStarting(Session&) override {}
+    void OnSessionRunning(Session&) override {}
+    void OnSessionStopping(Session&) override {}
+    void OnSessionStopped(Session&) override {}
+    void OnSessionFailed(Session&, const std::string&) override {}
+  };
+  static NoopSessionStateListener _NoopSessionStateListener;
+
   VpnClientMultiChannel(boost::asio::any_io_executor executor, std::shared_ptr<Endpoint> tun,
                         std::shared_ptr<UdpDynMux> udpDynMux, ConnectionTracker::SelectorType selector,
-                        std::vector<std::shared_ptr<Filter>> filters);
+                        std::vector<std::shared_ptr<Filter>> filters,
+                        SessionStateListener& listener = _NoopSessionStateListener);
   ~VpnClientMultiChannel() override;
 
   VpnClientMultiChannel(const VpnClientMultiChannel&) = delete;
@@ -74,6 +96,7 @@ private:
 
   std::map<UdpDynMux::PskType, Session> _Sessions;
   Omni::Fiber::RemoteCall _ChannelCall;
+  std::reference_wrapper<SessionStateListener> _StateListener;
 };
 
 } // namespace gh

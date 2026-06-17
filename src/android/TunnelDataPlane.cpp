@@ -28,36 +28,36 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(int tunFd, int mtu, std::vec
     co_return;
   }
   _Running = true;
-  _Callbacks.UpdateState(TunnelState::Connecting, "VPN starting");
+  _Callbacks.OnVpnStateChanged(TunnelState::Starting, "VPN starting");
 
   _Tun = std::make_shared<Tun>(_Executor, tunFd);
   _UdpDynMux = std::make_shared<UdpDynMux>(_Executor);
   auto filter = std::make_shared<FilterXor>(std::move(encryptionKey));
   _Client = std::make_shared<VpnClientMultiChannel>(_Executor, _Tun, _UdpDynMux, _Selector,
-                                                    std::vector<std::shared_ptr<Filter>>{filter});
+                                                    std::vector<std::shared_ptr<Filter>>{filter}, *this);
 
   auto ec = co_await _Tun->Start();
   if (ec) {
     BOOST_LOG_TRIVIAL(error) << "Failed to start Tun: " << ec.message();
-    _Callbacks.UpdateState(TunnelState::Failed, ec.message().c_str());
+    _Callbacks.OnVpnStateChanged(TunnelState::Failed, ec.message().c_str());
     co_return;
   }
 
   ec = co_await _UdpDynMux->Start();
   if (ec) {
     BOOST_LOG_TRIVIAL(error) << "Failed to start UdpDynMux: " << ec.message();
-    _Callbacks.UpdateState(TunnelState::Failed, ec.message().c_str());
+    _Callbacks.OnVpnStateChanged(TunnelState::Failed, ec.message().c_str());
     co_return;
   }
 
   ec = co_await _Client->Start();
   if (ec) {
     BOOST_LOG_TRIVIAL(error) << "Failed to start VpnClientMultiChannel: " << ec.message();
-    _Callbacks.UpdateState(TunnelState::Failed, ec.message().c_str());
+    _Callbacks.OnVpnStateChanged(TunnelState::Failed, ec.message().c_str());
     co_return;
   }
 
-  _Callbacks.UpdateState(TunnelState::Connected, "VPN tunnel established");
+  _Callbacks.OnVpnStateChanged(TunnelState::Running, "VPN tunnel established");
 
   _StatsTimer = std::make_shared<boost::asio::steady_timer>(_Executor);
   StartStatsLoop();
@@ -68,6 +68,7 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Stop() {
     co_return;
   }
   _Running = false;
+  _Callbacks.OnVpnStateChanged(TunnelState::Stopping, "VPN stopping");
 
   if (_StatsTimer) {
     _StatsTimer->cancel();
@@ -93,7 +94,7 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Stop() {
   _UdpDynMux.reset();
   _Tun.reset();
 
-  _Callbacks.UpdateState(TunnelState::Disconnected, "VPN tunnel stopped");
+  _Callbacks.OnVpnStateChanged(TunnelState::Stopped, "VPN tunnel stopped");
 }
 
 Omni::Fiber::Coroutine<VpnClientMultiChannel::Session*>
@@ -154,6 +155,26 @@ void TunnelDataPlane::ReportStats() {
       _Callbacks.OnTrafficStats(reinterpret_cast<int64_t>(session), tx, rx);
     }
   }
+}
+
+void TunnelDataPlane::OnSessionStarting(VpnClientMultiChannel::Session& session) {
+  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(&session), static_cast<int>(TunnelState::Starting), "");
+}
+
+void TunnelDataPlane::OnSessionRunning(VpnClientMultiChannel::Session& session) {
+  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(&session), static_cast<int>(TunnelState::Running), "");
+}
+
+void TunnelDataPlane::OnSessionStopping(VpnClientMultiChannel::Session& session) {
+  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(&session), static_cast<int>(TunnelState::Stopping), "");
+}
+
+void TunnelDataPlane::OnSessionStopped(VpnClientMultiChannel::Session& session) {
+  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(&session), static_cast<int>(TunnelState::Stopped), "");
+}
+
+void TunnelDataPlane::OnSessionFailed(VpnClientMultiChannel::Session& session, const std::string& error) {
+  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(&session), static_cast<int>(TunnelState::Failed), error);
 }
 
 } // namespace gh

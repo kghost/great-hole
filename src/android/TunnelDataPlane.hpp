@@ -16,20 +16,27 @@
 
 namespace gh {
 
-enum class TunnelState { Connecting, Connected, Disconnected, Failed };
+enum class TunnelState { Starting = 0, Running = 1, Stopping = 2, Stopped = 3, Failed = 4 };
 
 class DataPlaneCallbacks {
 public:
   virtual ~DataPlaneCallbacks() = default;
-  virtual void UpdateState(TunnelState state, const std::string& message) = 0;
+  virtual void OnVpnStateChanged(TunnelState state, const std::string& message) = 0;
+  virtual void OnTunnelStateChanged(int64_t endpointHandle, int state, const std::string& error) = 0;
   virtual void OnTrafficStats(int64_t endpointHandle, uint64_t txBytes, uint64_t rxBytes) = 0;
 };
 
-class TunnelDataPlane {
+class TunnelDataPlane : public VpnClientMultiChannel::SessionStateListener {
 public:
   TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::SelectorType selector,
                   DataPlaneCallbacks& callbacks);
   ~TunnelDataPlane();
+
+  void OnSessionStarting(VpnClientMultiChannel::Session& session) override;
+  void OnSessionRunning(VpnClientMultiChannel::Session& session) override;
+  void OnSessionStopping(VpnClientMultiChannel::Session& session) override;
+  void OnSessionStopped(VpnClientMultiChannel::Session& session) override;
+  void OnSessionFailed(VpnClientMultiChannel::Session& session, const std::string& error) override;
 
   TunnelDataPlane(const TunnelDataPlane&) = delete;
   TunnelDataPlane& operator=(const TunnelDataPlane&) = delete;

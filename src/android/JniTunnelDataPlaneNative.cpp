@@ -31,14 +31,9 @@ static JavaVM* g_JavaVM = nullptr;
 static jclass g_CallbacksClass = nullptr;
 static jmethodID g_MidProtectSocket = nullptr;
 static jmethodID g_MidFindTunnelForFlow = nullptr;
-static jmethodID g_MidOnStateChanged = nullptr;
+static jmethodID g_MidOnTunnelStateChanged = nullptr;
+static jmethodID g_MidOnVpnStateChanged = nullptr;
 static jmethodID g_MidOnTrafficStats = nullptr;
-
-static jclass g_StateClass = nullptr;
-static jobject g_StateConnecting = nullptr;
-static jobject g_StateConnected = nullptr;
-static jobject g_StateDisconnected = nullptr;
-static jobject g_StateFailed = nullptr;
 
 namespace gh {
 
@@ -77,7 +72,8 @@ public:
   TunnelDataPlane* GetDataPlane() const { return _DataPlane; }
 
   bool ProtectSocket(int fd);
-  void UpdateState(TunnelState state, const std::string& message) override;
+  void OnVpnStateChanged(TunnelState state, const std::string& message) override;
+  void OnTunnelStateChanged(int64_t endpointHandle, int state, const std::string& error) override;
   void OnTrafficStats(int64_t endpointHandle, uint64_t txBytes, uint64_t rxBytes) override;
 
   template <typename Func> void PostTask(Func&& func) {
@@ -351,39 +347,46 @@ bool JniSession::ProtectSocket(int fd) {
   return result;
 }
 
-void JniSession::UpdateState(TunnelState state, const std::string& message) {
-  jobject stateObj = nullptr;
-  switch (state) {
-  case TunnelState::Connecting:
-    stateObj = g_StateConnecting;
-    break;
-  case TunnelState::Connected:
-    stateObj = g_StateConnected;
-    break;
-  case TunnelState::Disconnected:
-    stateObj = g_StateDisconnected;
-    break;
-  case TunnelState::Failed:
-    stateObj = g_StateFailed;
-    break;
-  }
-  if (!stateObj || !_Callbacks) {
+void JniSession::OnVpnStateChanged(TunnelState state, const std::string& message) {
+  if (!_Callbacks) {
     return;
   }
   JNIEnv* env = GetEnv();
   jstring msgStr = !message.empty() ? env->NewStringUTF(message.c_str()) : nullptr;
   if (env->ExceptionCheck()) {
-    BOOST_LOG_TRIVIAL(warning) << "JNI exception in UpdateState (NewStringUTF)";
+    BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnVpnStateChanged (NewStringUTF)";
     env->ExceptionClear();
   }
-  env->CallVoidMethod(_Callbacks, g_MidOnStateChanged, stateObj, msgStr);
+  env->CallVoidMethod(_Callbacks, g_MidOnVpnStateChanged, static_cast<jint>(state), msgStr);
   if (env->ExceptionCheck()) {
-    BOOST_LOG_TRIVIAL(warning) << "JNI exception in UpdateState (onStateChanged)";
+    BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnVpnStateChanged (onVpnStateChanged)";
     env->ExceptionDescribe();
     env->ExceptionClear();
   }
   if (msgStr) {
     env->DeleteLocalRef(msgStr);
+  }
+}
+
+void JniSession::OnTunnelStateChanged(int64_t endpointHandle, int state, const std::string& error) {
+  if (!_Callbacks) {
+    return;
+  }
+  JNIEnv* env = GetEnv();
+  jstring errStr = !error.empty() ? env->NewStringUTF(error.c_str()) : nullptr;
+  if (env->ExceptionCheck()) {
+    BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnTunnelStateChanged (NewStringUTF)";
+    env->ExceptionClear();
+  }
+  env->CallVoidMethod(_Callbacks, g_MidOnTunnelStateChanged, static_cast<jlong>(endpointHandle),
+                      static_cast<jint>(state), errStr);
+  if (env->ExceptionCheck()) {
+    BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnTunnelStateChanged (onTunnelStateChanged)";
+    env->ExceptionDescribe();
+    env->ExceptionClear();
+  }
+  if (errStr) {
+    env->DeleteLocalRef(errStr);
   }
 }
 
@@ -465,34 +468,15 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
 
   g_MidProtectSocket = env->GetMethodID(g_CallbacksClass, "protectSocket", "(I)Z");
   g_MidFindTunnelForFlow = env->GetMethodID(g_CallbacksClass, "findTunnelForFlow", "(I[BI[BI)J");
-  g_MidOnStateChanged =
-      env->GetMethodID(g_CallbacksClass, "onStateChanged",
-                       "(Linfo/kghost/android_hole/vpn/dataplane/NativeTunnelState;Ljava/lang/String;)V");
+  g_MidOnTunnelStateChanged =
+      env->GetMethodID(g_CallbacksClass, "onTunnelStateChanged", "(JILjava/lang/String;)V");
+  g_MidOnVpnStateChanged =
+      env->GetMethodID(g_CallbacksClass, "onVpnStateChanged", "(ILjava/lang/String;)V");
   g_MidOnTrafficStats = env->GetMethodID(g_CallbacksClass, "onTrafficStats", "(JJJ)V");
 
-  if (!g_MidProtectSocket || !g_MidFindTunnelForFlow || !g_MidOnStateChanged || !g_MidOnTrafficStats) {
+  if (!g_MidProtectSocket || !g_MidFindTunnelForFlow || !g_MidOnTunnelStateChanged ||
+      !g_MidOnVpnStateChanged || !g_MidOnTrafficStats) {
     return JNI_ERR;
-  }
-
-  jclass localStateClass = env->FindClass("info/kghost/android_hole/vpn/dataplane/NativeTunnelState");
-  if (localStateClass) {
-    g_StateClass = (jclass)env->NewGlobalRef(localStateClass);
-
-    auto getEnum = [&](const char* name) -> jobject {
-      jfieldID fid =
-          env->GetStaticFieldID(g_StateClass, name, "Linfo/kghost/android_hole/vpn/dataplane/NativeTunnelState;");
-      if (env->ExceptionCheck()) {
-        env->ExceptionClear();
-        return nullptr;
-      }
-      jobject val = env->GetStaticObjectField(g_StateClass, fid);
-      return val ? env->NewGlobalRef(val) : nullptr;
-    };
-
-    g_StateConnecting = getEnum("CONNECTING");
-    g_StateConnected = getEnum("CONNECTED");
-    g_StateDisconnected = getEnum("DISCONNECTED");
-    g_StateFailed = getEnum("FAILED");
   }
 
   return JNI_VERSION_1_6;
@@ -503,21 +487,6 @@ JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
   if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_OK) {
     if (g_CallbacksClass) {
       env->DeleteGlobalRef(g_CallbacksClass);
-    }
-    if (g_StateClass) {
-      env->DeleteGlobalRef(g_StateClass);
-    }
-    if (g_StateConnecting) {
-      env->DeleteGlobalRef(g_StateConnecting);
-    }
-    if (g_StateConnected) {
-      env->DeleteGlobalRef(g_StateConnected);
-    }
-    if (g_StateDisconnected) {
-      env->DeleteGlobalRef(g_StateDisconnected);
-    }
-    if (g_StateFailed) {
-      env->DeleteGlobalRef(g_StateFailed);
     }
   }
 }
