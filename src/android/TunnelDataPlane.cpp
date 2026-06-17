@@ -11,6 +11,7 @@
 #include "Coroutine.hpp"
 #include "EndpointTun.hpp"
 #include "EndpointUdpDynMux.hpp"
+#include "FilterXor.hpp"
 #include "ResolverHelper.hpp"
 #include "VpnClientMultiChannel.hpp"
 
@@ -22,7 +23,7 @@ TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor, Connecti
 
 TunnelDataPlane::~TunnelDataPlane() { assert(!_Running); }
 
-Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(int tunFd, int mtu) {
+Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(int tunFd, int mtu, std::vector<char> encryptionKey) {
   if (_Running) {
     co_return;
   }
@@ -31,7 +32,9 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(int tunFd, int mtu) {
 
   _Tun = std::make_shared<Tun>(_Executor, tunFd);
   _UdpDynMux = std::make_shared<UdpDynMux>(_Executor);
-  _Client = std::make_shared<VpnClientMultiChannel>(_Executor, _Tun, _UdpDynMux, _Selector);
+  auto filter = std::make_shared<FilterXor>(std::move(encryptionKey));
+  _Client = std::make_shared<VpnClientMultiChannel>(_Executor, _Tun, _UdpDynMux, _Selector,
+                                                    std::vector<std::shared_ptr<Filter>>{filter});
 
   auto ec = co_await _Tun->Start();
   if (ec) {

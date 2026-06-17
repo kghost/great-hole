@@ -284,7 +284,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::Channel::Read(Packet& p, C
 Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::Channel::Write(Packet& p, Cancel& c) {
   auto srcIpOpt = GetSourceAddress(p);
   if (!std::binary_search(_Ips.begin(), _Ips.end(), srcIpOpt)) {
-    BOOST_LOG_TRIVIAL(warning) << "Channel drop packet: source IP "
+    BOOST_LOG_TRIVIAL(warning) << "Channel " << GetName() << " drop packet: source IP "
                                << (srcIpOpt.has_value() ? srcIpOpt->to_string() : "invalid/unknown")
                                << " does not match channel IPs";
     co_return ErrorCode(AppMinorErrorCategory::kSourceIpMismatch, kAppMinorError);

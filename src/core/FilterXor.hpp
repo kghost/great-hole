@@ -9,7 +9,7 @@ namespace gh {
 
 class FilterXor : public Filter {
 public:
-  explicit FilterXor(const std::vector<char>& key) : _Key(key) {}
+  explicit FilterXor(std::vector<char> key) : _Key(std::move(key)) {}
 
   Omni::Fiber::Coroutine<boost::system::error_code> Pipe(Packet& p, Cancel& c) override {
     for (std::size_t i = 0; i < p._Length; ++i) {

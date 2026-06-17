@@ -38,12 +38,13 @@ Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeCrea
 ```c
 JNIEXPORT void JNICALL
 Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeStart(
-    JNIEnv* env, jclass clazz, jlong session_handle, jint tun_fd, jint mtu);
+    JNIEnv* env, jclass clazz, jlong session_handle, jint tun_fd, jint mtu, jbyteArray encryption_key);
 ```
 - **Thread**: Called on a Java background service thread.
 - **Precondition**: `session_handle` is valid and the session is not already started. `tun_fd` is an open, blocking/non-blocking file descriptor for the TUN interface.
 - **Postcondition**: Background worker threads are spawned for packet processing.
 - **Ownership**: Native code **takes ownership** of `tun_fd` and is responsible for closing it during `nativeStop` or `nativeDestroy`.
+- **Parameters**: `encryption_key` is a dynamic length binary string used for session encryption.
 - **Background Work**: This function should return quickly. All heavy I/O and crypto must happen on native-managed threads.
 
 ### Endpoint Management

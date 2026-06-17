@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <boost/asio.hpp>
 #include <boost/log/core.hpp>
@@ -65,7 +66,7 @@ public:
     return env;
   }
 
-  void Start(int tunFd, int mtu);
+  void Start(int tunFd, int mtu, std::vector<char> encryptionKey);
   void Stop();
   jlong AddEndpoint(const UdpDynMux::PskType& psk, const std::string& host, int port);
   void RemoveEndpoint(jlong handle);
@@ -270,9 +271,9 @@ JniSession::~JniSession() {
   }
 }
 
-void JniSession::Start(int tunFd, int mtu) {
-  PostTask([tunFd, mtu](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
-    co_await dp.Start(tunFd, mtu);
+void JniSession::Start(int tunFd, int mtu, std::vector<char> encryptionKey) {
+  PostTask([tunFd, mtu, encryptionKey = std::move(encryptionKey)](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    co_await dp.Start(tunFd, mtu, std::move(encryptionKey));
     co_return;
   });
 }
@@ -530,10 +531,17 @@ JNIEXPORT jlong JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDa
 }
 
 JNIEXPORT void JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeStart(
-    JNIEnv* env, jclass clazz, jlong sessionHandle, jint tunFd, jint mtu) {
+    JNIEnv* env, jclass clazz, jlong sessionHandle, jint tunFd, jint mtu, jbyteArray encryptionKey) {
   auto session = GetSession(sessionHandle);
   if (session) {
-    session->Start(tunFd, mtu);
+    if (!encryptionKey) {
+      BOOST_LOG_TRIVIAL(error) << "nativeStart: encryptionKey is null";
+      return;
+    }
+    jsize len = env->GetArrayLength(encryptionKey);
+    std::vector<char> key(len);
+    env->GetByteArrayRegion(encryptionKey, 0, len, reinterpret_cast<jbyte*>(key.data()));
+    session->Start(tunFd, mtu, std::move(key));
   }
 }
 

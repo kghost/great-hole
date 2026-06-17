@@ -38,7 +38,7 @@ public:
 
   VpnClientMultiChannel(boost::asio::any_io_executor executor, std::shared_ptr<Endpoint> tun,
                         std::shared_ptr<UdpDynMux> udpDynMux, ConnectionTracker::SelectorType selector,
-                        std::vector<std::shared_ptr<Filter>> filters = {});
+                        std::vector<std::shared_ptr<Filter>> filters);
   ~VpnClientMultiChannel() override;
 
   VpnClientMultiChannel(const VpnClientMultiChannel&) = delete;

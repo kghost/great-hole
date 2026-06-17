@@ -18,10 +18,10 @@ JNIEXPORT jlong JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDa
 /*
  * Class:     info_kghost_android_hole_vpn_dataplane_JniTunnelDataPlaneNative
  * Method:    nativeStart
- * Signature: (JII)V
+ * Signature: (JII[B)V
  */
 JNIEXPORT void JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeStart
-  (JNIEnv *, jclass, jlong, jint, jint);
+  (JNIEnv *, jclass, jlong, jint, jint, jbyteArray);
 
 /*
  * Class:     info_kghost_android_hole_vpn_dataplane_JniTunnelDataPlaneNative

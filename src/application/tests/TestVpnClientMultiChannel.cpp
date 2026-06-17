@@ -241,7 +241,8 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
     auto udpServer = std::make_shared<UdpDynMux>(
         io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
     co_await udpServer->Start();
-    auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, selector);
+    auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, selector,
+                                                             std::vector<std::shared_ptr<Filter>>{});
     EXPECT_FALSE(co_await connTrack->Start());
 
     Cancel cancelObj;
@@ -353,7 +354,8 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
   RoutingSelector selector(resolvedSession, selectorCalls);
 
   auto mockTun = std::make_shared<MockEndpoint>();
-  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, selector);
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, selector,
+                                                           std::vector<std::shared_ptr<Filter>>{});
   ConnectionTracker::TcpEntry::SynTimeout = std::chrono::seconds(1);
   ConnectionTracker::TcpEntry::EstablishedTimeout = std::chrono::seconds(1);
   ConnectionTracker::TcpEntry::FinTimeout = std::chrono::seconds(1);
@@ -517,7 +519,8 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
   RoutingSelector selector(resolvedSession, selectorCalls);
 
   auto mockTun = std::make_shared<MockEndpoint>();
-  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, selector);
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, selector,
+                                                           std::vector<std::shared_ptr<Filter>>{});
 
   bool testPassed = false;
 
