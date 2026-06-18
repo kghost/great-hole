@@ -41,7 +41,13 @@ template <typename Lambda, typename... Args> void LambdaBridge(void* data, Args.
 }
 
 struct SocketTracker {
-  explicit SocketTracker(boost::asio::any_io_executor executor, ares_socket_t fd) : Descriptor(executor, fd) {}
+  explicit SocketTracker(boost::asio::any_io_executor executor, ares_socket_t fd) : Descriptor(executor, fd) {
+    if (SocketProtector) {
+      if (!SocketProtector(fd)) {
+        BOOST_LOG_TRIVIAL(warning) << "Failed to protect c-ares socket fd: " << fd;
+      }
+    }
+  }
   ~SocketTracker() { Descriptor.release(); }
 
   SocketTracker(SocketTracker&&) = default;
