@@ -9,6 +9,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <unistd.h>
 
 #include <boost/asio.hpp>
 #include <boost/log/core.hpp>
@@ -62,6 +63,7 @@ public:
   }
 
   void Start(int tunFd, int mtu, std::vector<char> encryptionKey);
+  void MigrateTun(int tunFd);
   void Stop();
   jlong AddEndpoint(const UdpDynMux::PskType& psk, const std::string& host, int port);
   void RemoveEndpoint(jlong handle);
@@ -270,6 +272,13 @@ JniSession::~JniSession() {
 void JniSession::Start(int tunFd, int mtu, std::vector<char> encryptionKey) {
   PostTask([tunFd, mtu, encryptionKey = std::move(encryptionKey)](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
     co_await dp.Start(tunFd, mtu, std::move(encryptionKey));
+    co_return;
+  });
+}
+
+void JniSession::MigrateTun(int tunFd) {
+  PostTask([tunFd](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    co_await dp.MigrateTun(tunFd);
     co_return;
   });
 }
@@ -511,6 +520,16 @@ JNIEXPORT void JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDat
     std::vector<char> key(len);
     env->GetByteArrayRegion(encryptionKey, 0, len, reinterpret_cast<jbyte*>(key.data()));
     session->Start(tunFd, mtu, std::move(key));
+  }
+}
+
+JNIEXPORT void JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeMigrateTun(
+    JNIEnv* env, jclass clazz, jlong sessionHandle, jint tunFd) {
+  auto session = GetSession(sessionHandle);
+  if (session) {
+    session->MigrateTun(tunFd);
+  } else {
+    ::close(tunFd);
   }
 }
 

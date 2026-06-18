@@ -25,6 +25,14 @@ JNIEXPORT void JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDat
 
 /*
  * Class:     info_kghost_android_hole_vpn_dataplane_JniTunnelDataPlaneNative
+ * Method:    nativeMigrateTun
+ * Signature: (JI)V
+ */
+JNIEXPORT void JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeMigrateTun
+  (JNIEnv *, jclass, jlong, jint);
+
+/*
+ * Class:     info_kghost_android_hole_vpn_dataplane_JniTunnelDataPlaneNative
  * Method:    nativeAddEndpoint
  * Signature: (J[BLjava/lang/String;I)J
  */

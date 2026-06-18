@@ -10,7 +10,7 @@ namespace gh {
 class Tun : public Endpoint {
 public:
   Tun(boost::asio::any_io_executor executor, std::string const& name);
-  Tun(boost::asio::any_io_executor executor, int fd);
+  Tun(boost::asio::any_io_executor executor, std::string const& name, int fd);
 
   Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel&) override;
   Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel&) override;

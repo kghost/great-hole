@@ -44,6 +44,7 @@ public:
   TunnelDataPlane& operator=(TunnelDataPlane&&) = delete;
 
   Omni::Fiber::Coroutine<void> Start(int tunFd, int mtu, std::vector<char> encryptionKey);
+  Omni::Fiber::Coroutine<void> MigrateTun(int tunFd);
   Omni::Fiber::Coroutine<void> Stop();
   Omni::Fiber::Coroutine<VpnClientMultiChannel::Session*> AddEndpoint(const UdpDynMux::PskType& psk,
                                                                       const std::string& host, int port);

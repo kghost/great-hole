@@ -2,6 +2,7 @@
 
 #include <boost/asio/buffer.hpp>
 #include <boost/log/trivial.hpp>
+#include <format>
 #include <linux/if_tun.h>
 
 #include "ErrorCode.hpp"
@@ -10,12 +11,16 @@ namespace gh {
 
 Tun::Tun(boost::asio::any_io_executor executor, std::string const& name) : _TunFileDescriptor(executor), _Name(name) {}
 
-Tun::Tun(boost::asio::any_io_executor executor, int fd) : _TunFileDescriptor(executor), _Name("AndroidTun") {
+Tun::Tun(boost::asio::any_io_executor executor, std::string const& name, int fd)
+    : _TunFileDescriptor(executor), _Name(name) {
   _TunFileDescriptor.assign(fd);
   _TunFileDescriptor.non_blocking(true);
 }
 
-std::string Tun::GetName() const { return "Tun:" + _Name; }
+std::string Tun::GetName() const {
+  return std::format("Tun:{}[{}]", _Name,
+                     const_cast<boost::asio::posix::stream_descriptor&>(_TunFileDescriptor).native_handle());
+}
 
 Omni::Fiber::Coroutine<ErrorCode> Tun::DoStart() {
   if (_TunFileDescriptor.is_open()) {

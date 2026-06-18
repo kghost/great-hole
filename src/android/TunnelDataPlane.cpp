@@ -4,6 +4,7 @@
 #include <chrono>
 #include <memory>
 #include <string>
+#include <unistd.h>
 
 #include <boost/asio.hpp>
 #include <boost/log/trivial.hpp>
@@ -30,7 +31,7 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(int tunFd, int mtu, std::vec
   _Running = true;
   _Callbacks.OnVpnStateChanged(TunnelState::Starting, "VPN starting");
 
-  _Tun = std::make_shared<Tun>(_Executor, tunFd);
+  _Tun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
   _UdpDynMux = std::make_shared<UdpDynMux>(_Executor);
   auto filter = std::make_shared<FilterXor>(std::move(encryptionKey));
   _Client = std::make_shared<VpnClientMultiChannel>(_Executor, _Tun, _UdpDynMux, _Selector,
@@ -61,6 +62,35 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(int tunFd, int mtu, std::vec
 
   _StatsTimer = std::make_shared<boost::asio::steady_timer>(_Executor);
   StartStatsLoop();
+}
+
+Omni::Fiber::Coroutine<void> TunnelDataPlane::MigrateTun(int tunFd) {
+  if (_Running && _Client) {
+    auto newTun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
+    auto ec = co_await newTun->Start();
+    if (ec) {
+      BOOST_LOG_TRIVIAL(error) << "Failed to start new Tun during migration: " << ec.message();
+      ::close(tunFd);
+      co_return;
+    }
+
+    ec = co_await _Client->MigrateTun(newTun);
+    if (ec) {
+      BOOST_LOG_TRIVIAL(error) << "Failed to migrate Tun in VpnClientMultiChannel: " << ec.message();
+      co_await newTun->Stop();
+      co_await newTun->WaitService();
+      co_return;
+    }
+
+    if (_Tun) {
+      co_await _Tun->Stop();
+      co_await _Tun->WaitService();
+    }
+    _Tun = newTun;
+  } else {
+    ::close(tunFd);
+  }
+  co_return;
 }
 
 Omni::Fiber::Coroutine<void> TunnelDataPlane::Stop() {

@@ -47,6 +47,17 @@ Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeStar
 - **Parameters**: `encryption_key` is a dynamic length binary string used for session encryption.
 - **Background Work**: This function should return quickly. All heavy I/O and crypto must happen on native-managed threads.
 
+### `nativeMigrateTun`
+```c
+JNIEXPORT void JNICALL
+Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeMigrateTun(
+    JNIEnv* env, jclass clazz, jlong session_handle, jint tun_fd);
+```
+- **Thread**: Called on a Java background service thread.
+- **Precondition**: Session is running. `tun_fd` is a new, open file descriptor for the TUN interface.
+- **Postcondition**: Native code begins using the new `tun_fd` and closes the previous one.
+- **Ownership**: Native code **takes ownership** of `tun_fd`.
+
 ### Endpoint Management
 
 #### `nativeAddEndpoint`
@@ -157,6 +168,7 @@ fun onTrafficStats(endpointHandle: Long, txBytes: Long, rxBytes: Long)
 | :--- | :--- | :--- |
 | `nativeCreate` | Java | No |
 | `nativeStart` | Java | No (spawns native threads) |
+| `nativeMigrateTun` | Java | No |
 | `nativeStop` | Java | Yes (waits for join) |
 | `nativeDestroy` | Java | Yes |
 | TUN Read/Write | Native Worker | Yes (Event loop) |

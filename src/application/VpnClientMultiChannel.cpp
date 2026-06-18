@@ -361,6 +361,28 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelClosed(std::shared_
   });
 }
 
+Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::MigrateTun(std::shared_ptr<Endpoint> newTun) {
+  auto ec = co_await _ChannelCall.Call([this, newTun]() -> Omni::Fiber::Coroutine<ErrorCode> {
+    BOOST_LOG_TRIVIAL(info) << GetName() << ": migrating TUN endpoint";
+    if (_TunPipeline) {
+      co_await _TunPipeline->Stop();
+      _TunPipeline.reset();
+    }
+    _Tun = newTun;
+    _TunPipeline = std::make_shared<Pipeline>(_Tun, std::vector<std::shared_ptr<Filter>>{}, _TunSide);
+    co_return co_await _TunPipeline->Start();
+  });
+  if (ec.has_value()) {
+    if (ec.value()) {
+      BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to migrate TUN endpoint: " << ec.value().message();
+    }
+    co_return ec.value();
+  } else {
+    BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to migrate TUN endpoint: _ChannelCall closed";
+    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+  }
+}
+
 std::pair<uint64_t, uint64_t> VpnClientMultiChannel::GetStats(Session& session) const {
   if (session.Channel) {
     return {session.Channel->GetTxBytes(), session.Channel->GetRxBytes()};

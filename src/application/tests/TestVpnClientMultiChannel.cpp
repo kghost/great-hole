@@ -593,3 +593,85 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
   io.run();
   EXPECT_TRUE(testPassed);
 }
+
+TEST(VpnClientMultiChannelTest, MigrateTun) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    std::vector<CallbackArgs> invocations;
+    CallbackSelector selector(invocations);
+
+    auto mockTun1 = std::make_shared<MockEndpoint>();
+    auto mockTun2 = std::make_shared<MockEndpoint>();
+    auto udpServer = std::make_shared<UdpDynMux>(
+        io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+    co_await udpServer->Start();
+    auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun1, udpServer, selector,
+                                                             std::vector<std::shared_ptr<Filter>>{});
+    EXPECT_FALSE(co_await connTrack->Start());
+
+    // 1. Send packet on mockTun1 and verify it gets processed.
+    {
+      auto srcIp = boost::asio::ip::make_address_v4("10.0.0.1");
+      auto dstIp = boost::asio::ip::make_address_v4("192.168.1.1");
+      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpUdpPayload(1234, 80));
+      mockTun1->PushRead(std::move(p));
+      co_await Omni::Fiber::Yield();
+
+      EXPECT_EQ(invocations.size(), 1);
+      if (invocations.size() < 1) {
+        co_return;
+      }
+      EXPECT_EQ(invocations.back().Src, MapToV6(srcIp));
+      EXPECT_EQ(invocations.back().Dst, MapToV6(dstIp));
+    }
+
+    // 2. Migrate to mockTun2.
+    auto err = co_await connTrack->MigrateTun(mockTun2);
+    EXPECT_FALSE(err);
+
+    // 3. Send packet on mockTun1 and verify it does NOT get processed.
+    {
+      auto srcIp = boost::asio::ip::make_address_v4("10.0.0.1");
+      auto dstIp = boost::asio::ip::make_address_v4("192.168.1.1");
+      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpUdpPayload(1234, 80));
+      mockTun1->PushRead(std::move(p));
+      co_await Omni::Fiber::Yield();
+
+      // Invocations count should still be 1 because mockTun1 is stopped/disconnected.
+      EXPECT_EQ(invocations.size(), 1);
+    }
+
+    // 4. Send packet on mockTun2 and verify it gets processed.
+    {
+      auto srcIp = boost::asio::ip::make_address_v4("10.0.0.2");
+      auto dstIp = boost::asio::ip::make_address_v4("192.168.1.2");
+      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpUdpPayload(1234, 80));
+      mockTun2->PushRead(std::move(p));
+      co_await Omni::Fiber::Yield();
+
+      EXPECT_EQ(invocations.size(), 2);
+      if (invocations.size() < 2) {
+        co_return;
+      }
+      EXPECT_EQ(invocations.back().Src, MapToV6(srcIp));
+      EXPECT_EQ(invocations.back().Dst, MapToV6(dstIp));
+    }
+
+    co_await connTrack->Stop();
+    co_await connTrack->WaitService();
+    co_await udpServer->Stop();
+    co_await udpServer->WaitService();
+    testPassed = true;
+    co_return;
+  });
+
+  io.restart();
+  io.run();
+  EXPECT_TRUE(testPassed);
+}
+

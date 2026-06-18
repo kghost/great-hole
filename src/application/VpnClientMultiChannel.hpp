@@ -73,6 +73,7 @@ public:
   Omni::Fiber::Coroutine<std::reference_wrapper<Session>> RegisterChannel(const UdpDynMux::PskType& psk,
                                                                           std::shared_ptr<ResolverEndpoint> resolver);
   Omni::Fiber::Coroutine<void> UnregisterChannel(Session& session);
+  Omni::Fiber::Coroutine<ErrorCode> MigrateTun(std::shared_ptr<Endpoint> newTun);
 
   std::pair<uint64_t, uint64_t> GetStats(Session& session) const;
 
