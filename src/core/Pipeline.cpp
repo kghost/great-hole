@@ -23,20 +23,19 @@ Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start() {
   auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
 
   _Fiber1 = fiber.Spawn(std::format("{}_1to2", GetName()), [this, me]() mutable -> Omni::Fiber::Coroutine<void> {
-    co_await RunDirection(_Ep1, _Ep2, false);
+    co_await RunDirection(_Ep1, _Ep2, Pipeline::Direction::Forward);
   });
 
   _Fiber2 = fiber.Spawn(std::format("{}_2to1", GetName()), [this, me]() mutable -> Omni::Fiber::Coroutine<void> {
-    co_await RunDirection(_Ep2, _Ep1, true);
+    co_await RunDirection(_Ep2, _Ep1, Pipeline::Direction::Backward);
   });
 
   co_return ErrorCode{};
 }
 
 Omni::Fiber::Coroutine<void> Pipeline::RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoint> out,
-                                                    bool direction) {
-  BOOST_LOG_TRIVIAL(info) << std::format("{} direction started: {} -> {}", GetNameWithDirection(direction),
-                                         in->GetName(), out->GetName());
+                                                    Pipeline::Direction direction) {
+  BOOST_LOG_TRIVIAL(info) << std::format("{} direction started", GetNameWithDirection(direction));
   struct ActivePipelineGuard {
     PipielineUsageCounter& In;
     PipielineUsageCounter& Out;
@@ -71,7 +70,7 @@ Omni::Fiber::Coroutine<void> Pipeline::RunDirection(std::shared_ptr<Endpoint> in
       }
     }
     for (std::size_t idx = 0; idx < _Filters.size(); ++idx) {
-      auto& i = _Filters[direction ? (_Filters.size() - 1 - idx) : idx];
+      auto& i = _Filters[direction == Direction::Forward ? idx : (_Filters.size() - 1 - idx)];
       auto errPipe = co_await i->Pipe(p, _Stop);
       if (errPipe) {
         if (errPipe == ErrorCode{AppErrorCategory::kOperationAborted, kAppError}) {
@@ -101,9 +100,14 @@ Omni::Fiber::Coroutine<void> Pipeline::RunDirection(std::shared_ptr<Endpoint> in
                                                   errWrite.message());
       }
     }
+
+    if (direction == Direction::Forward) {
+      _TrafficStats.OnForward(p._Length);
+    } else {
+      _TrafficStats.OnBackword(p._Length);
+    }
   }
-  BOOST_LOG_TRIVIAL(info) << std::format("{} direction exited: {} -> {}", GetNameWithDirection(direction),
-                                         in->GetName(), out->GetName());
+  BOOST_LOG_TRIVIAL(info) << std::format("{} direction exited", GetNameWithDirection(direction));
   co_return;
 }
 

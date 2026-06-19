@@ -13,7 +13,21 @@
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "BUILD_TESTING": "ON"
+        "BUILD_TESTING": "ON",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "debug-gcc-snapshot",
+      "displayName": "Host Debug (gcc-snapshot)",
+      "description": "Ordinary debug build for the host (gcc-snapshot)",
+      "binaryDir": "${sourceDir}/build-gcc-snapshot",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "CMAKE_C_COMPILER": "gcc-snapshot",
+        "CMAKE_CXX_COMPILER": "g++-snapshot"
       }
     },
     {

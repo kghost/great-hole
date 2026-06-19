@@ -16,29 +16,57 @@ class Fiber;
 
 namespace gh {
 
+struct TrafficStats {
+  uint64_t ForwardBytes{0};
+  uint64_t BackwardBytes{0};
+  uint64_t ForwardPackets{0};
+  uint64_t BackwardPackets{0};
+
+  void OnForward(uint64_t bytes) {
+    ForwardBytes += bytes;
+    ForwardPackets++;
+  }
+
+  void OnBackword(uint64_t bytes) {
+    BackwardBytes += bytes;
+    BackwardPackets++;
+  }
+};
+
 class Pipeline : public std::enable_shared_from_this<Pipeline>, public Service {
 public:
+  enum class Direction {
+    Forward,
+    Backward,
+  };
+
   Pipeline(std::shared_ptr<Endpoint> ep1, const std::vector<std::shared_ptr<Filter>>& filters,
            std::shared_ptr<Endpoint> ep2);
   ~Pipeline() override {}
 
-  std::string GetName() { return std::format("Pipeline({:p})", static_cast<void*>(this)); }
-  std::string GetNameWithDirection(bool direction) {
-    return std::format("{} {}", GetName(), direction ? "1->2" : "2->1");
-  }
-
+  std::string GetName() { return std::format("Pipeline[{}:{}]", _Ep1->GetName(), _Ep2->GetName()); }
   Omni::Fiber::Coroutine<ErrorCode> Start() override;
   Omni::Fiber::Coroutine<ErrorCode> Stop() override;
+
+  TrafficStats GetTrafficStats() const { return _TrafficStats; }
 
 private:
   bool IsCritical(const ErrorCode& ec);
   Omni::Fiber::Coroutine<void> RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoint> out,
-                                            bool direction);
+                                            Direction direction);
+  std::string GetNameWithDirection(Direction direction) {
+    if (direction == Direction::Forward) {
+      return std::format("Pipeline[F] {}->{}", _Ep1->GetName(), _Ep2->GetName());
+    } else {
+      return std::format("Pipeline[B] {}->{}", _Ep2->GetName(), _Ep1->GetName());
+    }
+  }
 
   std::shared_ptr<Endpoint> _Ep1;
   std::shared_ptr<Endpoint> _Ep2;
   std::vector<std::shared_ptr<Filter>> _Filters;
   Cancel _Stop;
+  TrafficStats _TrafficStats;
   std::shared_ptr<Omni::Fiber::Fiber> _Fiber1;
   std::shared_ptr<Omni::Fiber::Fiber> _Fiber2;
 };

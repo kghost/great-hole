@@ -96,8 +96,6 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Stop() {
   _Running = false;
   _Callbacks.OnVpnStateChanged(TunnelState::Stopping, "VPN stopping");
 
-
-
   if (_Client) {
     co_await _Client->Stop();
     co_await _Client->WaitService();
@@ -154,7 +152,7 @@ TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannel::Session* session) {
   return std::nullopt;
 }
 
-std::optional<std::pair<uint64_t, uint64_t>> TunnelDataPlane::GetTrafficStats(VpnClientMultiChannel::Session* session) {
+std::optional<TrafficStats> TunnelDataPlane::GetTrafficStats(VpnClientMultiChannel::Session* session) {
   if (!_Client || !_Endpoints.contains(session)) {
     return std::nullopt;
   }

@@ -129,9 +129,6 @@ public:
 
   UdpDynMux::PskType GetPsk() const { return _Psk; }
 
-  uint64_t GetTxBytes() const { return _TxBytes.load(); }
-  uint64_t GetRxBytes() const { return _RxBytes.load(); }
-
   Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override;
   Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel& c) override;
 
@@ -148,9 +145,6 @@ private:
   std::chrono::steady_clock::time_point _NextKeepaliveTime;
   Omni::Fiber::Pipe<Packet> _DataPacket;
   Omni::Fiber::Pipe<std::tuple<boost::asio::ip::udp::endpoint, Packet>> _ControlPacket;
-
-  std::atomic<uint64_t> _TxBytes{0};
-  std::atomic<uint64_t> _RxBytes{0};
 
   Omni::Fiber::Coroutine<State> DoWorkNegotiating();
   Omni::Fiber::Coroutine<State> DoWorkRunning();

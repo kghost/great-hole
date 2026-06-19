@@ -383,11 +383,11 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::MigrateTun(std::shared_
   }
 }
 
-std::pair<uint64_t, uint64_t> VpnClientMultiChannel::GetStats(Session& session) const {
-  if (session.Channel) {
-    return {session.Channel->GetTxBytes(), session.Channel->GetRxBytes()};
+std::optional<TrafficStats> VpnClientMultiChannel::GetStats(Session& session) const {
+  if (session.SessionPipeline) {
+    return session.SessionPipeline->GetTrafficStats();
   }
-  return {0, 0};
+  return std::nullopt;
 }
 
 } // namespace gh

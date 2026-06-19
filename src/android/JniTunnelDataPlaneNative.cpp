@@ -76,7 +76,7 @@ public:
   bool ProtectSocket(int fd);
   void OnVpnStateChanged(TunnelState state, const std::string& message) override;
   void OnTunnelStateChanged(int64_t endpointHandle, int state, const std::string& error) override;
-  bool GetTrafficStats(jlong endpointHandle, uint64_t& txBytes, uint64_t& rxBytes);
+  std::optional<TrafficStats> GetTrafficStats(jlong endpointHandle);
 
   template <typename Func> void PostTask(Func&& func) {
     _IoContext.post([this, func = std::forward<Func>(func)]() mutable {
@@ -378,8 +378,8 @@ void JniSession::OnTunnelStateChanged(int64_t endpointHandle, int state, const s
   }
 }
 
-bool JniSession::GetTrafficStats(jlong endpointHandle, uint64_t& txBytes, uint64_t& rxBytes) {
-  std::promise<std::optional<std::pair<uint64_t, uint64_t>>> promise;
+std::optional<TrafficStats> JniSession::GetTrafficStats(jlong endpointHandle) {
+  std::promise<std::optional<TrafficStats>> promise;
   auto future = promise.get_future();
 
   PostTask([&promise, endpointHandle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
@@ -388,13 +388,7 @@ bool JniSession::GetTrafficStats(jlong endpointHandle, uint64_t& txBytes, uint64
     co_return;
   });
 
-  auto res = future.get();
-  if (res.has_value()) {
-    txBytes = res->first;
-    rxBytes = res->second;
-    return true;
-  }
-  return false;
+  return future.get();
 }
 
 } // namespace gh
@@ -570,9 +564,8 @@ JNIEXPORT jboolean JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunne
     return JNI_FALSE;
   }
 
-  uint64_t txBytes = 0;
-  uint64_t rxBytes = 0;
-  if (!session->GetTrafficStats(endpointHandle, txBytes, rxBytes)) {
+  auto res = session->GetTrafficStats(endpointHandle);
+  if (!res.has_value()) {
     return JNI_FALSE;
   }
 
@@ -583,12 +576,16 @@ JNIEXPORT jboolean JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunne
 
   jfieldID txBytesField = env->GetFieldID(statsClass, "txBytes", "J");
   jfieldID rxBytesField = env->GetFieldID(statsClass, "rxBytes", "J");
-  if (!txBytesField || !rxBytesField) {
+  jfieldID txPacketsField = env->GetFieldID(statsClass, "txPackets", "J");
+  jfieldID rxPacketsField = env->GetFieldID(statsClass, "rxPackets", "J");
+  if (!txBytesField || !rxBytesField || !txPacketsField || !rxPacketsField) {
     return JNI_FALSE;
   }
 
-  env->SetLongField(stats, txBytesField, static_cast<jlong>(txBytes));
-  env->SetLongField(stats, rxBytesField, static_cast<jlong>(rxBytes));
+  env->SetLongField(stats, txBytesField, static_cast<jlong>(res->BackwardBytes));
+  env->SetLongField(stats, rxBytesField, static_cast<jlong>(res->ForwardBytes));
+  env->SetLongField(stats, txPacketsField, static_cast<jlong>(res->BackwardPackets));
+  env->SetLongField(stats, rxPacketsField, static_cast<jlong>(res->ForwardPackets));
   return JNI_TRUE;
 }
 

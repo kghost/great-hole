@@ -75,7 +75,7 @@ public:
   Omni::Fiber::Coroutine<void> UnregisterChannel(Session& session);
   Omni::Fiber::Coroutine<ErrorCode> MigrateTun(std::shared_ptr<Endpoint> newTun);
 
-  std::pair<uint64_t, uint64_t> GetStats(Session& session) const;
+  std::optional<TrafficStats> GetStats(Session& session) const;
 
   Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override;
   Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override;

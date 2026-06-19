@@ -192,7 +192,6 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::Read(Packet& p, Cancel& c)
                                      if (data.has_value()) {
                                        _LastSeen = std::chrono::steady_clock::now();
                                        p = std::move(data.value());
-                                       _RxBytes += p.DataSize();
                                        return ErrorCode{};
                                      } else {
                                        p._Length = 0;
@@ -227,8 +226,6 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::Write(Packet& p, Cancel& c
   }
 
   p.PushFront(_RemoteRxId);
-
-  _TxBytes += p.DataSize();
 
   co_return co_await _Parent.WriteTo(_Peer.value(), p, c);
 }

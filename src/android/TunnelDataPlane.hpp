@@ -5,7 +5,6 @@
 #include <optional>
 #include <set>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include <boost/asio.hpp>
@@ -52,7 +51,7 @@ public:
 
   std::optional<std::reference_wrapper<ConnectionMark>> FindSessionByHandle(VpnClientMultiChannel::Session* session);
 
-  std::optional<std::pair<uint64_t, uint64_t>> GetTrafficStats(VpnClientMultiChannel::Session* session);
+  std::optional<TrafficStats> GetTrafficStats(VpnClientMultiChannel::Session* session);
 
 private:
   boost::asio::any_io_executor _Executor;
