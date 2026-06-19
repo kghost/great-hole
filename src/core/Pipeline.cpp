@@ -22,13 +22,14 @@ Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start() {
   auto me = std::static_pointer_cast<Pipeline>(shared_from_this());
   auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
 
-  _Fiber1 = fiber.Spawn(std::format("{}_1to2", GetName()), [this, me]() mutable -> Omni::Fiber::Coroutine<void> {
-    co_await RunDirection(_Ep1, _Ep2, Pipeline::Direction::Forward);
+  _Fiber1 = fiber.Spawn(GetNameWithDirection(Direction::Forward), [this, me]() mutable -> Omni::Fiber::Coroutine<void> {
+    co_await RunDirection(_Ep1, _Ep2, Direction::Forward);
   });
 
-  _Fiber2 = fiber.Spawn(std::format("{}_2to1", GetName()), [this, me]() mutable -> Omni::Fiber::Coroutine<void> {
-    co_await RunDirection(_Ep2, _Ep1, Pipeline::Direction::Backward);
-  });
+  _Fiber2 =
+      fiber.Spawn(GetNameWithDirection(Direction::Backward), [this, me]() mutable -> Omni::Fiber::Coroutine<void> {
+        co_await RunDirection(_Ep2, _Ep1, Direction::Backward);
+      });
 
   co_return ErrorCode{};
 }
