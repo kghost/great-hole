@@ -6,9 +6,11 @@
 #include <future>
 #include <jni.h>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 #include <boost/asio.hpp>
@@ -33,7 +35,6 @@ static jclass g_CallbacksClass = nullptr;
 static jmethodID g_MidFindTunnelForFlow = nullptr;
 static jmethodID g_MidOnTunnelStateChanged = nullptr;
 static jmethodID g_MidOnVpnStateChanged = nullptr;
-static jmethodID g_MidOnTrafficStats = nullptr;
 
 namespace gh {
 
@@ -75,7 +76,7 @@ public:
   bool ProtectSocket(int fd);
   void OnVpnStateChanged(TunnelState state, const std::string& message) override;
   void OnTunnelStateChanged(int64_t endpointHandle, int state, const std::string& error) override;
-  void OnTrafficStats(int64_t endpointHandle, uint64_t txBytes, uint64_t rxBytes) override;
+  bool GetTrafficStats(jlong endpointHandle, uint64_t& txBytes, uint64_t& rxBytes);
 
   template <typename Func> void PostTask(Func&& func) {
     _IoContext.post([this, func = std::forward<Func>(func)]() mutable {
@@ -377,18 +378,23 @@ void JniSession::OnTunnelStateChanged(int64_t endpointHandle, int state, const s
   }
 }
 
-void JniSession::OnTrafficStats(int64_t endpointHandle, uint64_t txBytes, uint64_t rxBytes) {
-  JNIEnv* env = GetEnv();
-  if (!env || !_Callbacks) {
-    return;
+bool JniSession::GetTrafficStats(jlong endpointHandle, uint64_t& txBytes, uint64_t& rxBytes) {
+  std::promise<std::optional<std::pair<uint64_t, uint64_t>>> promise;
+  auto future = promise.get_future();
+
+  PostTask([&promise, endpointHandle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    auto* session = reinterpret_cast<VpnClientMultiChannel::Session*>(endpointHandle);
+    promise.set_value(dp.GetTrafficStats(session));
+    co_return;
+  });
+
+  auto res = future.get();
+  if (res.has_value()) {
+    txBytes = res->first;
+    rxBytes = res->second;
+    return true;
   }
-  env->CallVoidMethod(_Callbacks, g_MidOnTrafficStats, static_cast<jlong>(endpointHandle), static_cast<jlong>(txBytes),
-                      static_cast<jlong>(rxBytes));
-  if (env->ExceptionCheck()) {
-    BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnTrafficStats (onTrafficStats)";
-    env->ExceptionDescribe();
-    env->ExceptionClear();
-  }
+  return false;
 }
 
 } // namespace gh
@@ -456,9 +462,8 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
   g_MidFindTunnelForFlow = env->GetMethodID(g_CallbacksClass, "findTunnelForFlow", "(I[BI[BI)J");
   g_MidOnTunnelStateChanged = env->GetMethodID(g_CallbacksClass, "onTunnelStateChanged", "(JILjava/lang/String;)V");
   g_MidOnVpnStateChanged = env->GetMethodID(g_CallbacksClass, "onVpnStateChanged", "(ILjava/lang/String;)V");
-  g_MidOnTrafficStats = env->GetMethodID(g_CallbacksClass, "onTrafficStats", "(JJJ)V");
 
-  if (!g_MidFindTunnelForFlow || !g_MidOnTunnelStateChanged || !g_MidOnVpnStateChanged || !g_MidOnTrafficStats) {
+  if (!g_MidFindTunnelForFlow || !g_MidOnTunnelStateChanged || !g_MidOnVpnStateChanged) {
     return JNI_ERR;
   }
 
@@ -556,6 +561,35 @@ JNIEXPORT void JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDat
   if (session) {
     session->StopEndpoint(endpointHandle);
   }
+}
+
+JNIEXPORT jboolean JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeGetTrafficStats(
+    JNIEnv* env, jclass clazz, jlong sessionHandle, jlong endpointHandle, jobject stats) {
+  auto session = GetSession(sessionHandle);
+  if (!session || !stats) {
+    return JNI_FALSE;
+  }
+
+  uint64_t txBytes = 0;
+  uint64_t rxBytes = 0;
+  if (!session->GetTrafficStats(endpointHandle, txBytes, rxBytes)) {
+    return JNI_FALSE;
+  }
+
+  jclass statsClass = env->GetObjectClass(stats);
+  if (!statsClass) {
+    return JNI_FALSE;
+  }
+
+  jfieldID txBytesField = env->GetFieldID(statsClass, "txBytes", "J");
+  jfieldID rxBytesField = env->GetFieldID(statsClass, "rxBytes", "J");
+  if (!txBytesField || !rxBytesField) {
+    return JNI_FALSE;
+  }
+
+  env->SetLongField(stats, txBytesField, static_cast<jlong>(txBytes));
+  env->SetLongField(stats, rxBytesField, static_cast<jlong>(rxBytes));
+  return JNI_TRUE;
 }
 
 JNIEXPORT void JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeStop(

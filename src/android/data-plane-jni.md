@@ -87,6 +87,25 @@ Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeStop
     JNIEnv* env, jclass clazz, jlong session_handle, jlong endpoint_handle);
 ```
 
+#### `TrafficStats` Object
+```java
+public static class TrafficStats {
+    public long txBytes;
+    public long rxBytes;
+    public long txPackets;
+    public long rxPackets;
+}
+```
+
+#### `nativeGetTrafficStats`
+```c
+JNIEXPORT jboolean JNICALL
+Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeGetTrafficStats(
+    JNIEnv* env, jclass clazz, jlong session_handle, jlong endpoint_handle, jobject stats);
+```
+- **Returns**: `jboolean` (true if successful).
+- **Parameters**: `stats` is a `TrafficStats` object whose `txBytes` and `rxBytes` fields will be populated by native code.
+
 ### `nativeStop`
 ```c
 JNIEXPORT void JNICALL
@@ -122,11 +141,6 @@ Native code receives an object implementing `TunnelDataPlaneCallbacks`.
 ### Required Callbacks
 
 ```kotlin
-fun protectSocket(socketFd: Int): Boolean
-```
-- **Usage**: MUST be called for every network socket created by native code before `connect()`. This ensures the tunnel traffic itself doesn't loop back into the VPN.
-
-```kotlin
 fun findTunnelForFlow(protocol: Int, localAddress: ByteArray, localPort: Int,
                       remoteAddress: ByteArray, remotePort: Int): Long
 ```
@@ -154,11 +168,6 @@ fun onVpnStateChanged(state: Int, error: String?)
 - **Usage**: Notifies the UI/Service of session-level life-cycle changes or errors.
 - **`state` Values**: (Defined by native implementation)
 - **`error`**: Optional error message.
-
-```kotlin
-fun onTrafficStats(endpointHandle: Long, txBytes: Long, rxBytes: Long)
-```
-- **Usage**: Periodically (e.g., every 1-5 seconds) report accumulated traffic for a specific endpoint.
 
 ---
 

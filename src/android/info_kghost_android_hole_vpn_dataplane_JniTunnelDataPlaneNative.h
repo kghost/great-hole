@@ -65,6 +65,14 @@ JNIEXPORT void JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDat
 
 /*
  * Class:     info_kghost_android_hole_vpn_dataplane_JniTunnelDataPlaneNative
+ * Method:    nativeGetTrafficStats
+ * Signature: (JJLinfo/kghost/android_hole/vpn/dataplane/JniTunnelDataPlaneNative/TrafficStats;)Z
+ */
+JNIEXPORT jboolean JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeGetTrafficStats
+  (JNIEnv *, jclass, jlong, jlong, jobject);
+
+/*
+ * Class:     info_kghost_android_hole_vpn_dataplane_JniTunnelDataPlaneNative
  * Method:    nativeStop
  * Signature: (J)V
  */

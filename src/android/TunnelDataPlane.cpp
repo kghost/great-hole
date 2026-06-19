@@ -1,7 +1,6 @@
 #include "TunnelDataPlane.hpp"
 
 #include <android/log.h>
-#include <chrono>
 #include <memory>
 #include <string>
 #include <unistd.h>
@@ -59,9 +58,6 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(int tunFd, int mtu, std::vec
   }
 
   _Callbacks.OnVpnStateChanged(TunnelState::Running, "VPN tunnel established");
-
-  _StatsTimer = std::make_shared<boost::asio::steady_timer>(_Executor);
-  StartStatsLoop();
 }
 
 Omni::Fiber::Coroutine<void> TunnelDataPlane::MigrateTun(int tunFd) {
@@ -100,10 +96,7 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Stop() {
   _Running = false;
   _Callbacks.OnVpnStateChanged(TunnelState::Stopping, "VPN stopping");
 
-  if (_StatsTimer) {
-    _StatsTimer->cancel();
-    _StatsTimer.reset();
-  }
+
 
   if (_Client) {
     co_await _Client->Stop();
@@ -161,30 +154,11 @@ TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannel::Session* session) {
   return std::nullopt;
 }
 
-void TunnelDataPlane::StartStatsLoop() {
-  if (!_StatsTimer) {
-    return;
+std::optional<std::pair<uint64_t, uint64_t>> TunnelDataPlane::GetTrafficStats(VpnClientMultiChannel::Session* session) {
+  if (!_Client || !_Endpoints.contains(session)) {
+    return std::nullopt;
   }
-  _StatsTimer->expires_after(std::chrono::seconds(2));
-  _StatsTimer->async_wait([this](const boost::system::error_code& ec) {
-    if (ec) {
-      return;
-    }
-    ReportStats();
-    StartStatsLoop();
-  });
-}
-
-void TunnelDataPlane::ReportStats() {
-  if (!_Client) {
-    return;
-  }
-  for (auto* session : _Endpoints) {
-    auto [tx, rx] = _Client->GetStats(*session);
-    if (tx > 0 || rx > 0) {
-      _Callbacks.OnTrafficStats(reinterpret_cast<int64_t>(session), tx, rx);
-    }
-  }
+  return _Client->GetStats(*session);
 }
 
 void TunnelDataPlane::OnSessionStarting(VpnClientMultiChannel::Session& session) {

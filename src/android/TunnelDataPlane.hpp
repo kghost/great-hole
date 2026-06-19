@@ -5,6 +5,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <boost/asio.hpp>
@@ -23,7 +24,6 @@ public:
   virtual ~DataPlaneCallbacks() = default;
   virtual void OnVpnStateChanged(TunnelState state, const std::string& message) = 0;
   virtual void OnTunnelStateChanged(int64_t endpointHandle, int state, const std::string& error) = 0;
-  virtual void OnTrafficStats(int64_t endpointHandle, uint64_t txBytes, uint64_t rxBytes) = 0;
 };
 
 class TunnelDataPlane : public VpnClientMultiChannel::SessionStateListener {
@@ -52,11 +52,9 @@ public:
 
   std::optional<std::reference_wrapper<ConnectionMark>> FindSessionByHandle(VpnClientMultiChannel::Session* session);
 
-  void ReportStats();
+  std::optional<std::pair<uint64_t, uint64_t>> GetTrafficStats(VpnClientMultiChannel::Session* session);
 
 private:
-  void StartStatsLoop();
-
   boost::asio::any_io_executor _Executor;
   ConnectionTracker::SelectorType& _Selector;
   DataPlaneCallbacks& _Callbacks;
@@ -64,7 +62,6 @@ private:
   std::shared_ptr<Tun> _Tun;
   std::shared_ptr<UdpDynMux> _UdpDynMux;
   std::shared_ptr<VpnClientMultiChannel> _Client;
-  std::shared_ptr<boost::asio::steady_timer> _StatsTimer;
 
   std::set<VpnClientMultiChannel::Session*> _Endpoints;
   bool _Running = false;
