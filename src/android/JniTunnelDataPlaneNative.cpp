@@ -93,7 +93,6 @@ private:
 
   std::unique_ptr<JniSelector> _Selector;
   Omni::Fiber::EventQueue<Task> _TaskQueue;
-  std::shared_ptr<Omni::Fiber::Fiber> _RootFiber;
   TunnelDataPlane* _DataPlane = nullptr;
 
   std::atomic<bool> _Stopped{false};
@@ -229,7 +228,7 @@ JniSession::JniSession(JNIEnv* env, jobject callbacks, jobject connectivityManag
 
     _Selector = std::make_unique<JniSelector>(*this);
 
-    _RootFiber = manager.SpawnRoot("root", [this]() -> Omni::Fiber::Coroutine<void> {
+    manager.SpawnRoot("root", [this]() -> Omni::Fiber::Coroutine<void> {
       TunnelDataPlane dp(_IoContext.get_executor(), *_Selector, *this);
       _DataPlane = &dp;
 
