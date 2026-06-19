@@ -26,7 +26,4 @@ inline boost::asio::ip::address_v6 MapToV6(const boost::asio::ip::address& addre
   }
 }
 
-inline std::function<bool(int)> SocketProtector;
-
 } // namespace gh
-

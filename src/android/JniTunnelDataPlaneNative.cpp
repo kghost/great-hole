@@ -8,8 +8,8 @@
 #include <memory>
 #include <string>
 #include <thread>
-#include <vector>
 #include <unistd.h>
+#include <vector>
 
 #include <boost/asio.hpp>
 #include <boost/log/core.hpp>
@@ -30,7 +30,6 @@
 
 static JavaVM* g_JavaVM = nullptr;
 static jclass g_CallbacksClass = nullptr;
-static jmethodID g_MidProtectSocket = nullptr;
 static jmethodID g_MidFindTunnelForFlow = nullptr;
 static jmethodID g_MidOnTunnelStateChanged = nullptr;
 static jmethodID g_MidOnVpnStateChanged = nullptr;
@@ -226,8 +225,6 @@ JniSession::JniSession(JNIEnv* env, jobject callbacks, jobject connectivityManag
     args.group = nullptr;
     g_JavaVM->AttachCurrentThreadAsDaemon(&localEnv, &args);
 
-    gh::SocketProtector = [this](int fd) -> bool { return ProtectSocket(fd); };
-
     auto ioExecutor = _IoContext.get_executor();
     Omni::Fiber::AsioExecutor executor(ioExecutor);
     Omni::Fiber::Manager manager(executor);
@@ -252,7 +249,6 @@ JniSession::JniSession(JNIEnv* env, jobject callbacks, jobject connectivityManag
     });
 
     _IoContext.run();
-    gh::SocketProtector = nullptr;
   });
 }
 
@@ -270,7 +266,8 @@ JniSession::~JniSession() {
 }
 
 void JniSession::Start(int tunFd, int mtu, std::vector<char> encryptionKey) {
-  PostTask([tunFd, mtu, encryptionKey = std::move(encryptionKey)](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+  PostTask([tunFd, mtu, encryptionKey = std::move(encryptionKey)](TunnelDataPlane& dp,
+                                                                  bool& stop) -> Omni::Fiber::Coroutine<void> {
     co_await dp.Start(tunFd, mtu, std::move(encryptionKey));
     co_return;
   });
@@ -339,21 +336,6 @@ void JniSession::StartEndpoint(jlong handle) {
 
 void JniSession::StopEndpoint(jlong handle) {
   // Managed by remove or stop
-}
-
-bool JniSession::ProtectSocket(int fd) {
-  JNIEnv* env = GetEnv();
-  if (!env || !_Callbacks) {
-    return false;
-  }
-  jboolean result = env->CallBooleanMethod(_Callbacks, g_MidProtectSocket, fd);
-  if (env->ExceptionCheck()) {
-    BOOST_LOG_TRIVIAL(warning) << "JNI exception in protectSocket";
-    env->ExceptionDescribe();
-    env->ExceptionClear();
-    return false;
-  }
-  return result;
 }
 
 void JniSession::OnVpnStateChanged(TunnelState state, const std::string& message) {
@@ -475,16 +457,12 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
   }
   g_CallbacksClass = (jclass)env->NewGlobalRef(localCallbacksClass);
 
-  g_MidProtectSocket = env->GetMethodID(g_CallbacksClass, "protectSocket", "(I)Z");
   g_MidFindTunnelForFlow = env->GetMethodID(g_CallbacksClass, "findTunnelForFlow", "(I[BI[BI)J");
-  g_MidOnTunnelStateChanged =
-      env->GetMethodID(g_CallbacksClass, "onTunnelStateChanged", "(JILjava/lang/String;)V");
-  g_MidOnVpnStateChanged =
-      env->GetMethodID(g_CallbacksClass, "onVpnStateChanged", "(ILjava/lang/String;)V");
+  g_MidOnTunnelStateChanged = env->GetMethodID(g_CallbacksClass, "onTunnelStateChanged", "(JILjava/lang/String;)V");
+  g_MidOnVpnStateChanged = env->GetMethodID(g_CallbacksClass, "onVpnStateChanged", "(ILjava/lang/String;)V");
   g_MidOnTrafficStats = env->GetMethodID(g_CallbacksClass, "onTrafficStats", "(JJJ)V");
 
-  if (!g_MidProtectSocket || !g_MidFindTunnelForFlow || !g_MidOnTunnelStateChanged ||
-      !g_MidOnVpnStateChanged || !g_MidOnTrafficStats) {
+  if (!g_MidFindTunnelForFlow || !g_MidOnTunnelStateChanged || !g_MidOnVpnStateChanged || !g_MidOnTrafficStats) {
     return JNI_ERR;
   }
 

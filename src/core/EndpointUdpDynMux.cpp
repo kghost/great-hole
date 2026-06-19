@@ -26,7 +26,6 @@
 #include "Select.hpp"
 #include "SelectPair.hpp"
 #include "ServiceBase.hpp"
-#include "Utils.hpp"
 
 namespace gh {
 
@@ -316,11 +315,6 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoStart() {
   ErrorCode ec;
   try {
     _Socket.open(boost::asio::ip::udp::v6());
-    if (gh::SocketProtector) {
-      if (!gh::SocketProtector(_Socket.native_handle())) {
-        throw SystemError(std::make_error_code(std::errc::permission_denied), "protect socket failed");
-      }
-    }
     _Socket.set_option(boost::asio::ip::v6_only(false));
     _Socket.bind(_Local);
     _Local = _Socket.local_endpoint();
