@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 6,
   "cmakeMinimumRequired": {
     "major": 3,
     "minor": 20,
@@ -59,32 +59,104 @@
   ],
   "buildPresets": [
     {
-      "name": "gcc-build",
-      "jobs": 8
-    },
-    {
-      "name": "clang-build",
-      "jobs": 16
-    },
-    {
       "name": "build-debug",
       "configurePreset": "debug",
-      "inherits": "clang-build"
+      "jobs": 16
     },
     {
       "name": "build-debug-gcc-snapshot",
       "configurePreset": "debug-gcc-snapshot",
-      "inherits": "gcc-build"
+      "jobs": 8
     },
     {
       "name": "build-android-arm64-v8a",
       "configurePreset": "android-arm64-v8a",
-      "inherits": "clang-build"
+      "jobs": 16
     },
     {
       "name": "build-android-x86_64",
       "configurePreset": "android-x86_64",
-      "inherits": "clang-build"
+      "jobs": 16
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "debug-gcc-snapshot",
+      "configurePreset": "debug-gcc-snapshot",
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "debug",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "debug"
+        },
+        {
+          "type": "build",
+          "name": "build-debug"
+        },
+        {
+          "type": "test",
+          "name": "debug"
+        }
+      ]
+    },
+    {
+      "name": "debug-gcc-snapshot",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "debug-gcc-snapshot"
+        },
+        {
+          "type": "build",
+          "name": "build-debug-gcc-snapshot"
+        },
+        {
+          "type": "test",
+          "name": "debug-gcc-snapshot"
+        }
+      ]
+    },
+    {
+      "name": "android-arm64-v8a",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "android-arm64-v8a"
+        },
+        {
+          "type": "build",
+          "name": "build-android-arm64-v8a"
+        }
+      ]
+    },
+    {
+      "name": "android-x86_64",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "android-x86_64"
+        },
+        {
+          "type": "build",
+          "name": "build-android-x86_64"
+        }
+      ]
     }
   ]
 }
