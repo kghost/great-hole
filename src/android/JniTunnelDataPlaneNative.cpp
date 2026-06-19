@@ -89,7 +89,6 @@ private:
   jobject _Callbacks = nullptr;
   jobject _ConnectivityManager = nullptr;
   boost::asio::io_context _IoContext;
-  std::unique_ptr<boost::asio::io_context::work> _Work;
   std::thread _Thread;
 
   std::unique_ptr<JniSelector> _Selector;
@@ -216,7 +215,6 @@ JniSession::JniSession(JNIEnv* env, jobject callbacks, jobject connectivityManag
   if (res != ARES_SUCCESS) {
     BOOST_LOG_TRIVIAL(warning) << "ares_library_init_android failed: " << res;
   }
-  _Work = std::make_unique<boost::asio::io_context::work>(_IoContext);
   _Thread = std::thread([this]() {
     JNIEnv* localEnv = nullptr;
     JavaVMAttachArgs args;
@@ -298,7 +296,6 @@ void JniSession::Stop() {
 
   future.get();
 
-  _Work.reset();
   if (_Thread.joinable()) {
     _Thread.join();
   }
