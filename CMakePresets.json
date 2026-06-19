@@ -26,8 +26,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "BUILD_TESTING": "ON",
-        "CMAKE_C_COMPILER": "gcc-snapshot",
-        "CMAKE_CXX_COMPILER": "g++-snapshot"
+        "CMAKE_C_COMPILER": "/usr/lib/gcc-snapshot/bin/gcc",
+        "CMAKE_CXX_COMPILER": "/usr/lib/gcc-snapshot/bin/g++"
       }
     },
     {
@@ -55,6 +55,36 @@
         "ANDROID_PLATFORM": "android-26",
         "BUILD_TESTING": "OFF"
       }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "gcc-build",
+      "jobs": 8
+    },
+    {
+      "name": "clang-build",
+      "jobs": 16
+    },
+    {
+      "name": "build-debug",
+      "configurePreset": "debug",
+      "inherits": "clang-build"
+    },
+    {
+      "name": "build-debug-gcc-snapshot",
+      "configurePreset": "debug-gcc-snapshot",
+      "inherits": "gcc-build"
+    },
+    {
+      "name": "build-android-arm64-v8a",
+      "configurePreset": "android-arm64-v8a",
+      "inherits": "clang-build"
+    },
+    {
+      "name": "build-android-x86_64",
+      "configurePreset": "android-x86_64",
+      "inherits": "clang-build"
     }
   ]
 }

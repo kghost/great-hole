@@ -3,7 +3,5 @@
         "./build/tests/udp_mux_test": true,
         "./build/tests/udp_dyn_mux_test": true
     },
-    "cmake.buildArgs": [
-        "-j"
-    ]
+    "cmake.useCMakePresets": "always"
 }

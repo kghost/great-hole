@@ -10,7 +10,4 @@
 /.cache/
 /openwrt-build/
 /build/
-/build-android/
-/build-android-arm64-v8a/
-/build-android-x86/
-/build-android-x86_64/
+/build-*/
