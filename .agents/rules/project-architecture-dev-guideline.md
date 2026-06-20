@@ -48,3 +48,7 @@ Documentation in this project is split into two categories based on target audie
   - [libs/omni-fiber/DESIGN.md](../../libs/omni-fiber/DESIGN.md) - Internal design specs (scheduling, state machines, symmetric transfer).
 - **src/base**:
   - [src/base/README.md](../../src/base/README.md) - ServiceBase subclassing interface and thread-safety details.
+- **src/core**:
+  - [src/core/README.md](../../src/core/README.md) - Public APIs and abstractions for the core network modules including Endpoints, Pipelines, Filters, and PacketBuilder.
+  - [src/core/DESIGN.md](../../src/core/DESIGN.md) - Internal architectures, dynamic multiplexing protocol, state machines, and implementation details.
+

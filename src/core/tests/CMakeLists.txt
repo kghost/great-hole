@@ -23,3 +23,10 @@ target_link_libraries(tun_split_ip_test PRIVATE great-hole-core-asan GTest::gtes
 target_compile_options(tun_split_ip_test PRIVATE -fsanitize=address -fno-omit-frame-pointer)
 target_link_options(tun_split_ip_test PRIVATE -fsanitize=address)
 gtest_discover_tests(tun_split_ip_test)
+
+add_executable(packet_builder_test TestPacketBuilder.cpp)
+target_link_libraries(packet_builder_test PRIVATE great-hole-core-asan GTest::gtest_main)
+target_compile_options(packet_builder_test PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+target_link_options(packet_builder_test PRIVATE -fsanitize=address)
+gtest_discover_tests(packet_builder_test)
+

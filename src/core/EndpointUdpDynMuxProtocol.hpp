@@ -64,13 +64,12 @@ struct Initiate {
     if (data.size() < kSize || ReadUint16Be(data.data()) != 0 || data[2] != static_cast<uint8_t>(kType)) {
       return std::nullopt;
     }
-    return Initiate{
-        ReadPsk(data.data() + 3),
-        ReadUint16Be(data.data() + 19),
-        ReadUint16Be(data.data() + 21),
-        data[23],
-        data[24],
-        ReadUint16Be(data.data() + 25)};
+    return Initiate{ReadPsk(data.data() + 3),
+                    ReadUint16Be(data.data() + 19),
+                    ReadUint16Be(data.data() + 21),
+                    data[23],
+                    data[24],
+                    ReadUint16Be(data.data() + 25)};
   }
 
   void Serialize(std::span<uint8_t> out) const {
