@@ -11,13 +11,18 @@
 
 namespace gh::UdpDynMuxProto {
 
+constexpr uint8_t kMajorVersion = 1;
+constexpr uint8_t kMinorVersion = 0;
+constexpr uint16_t kPatchVersion = 0;
+
 // Message Types
 enum class MsgType : uint8_t {
   kInitiate = 0x01,
+  kInitiateFail = 0x02,
   kKeepalive = 0x03,
-  kKeepaliveAck = 0x04,
   kInvalidPsk = 0x09,
-  kInvalidChannel = 0x0a
+  kInvalidChannel = 0x0a,
+  kInvalidAddress = 0x0b
 };
 
 inline bool operator==(uint8_t a, MsgType b) { return a == std::to_underlying(b); }
@@ -46,17 +51,26 @@ inline void WritePsk(uint8_t* data, const PskType& psk) { std::copy(psk.begin(),
 
 struct Initiate {
   static constexpr MsgType kType = MsgType::kInitiate;
-  static constexpr size_t kSize = 23;
+  static constexpr size_t kSize = 27;
 
   PskType Psk;
   uint16_t RxId;
   uint16_t PeerRxId;
+  uint8_t Major;
+  uint8_t Minor;
+  uint16_t Patch;
 
   static std::optional<Initiate> Deserialize(std::span<const uint8_t> data) {
     if (data.size() < kSize || ReadUint16Be(data.data()) != 0 || data[2] != static_cast<uint8_t>(kType)) {
       return std::nullopt;
     }
-    return Initiate{ReadPsk(data.data() + 3), ReadUint16Be(data.data() + 19), ReadUint16Be(data.data() + 21)};
+    return Initiate{
+        ReadPsk(data.data() + 3),
+        ReadUint16Be(data.data() + 19),
+        ReadUint16Be(data.data() + 21),
+        data[23],
+        data[24],
+        ReadUint16Be(data.data() + 25)};
   }
 
   void Serialize(std::span<uint8_t> out) const {
@@ -66,6 +80,9 @@ struct Initiate {
     WritePsk(out.data() + 3, Psk);
     WriteUint16Be(out.data() + 19, RxId);
     WriteUint16Be(out.data() + 21, PeerRxId);
+    out[23] = Major;
+    out[24] = Minor;
+    WriteUint16Be(out.data() + 25, Patch);
   }
 };
 
@@ -80,6 +97,27 @@ struct InvalidChannel {
       return std::nullopt;
     }
     return InvalidChannel{ReadUint16Be(data.data() + 3)};
+  }
+
+  void Serialize(std::span<uint8_t> out) const {
+    assert(out.size() >= kSize);
+    WriteUint16Be(out.data(), 0);
+    out[2] = static_cast<uint8_t>(kType);
+    WriteUint16Be(out.data() + 3, ChannelId);
+  }
+};
+
+struct InvalidAddress {
+  static constexpr MsgType kType = MsgType::kInvalidAddress;
+  static constexpr size_t kSize = 5;
+
+  uint16_t ChannelId;
+
+  static std::optional<InvalidAddress> Deserialize(std::span<const uint8_t> data) {
+    if (data.size() < kSize || ReadUint16Be(data.data()) != 0 || data[2] != static_cast<uint8_t>(kType)) {
+      return std::nullopt;
+    }
+    return InvalidAddress{ReadUint16Be(data.data() + 3)};
   }
 
   void Serialize(std::span<uint8_t> out) const {
@@ -112,8 +150,33 @@ template <MsgType T> struct ControlPskPacket {
   }
 };
 
-using Keepalive = ControlPskPacket<MsgType::kKeepalive>;
-using KeepaliveAck = ControlPskPacket<MsgType::kKeepaliveAck>;
+struct Keepalive {
+  static constexpr MsgType kType = MsgType::kKeepalive;
+  static constexpr size_t kSize = 20;
+
+  PskType Psk;
+  uint8_t Flags;
+
+  bool IsPing() const { return (Flags & 0x01) != 0; }
+  bool IsPong() const { return (Flags & 0x02) != 0; }
+
+  static std::optional<Keepalive> Deserialize(std::span<const uint8_t> data) {
+    if (data.size() < kSize || ReadUint16Be(data.data()) != 0 || data[2] != static_cast<uint8_t>(kType)) {
+      return std::nullopt;
+    }
+    return Keepalive{ReadPsk(data.data() + 3), data[19]};
+  }
+
+  void Serialize(std::span<uint8_t> out) const {
+    assert(out.size() >= kSize);
+    WriteUint16Be(out.data(), 0);
+    out[2] = static_cast<uint8_t>(kType);
+    WritePsk(out.data() + 3, Psk);
+    out[19] = Flags;
+  }
+};
+
+using InitiateFail = ControlPskPacket<MsgType::kInitiateFail>;
 using InvalidPsk = ControlPskPacket<MsgType::kInvalidPsk>;
 
 } // namespace gh::UdpDynMuxProto

@@ -150,7 +150,8 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkRunn
     }
 
     if (now >= _NextKeepaliveTime) {
-      co_await _Parent.SendControlKeepalive(_Peer.value(), _Psk);
+      _LastPingSentTime = now;
+      co_await _Parent.SendControlKeepalive(_Peer.value(), _Psk, 0x01); // Ping=1, Pong=0
       std::uniform_int_distribution<int> dist(30, 60);
       _NextKeepaliveTime = now + std::chrono::seconds(dist(_Parent._Prng));
     }
@@ -238,6 +239,15 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
 
   if (msgType == static_cast<uint8_t>(UdpDynMuxProto::MsgType::kInitiate)) {
     if (auto init = UdpDynMuxProto::Initiate::Deserialize(packet.Data())) {
+      // Validate version compatibility
+      if (init->Major != UdpDynMuxProto::kMajorVersion || init->Minor != UdpDynMuxProto::kMinorVersion) {
+        BOOST_LOG_TRIVIAL(warning) << std::format(
+            "{} received incompatible INITIATE: version {}.{}.{} (expected: {}.{}.x)", GetName(), init->Major,
+            init->Minor, init->Patch, UdpDynMuxProto::kMajorVersion, UdpDynMuxProto::kMinorVersion);
+        co_await _Parent.SendControlInitiateFail(peer, init->Psk);
+        co_return State::kStopping;
+      }
+
       if (_Peer.has_value()) {
         BOOST_LOG_TRIVIAL(info) << std::format("{} received initiate: Local({}:{}@{}) Peer({}:{}@{})", GetName(),
                                                _LocalRxId, _RemoteRxId, boost::lexical_cast<std::string>(_Peer.value()),
@@ -261,29 +271,52 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
 
       co_return State::kRunning;
     }
+  } else if (msgType == static_cast<uint8_t>(UdpDynMuxProto::MsgType::kInitiateFail)) {
+    if (auto fail = UdpDynMuxProto::InitiateFail::Deserialize(packet.Data())) {
+      BOOST_LOG_TRIVIAL(warning)
+          << GetName() << " received INITIATE_FAIL, peer rejected initiation due to version incompatibility";
+      co_return State::kStopping;
+    }
   } else if (msgType == static_cast<uint8_t>(UdpDynMuxProto::MsgType::kKeepalive)) {
     if (auto ping = UdpDynMuxProto::Keepalive::Deserialize(packet.Data())) {
       if (_Peer == peer) {
         _LastSeen = now;
-        co_await _Parent.SendControlKeepaliveAck(peer, _Psk);
+
+        if (ping->IsPong()) {
+          if (_LastPingSentTime.has_value()) {
+            auto rtt = std::chrono::duration_cast<std::chrono::milliseconds>(now - *_LastPingSentTime).count();
+            BOOST_LOG_TRIVIAL(info) << GetName() << " measured RTT: " << rtt << " ms";
+            _LastPingSentTime = std::nullopt;
+          }
+        }
+
+        if (ping->IsPing()) {
+          uint8_t flags = 0x02; // Pong is always set in response
+          if (!ping->IsPong()) {
+            // Received pure Ping (first packet in handshake). Set Ping flag to also measure RTT.
+            flags |= 0x01;
+            _LastPingSentTime = now;
+          }
+          co_await _Parent.SendControlKeepalive(peer, _Psk, flags);
+        }
       } else {
-        co_await _Parent.SendControlInvalidChannel(peer, _LocalRxId);
-      }
-    }
-  } else if (msgType == static_cast<uint8_t>(UdpDynMuxProto::MsgType::kKeepaliveAck)) {
-    if (auto ack = UdpDynMuxProto::KeepaliveAck::Deserialize(packet.Data())) {
-      if (_Peer == peer) {
-        _LastSeen = now;
-      } else {
-        co_await _Parent.SendControlInvalidChannel(peer, _LocalRxId);
+        co_await _Parent.SendControlInvalidAddress(peer, _LocalRxId);
       }
     }
   } else if (msgType == static_cast<uint8_t>(UdpDynMuxProto::MsgType::kInvalidChannel)) {
     if (auto err = UdpDynMuxProto::InvalidChannel::Deserialize(packet.Data())) {
       if (_Peer == peer) {
-        // upon receiving INVALID_CHANNEL, if peer id and address matches, re kResolving, if not match silent drop
         BOOST_LOG_TRIVIAL(warning) << GetName() << " received INVALID_CHANNEL, resetting state to negotiating";
         _Peer = std::nullopt;
+        _RemoteRxId = 0;
+        co_return State::kNegotiating;
+      }
+    }
+  } else if (msgType == static_cast<uint8_t>(UdpDynMuxProto::MsgType::kInvalidAddress)) {
+    if (auto err = UdpDynMuxProto::InvalidAddress::Deserialize(packet.Data())) {
+      if (_Peer == peer) {
+        BOOST_LOG_TRIVIAL(warning)
+            << GetName() << " received INVALID_ADDRESS, resetting state to negotiating (without resolving)";
         _RemoteRxId = 0;
         co_return State::kNegotiating;
       }
@@ -445,8 +478,8 @@ Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
         UdpDynMuxProto::MsgType msgType(UdpDynMuxProto::MsgType(packet._Data[packet._Offset + 2]));
         switch (msgType) {
         case UdpDynMuxProto::MsgType::kInitiate:
+        case UdpDynMuxProto::MsgType::kInitiateFail:
         case UdpDynMuxProto::MsgType::kKeepalive:
-        case UdpDynMuxProto::MsgType::kKeepaliveAck:
         case UdpDynMuxProto::MsgType::kInvalidPsk: {
           if (bytes_transferred < 19) {
             break;
@@ -472,6 +505,16 @@ Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
           }
           break;
         }
+        case UdpDynMuxProto::MsgType::kInvalidAddress: {
+          if (auto err = UdpDynMuxProto::InvalidAddress::Deserialize(packet.Data())) {
+            for (auto& [psk, channel] : _Channels) {
+              if (channel->_RemoteRxId == err->ChannelId && channel->_Peer == peer) {
+                co_await channel->_ControlPacket.GetProducer().Put(std::make_tuple(peer, std::move(packet)));
+              }
+            }
+          }
+          break;
+        }
         default:
           assert(false);
         }
@@ -482,6 +525,8 @@ Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
         if (channel->_State == Channel::State::kRunning && channel->_Peer == peer) {
           packet.PopFront(2);
           co_await channel->_DataPacket.GetProducer().Put(std::move(packet));
+        } else if (channel->_Peer.has_value() && channel->_Peer.value() != peer) {
+          co_await SendControlInvalidAddress(peer, channelId);
         } else {
           co_await SendControlInvalidChannel(peer, channelId);
         }
@@ -519,17 +564,20 @@ static Omni::Fiber::Coroutine<void> SendControlPacket(boost::asio::ip::udp::sock
 Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInitiate(const boost::asio::ip::udp::endpoint& peer,
                                                             const UdpDynMux::PskType& psk, uint16_t rxId,
                                                             uint16_t peerRxId) {
-  co_await SendControlPacket(_Socket, peer, UdpDynMuxProto::Initiate{psk, rxId, peerRxId});
+  co_await SendControlPacket(
+      _Socket, peer,
+      UdpDynMuxProto::Initiate{psk, rxId, peerRxId, UdpDynMuxProto::kMajorVersion, UdpDynMuxProto::kMinorVersion,
+                               UdpDynMuxProto::kPatchVersion});
+}
+
+Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInitiateFail(const boost::asio::ip::udp::endpoint& peer,
+                                                                const UdpDynMux::PskType& psk) {
+  co_await SendControlPacket(_Socket, peer, UdpDynMuxProto::InitiateFail{psk});
 }
 
 Omni::Fiber::Coroutine<void> UdpDynMux::SendControlKeepalive(const boost::asio::ip::udp::endpoint& peer,
-                                                             const UdpDynMux::PskType& psk) {
-  co_await SendControlPacket(_Socket, peer, UdpDynMuxProto::Keepalive{psk});
-}
-
-Omni::Fiber::Coroutine<void> UdpDynMux::SendControlKeepaliveAck(const boost::asio::ip::udp::endpoint& peer,
-                                                                const UdpDynMux::PskType& psk) {
-  co_await SendControlPacket(_Socket, peer, UdpDynMuxProto::KeepaliveAck{psk});
+                                                             const UdpDynMux::PskType& psk, uint8_t flags) {
+  co_await SendControlPacket(_Socket, peer, UdpDynMuxProto::Keepalive{psk, flags});
 }
 
 Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInvalidPsk(const boost::asio::ip::udp::endpoint& peer,
@@ -546,6 +594,14 @@ Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInvalidChannel(const boost::a
     co_return;
   }
   co_await SendControlPacket(_Socket, peer, UdpDynMuxProto::InvalidChannel{channelId});
+}
+
+Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInvalidAddress(const boost::asio::ip::udp::endpoint& peer,
+                                                                  uint16_t channelId) {
+  if (!CheckRateLimit(peer)) {
+    co_return;
+  }
+  co_await SendControlPacket(_Socket, peer, UdpDynMuxProto::InvalidAddress{channelId});
 }
 
 uint16_t UdpDynMux::AllocateUniqueRxId() {

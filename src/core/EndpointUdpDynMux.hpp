@@ -83,13 +83,15 @@ private:
 
   Omni::Fiber::Coroutine<void> SendControlInitiate(const boost::asio::ip::udp::endpoint& peer,
                                                    const UdpDynMux::PskType& psk, uint16_t rxId, uint16_t peerRxId);
-  Omni::Fiber::Coroutine<void> SendControlKeepalive(const boost::asio::ip::udp::endpoint& peer,
-                                                    const UdpDynMux::PskType& psk);
-  Omni::Fiber::Coroutine<void> SendControlKeepaliveAck(const boost::asio::ip::udp::endpoint& peer,
+  Omni::Fiber::Coroutine<void> SendControlInitiateFail(const boost::asio::ip::udp::endpoint& peer,
                                                        const UdpDynMux::PskType& psk);
+  Omni::Fiber::Coroutine<void> SendControlKeepalive(const boost::asio::ip::udp::endpoint& peer,
+                                                    const UdpDynMux::PskType& psk, uint8_t flags);
   Omni::Fiber::Coroutine<void> SendControlInvalidPsk(const boost::asio::ip::udp::endpoint& peer,
                                                      const UdpDynMux::PskType& psk);
   Omni::Fiber::Coroutine<void> SendControlInvalidChannel(const boost::asio::ip::udp::endpoint& peer,
+                                                         uint16_t channelId);
+  Omni::Fiber::Coroutine<void> SendControlInvalidAddress(const boost::asio::ip::udp::endpoint& peer,
                                                          uint16_t channelId);
 
   std::reference_wrapper<ChannelNotification> _Notification;
@@ -127,6 +129,8 @@ public:
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 
   UdpDynMux::PskType GetPsk() const { return _Psk; }
+  uint16_t GetLocalRxId() const { return _LocalRxId; }
+  uint16_t GetRemoteRxId() const { return _RemoteRxId; }
 
   Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override;
   Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel& c) override;
@@ -142,6 +146,7 @@ private:
   std::optional<boost::asio::ip::udp::endpoint> _Peer;
   std::chrono::steady_clock::time_point _LastSeen;
   std::chrono::steady_clock::time_point _NextKeepaliveTime;
+  std::optional<std::chrono::steady_clock::time_point> _LastPingSentTime;
   Omni::Fiber::Pipe<Packet> _DataPacket;
   Omni::Fiber::Pipe<std::tuple<boost::asio::ip::udp::endpoint, Packet>> _ControlPacket;
 
