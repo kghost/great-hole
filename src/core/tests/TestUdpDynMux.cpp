@@ -10,6 +10,7 @@
 #include "Cancel.hpp"
 #include "Coroutine.hpp"
 #include "EndpointUdpDynMux.hpp"
+#include "EndpointUdpDynMuxProtocol.hpp"
 #include "Fiber.hpp"
 #include "GetCurrentFiber.hpp"
 #include "Manager.hpp"
@@ -580,12 +581,17 @@ TEST(UdpDynMuxTest, IncompatibleVersionNegotiation) {
     // Receive the expected response
     std::array<uint8_t, 100> rxBuf{};
     udp::endpoint sender;
-    auto [recvErr, bytes] = co_await rawSocket.async_receive_from(boost::asio::buffer(rxBuf), sender, Omni::Fiber::AsioUseFiber);
+    auto [recvErr, bytes] =
+        co_await rawSocket.async_receive_from(boost::asio::buffer(rxBuf), sender, Omni::Fiber::AsioUseFiber);
     EXPECT_FALSE(recvErr);
-    EXPECT_EQ(bytes, 19); // INITIATE_FAIL size is 19 bytes
+    EXPECT_EQ(bytes, 23); // INITIATE_FAIL size is 23 bytes
     EXPECT_EQ(rxBuf[0], 0);
     EXPECT_EQ(rxBuf[1], 0);
     EXPECT_EQ(rxBuf[2], 0x02); // MsgType::kInitiateFail
+    EXPECT_EQ(rxBuf[19], 1);   // Major Version
+    EXPECT_EQ(rxBuf[20], 0);   // Minor Version
+    EXPECT_EQ(rxBuf[21], 0);   // Patch Version MSB
+    EXPECT_EQ(rxBuf[22], 0);   // Patch Version LSB
 
     // The channel should stop because of incompatible version.
     // Wait for the channel to transition to kFinished.
@@ -637,7 +643,9 @@ TEST(UdpDynMuxTest, KeepaliveRttHandshake) {
 
     // Phase 1: Establish the channel (Negotiation)
     std::array<uint8_t, 27> initMsg{};
-    initMsg[0] = 0; initMsg[1] = 0; initMsg[2] = 0x01; // MsgType::kInitiate
+    initMsg[0] = 0;
+    initMsg[1] = 0;
+    initMsg[2] = 0x01; // MsgType::kInitiate
     std::copy(psk.begin(), psk.end(), initMsg.begin() + 3);
     initMsg[19] = (clientRxId >> 8) & 0xff;
     initMsg[20] = clientRxId & 0xff;
@@ -653,7 +661,8 @@ TEST(UdpDynMuxTest, KeepaliveRttHandshake) {
     // Receive server's initiate
     std::array<uint8_t, 100> rxBuf{};
     udp::endpoint sender;
-    auto [recvErr, bytes] = co_await rawSocket.async_receive_from(boost::asio::buffer(rxBuf), sender, Omni::Fiber::AsioUseFiber);
+    auto [recvErr, bytes] =
+        co_await rawSocket.async_receive_from(boost::asio::buffer(rxBuf), sender, Omni::Fiber::AsioUseFiber);
     EXPECT_FALSE(recvErr);
     EXPECT_EQ(bytes, 27);
     EXPECT_EQ(rxBuf[2], 0x01);
@@ -671,14 +680,17 @@ TEST(UdpDynMuxTest, KeepaliveRttHandshake) {
 
     // Phase 2: Send Keepalive Ping (Packet 1)
     std::array<uint8_t, 20> pingMsg{};
-    pingMsg[0] = 0; pingMsg[1] = 0; pingMsg[2] = 0x03; // MsgType::kKeepalive
+    pingMsg[0] = 0;
+    pingMsg[1] = 0;
+    pingMsg[2] = 0x03; // MsgType::kKeepalive
     std::copy(psk.begin(), psk.end(), pingMsg.begin() + 3);
     pingMsg[19] = 0x01; // Ping=1, Pong=0
 
     co_await rawSocket.async_send_to(boost::asio::buffer(pingMsg), dev->LocalEndpoint(), Omni::Fiber::AsioUseFiber);
 
     // Receive Packet 2 from server (should be Ping=1, Pong=1)
-    auto [recvErr2, bytes2] = co_await rawSocket.async_receive_from(boost::asio::buffer(rxBuf), sender, Omni::Fiber::AsioUseFiber);
+    auto [recvErr2, bytes2] =
+        co_await rawSocket.async_receive_from(boost::asio::buffer(rxBuf), sender, Omni::Fiber::AsioUseFiber);
     EXPECT_FALSE(recvErr2);
     EXPECT_EQ(bytes2, 20);
     EXPECT_EQ(rxBuf[2], 0x03);
@@ -686,7 +698,9 @@ TEST(UdpDynMuxTest, KeepaliveRttHandshake) {
 
     // Send Packet 3 to server (Ping=0, Pong=1)
     std::array<uint8_t, 20> pongMsg{};
-    pongMsg[0] = 0; pongMsg[1] = 0; pongMsg[2] = 0x03;
+    pongMsg[0] = 0;
+    pongMsg[1] = 0;
+    pongMsg[2] = 0x03;
     std::copy(psk.begin(), psk.end(), pongMsg.begin() + 3);
     pongMsg[19] = 0x02; // Ping=0, Pong=1
 
@@ -774,13 +788,14 @@ TEST(UdpDynMuxTest, InvalidAddressAndRenegotiation) {
     dataPkt[1] = ch1->GetLocalRxId() & 0xff;
     dataPkt[2] = 'A';
     dataPkt[3] = 'B';
-    
+
     co_await rawSocket.async_send_to(boost::asio::buffer(dataPkt), dev1->LocalEndpoint(), Omni::Fiber::AsioUseFiber);
 
     // Expect INVALID_ADDRESS back on rawSocket
     std::array<uint8_t, 100> rxBuf{};
     udp::endpoint sender;
-    auto [recvErr, bytes] = co_await rawSocket.async_receive_from(boost::asio::buffer(rxBuf), sender, Omni::Fiber::AsioUseFiber);
+    auto [recvErr, bytes] =
+        co_await rawSocket.async_receive_from(boost::asio::buffer(rxBuf), sender, Omni::Fiber::AsioUseFiber);
     EXPECT_FALSE(recvErr);
     EXPECT_EQ(bytes, 5); // INVALID_ADDRESS is 5 bytes
     EXPECT_EQ(rxBuf[0], 0);
@@ -820,7 +835,7 @@ TEST(UdpDynMuxTest, InvalidAddressAndRenegotiation) {
     p2._Offset = 2;
     std::copy(msg2.begin(), msg2.end(), p2._Data.begin() + p2._Offset);
     p2._Length = msg2.size();
-    
+
     auto writeFiber2 = current.Spawn("writer2", [&]() -> Omni::Fiber::Coroutine<void> {
       auto writeErr2 = co_await ch2->Write(p2, cancelObj);
       EXPECT_FALSE(writeErr2);
@@ -843,4 +858,3 @@ TEST(UdpDynMuxTest, InvalidAddressAndRenegotiation) {
   RunEventLoop(io);
   EXPECT_TRUE(testPassed);
 }
-

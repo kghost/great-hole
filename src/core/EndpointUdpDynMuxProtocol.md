@@ -30,7 +30,7 @@ For any packet starting with `0x0000`, the 3rd byte specifies the **Message Type
 - **Purpose**: Initiates negotiation, requests/announces Rx IDs, serves as session migration trigger, and negotiates version compatibility.
 
 ### `0x02`: `INITIATE_FAIL`
-- **Format**: `[2-bytes: 0x0000] [1-byte: 0x02] [16-bytes: PSK]`
+- **Format**: `[2-bytes: 0x0000] [1-byte: 0x02] [16-bytes: PSK] [1-byte: Major] [1-byte: Minor] [2-byte: Patch]`
 - **Purpose**: Sent when negotiation fails due to incompatible major/minor versions.
 
 ### `0x03`: `KEEPALIVE`

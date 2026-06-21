@@ -5,12 +5,13 @@
 #include <gtest/gtest.h>
 
 #include "../PacketBuilder.hpp"
+#include "Utils/Overload.hpp"
 
 namespace {
 
 using namespace gh;
 
-enum class TestEnum : uint8_t { kValA = 0x12, kValB = 0x34 };
+enum class TestEnum : uint8_t { kValA = 0x12, kValB = 0x34, kValFail = 0xFF };
 
 // Aliases
 using FieldU16 = PacketFieldNumeric<uint16_t>;
@@ -58,7 +59,7 @@ TEST(PacketFieldTest, BasicFields) {
 using TestSimpleComponent = PacketComponentContainer<std::tuple<FieldU16, FieldEnum, FieldRaw>, PacketComponentEnd>;
 
 TEST(PacketComponentContainerTest, SimpleBuildParse) {
-  std::array<uint8_t, 7> buffer{};
+  std::array<uint8_t, 8> buffer{};
   std::span<uint8_t> dataSpan(buffer);
 
   EXPECT_FALSE(TestSimpleComponent::Validate(dataSpan.first<6>()));
@@ -76,13 +77,17 @@ TEST(PacketComponentContainerTest, SimpleBuildParse) {
   EXPECT_EQ(buffer[3], 0x01);
   EXPECT_EQ(buffer[6], 0x04);
 
+  bool parsed = false;
   // Parse elements
-  PacketParser<TestSimpleComponent, 0> parser(dataSpan);
-  EXPECT_EQ(parser.Get<FieldU16>(), 0xabcd);
-  EXPECT_EQ(parser.Get<FieldEnum>(), TestEnum::kValA);
-  auto rawOut = parser.Get<FieldRaw>();
-  EXPECT_EQ(rawOut[0], 0x01);
-  EXPECT_EQ(rawOut[3], 0x04);
+  PacketParser<void, TestSimpleComponent, 0>{dataSpan}([&parsed](auto u16, auto e, auto raw) {
+    parsed = true;
+    EXPECT_EQ(u16, 0xabcd);
+    EXPECT_EQ(e, TestEnum::kValA);
+    EXPECT_EQ(raw[0], 0x01);
+    EXPECT_EQ(raw[3], 0x04);
+  });
+
+  EXPECT_TRUE(parsed);
 }
 
 // Chained Components
@@ -103,25 +108,29 @@ TEST(PacketComponentContainerTest, ChainedBuildParse) {
   EXPECT_TRUE(ComponentPartA::Validate(dataSpan));
 
   // Parse
-  auto parserA = PacketParser<ComponentPartA, 0>(dataSpan);
-  ASSERT_TRUE(ComponentPartA::Validate(dataSpan));
+  bool parsedA = false;
+  bool parsedB = false;
+  PacketParser<void, ComponentPartA, 0>{dataSpan}([&](auto u16, auto e) {
+    parsedA = true;
+    EXPECT_EQ(u16, 0x7788);
+    EXPECT_EQ(e, TestEnum::kValB);
+    return [&](auto raw) {
+      parsedB = true;
+      EXPECT_EQ(raw[0], 0x99);
+      EXPECT_EQ(raw[3], 0x66);
+    };
+  });
 
-  EXPECT_EQ(parserA.Get<FieldU16>(), 0x7788);
-  EXPECT_EQ(parserA.Get<FieldEnum>(), TestEnum::kValB);
-
-  // ComponentPartB starts at offset 3
-  PacketParser<ComponentPartB, ComponentPartA::BuilderDataSize> parserB(dataSpan);
-  auto rawOut = parserB.Get<FieldRaw>();
-  EXPECT_EQ(rawOut[0], 0x99);
-  EXPECT_EQ(rawOut[3], 0x66);
+  EXPECT_TRUE(parsedA);
+  EXPECT_TRUE(parsedB);
 }
 
 // Dynamic Enum Maps
 using MsgBodyA = PacketComponentContainer<std::tuple<FieldU16>, PacketComponentEnd>;
 using MsgBodyB = PacketComponentContainer<std::tuple<FieldU32, FieldRaw>, PacketComponentEnd>;
 
-using TestDynamicPacket = PacketComponentEnumMap<PacketComponentEnumMapEntry<TestEnum::kValA, MsgBodyA>,
-                                                 PacketComponentEnumMapEntry<TestEnum::kValB, MsgBodyB>>;
+using TestDynamicPacket = PacketComponentEnumMap<std::tuple<PacketComponentEnumMapEntry<TestEnum::kValA, MsgBodyA>,
+                                                            PacketComponentEnumMapEntry<TestEnum::kValB, MsgBodyB>>>;
 
 TEST(PacketComponentEnumMapTest, DynamicBuildParse) {
   std::array<uint8_t, 12> buffer{};
@@ -140,14 +149,28 @@ TEST(PacketComponentEnumMapTest, DynamicBuildParse) {
 
     // Parse MsgBodyA
     ASSERT_TRUE(TestDynamicPacket::Validate(dataSpan));
-    auto parser = PacketParser<TestDynamicPacket, 0>{dataSpan};
 
-    auto subParserA = parser.As<MsgBodyA>();
-    ASSERT_TRUE(subParserA.has_value());
-    EXPECT_EQ(subParserA->Get<FieldU16>(), 0x5566);
+    bool parsedA = false;
+    bool parsedB = false;
+    bool parsedFallback = false;
+    PacketParser<void, TestDynamicPacket, 0>{dataSpan}(
+        Overload{[&](std::integral_constant<TestEnum, TestEnum::kValA> e) {
+                   parsedA = true;
+                   return [&](auto u16) { EXPECT_EQ(u16, 0x5566); };
+                 },
+                 [&](std::integral_constant<TestEnum, TestEnum::kValB> e) {
+                   parsedB = true;
+                   return [&](auto u32, auto raw) {
+                     EXPECT_EQ(u32, 0x11223344);
+                     EXPECT_EQ(raw[0], 0xee);
+                     EXPECT_EQ(raw[3], 0xbb);
+                   };
+                 },
+                 [&](TestEnum value) { parsedFallback = true; }});
 
-    auto subParserB = parser.As<MsgBodyB>();
-    EXPECT_FALSE(subParserB.has_value());
+    EXPECT_TRUE(parsedA);
+    EXPECT_FALSE(parsedB);
+    EXPECT_FALSE(parsedFallback);
   }
 
   // 2. Build EntryB
@@ -168,17 +191,59 @@ TEST(PacketComponentEnumMapTest, DynamicBuildParse) {
 
     // Parse MsgBodyB
     ASSERT_TRUE(TestDynamicPacket::Validate(dataSpan));
-    auto parser = PacketParser<TestDynamicPacket, 0>{dataSpan};
 
-    auto subParserB = parser.As<MsgBodyB>();
-    ASSERT_TRUE(subParserB.has_value());
-    EXPECT_EQ(subParserB->Get<FieldU32>(), 0x11223344);
-    auto rawOut = subParserB->Get<FieldRaw>();
-    EXPECT_EQ(rawOut[0], 0xee);
-    EXPECT_EQ(rawOut[3], 0xbb);
+    bool parsedA = false;
+    bool parsedB = false;
+    bool parsedFallback = false;
+    PacketParser<void, TestDynamicPacket, 0>{dataSpan}(Overload{
+        [&](std::integral_constant<TestEnum, TestEnum::kValA> e) {
+          parsedA = true;
+          return [&](auto u16) { EXPECT_EQ(u16, 0x5566); };
+        },
+        [&](std::integral_constant<TestEnum, TestEnum::kValB> e) {
+          parsedB = true;
+          return [&](auto u32, auto raw) {
+            EXPECT_EQ(u32, 0x11223344);
+            EXPECT_EQ(raw[0], 0xee);
+            EXPECT_EQ(raw[3], 0xbb);
+          };
+        },
+        [&](TestEnum value) { parsedFallback = true; },
+    });
 
-    auto subParserA = parser.As<MsgBodyA>();
-    EXPECT_FALSE(subParserA.has_value());
+    EXPECT_FALSE(parsedA);
+    EXPECT_TRUE(parsedB);
+    EXPECT_FALSE(parsedFallback);
+  }
+
+  // 3. Build Entry Malformed
+  {
+    PacketBuilder<TestDynamicPacket, 0>{dataSpan}(std::integral_constant<TestEnum, TestEnum::kValFail>());
+
+    // Buffer structure: [1-byte Enum][4-byte FieldU32][4-byte FieldRaw] = 9 bytes used
+    EXPECT_EQ(buffer[0], static_cast<uint8_t>(TestEnum::kValFail));
+
+    // Parse Malformed
+    ASSERT_FALSE(TestDynamicPacket::Validate(dataSpan));
+
+    bool parsedA = false;
+    bool parsedB = false;
+    bool parsedFallback = false;
+    PacketParser<void, TestDynamicPacket, 0>{dataSpan}(Overload{
+        [&](std::integral_constant<TestEnum, TestEnum::kValA> e) {
+          parsedA = true;
+          return [&](auto u16) {};
+        },
+        [&](std::integral_constant<TestEnum, TestEnum::kValB> e) {
+          parsedB = true;
+          return [&](auto u32, auto raw) {};
+        },
+        [&](TestEnum value) { parsedFallback = true; },
+    });
+
+    EXPECT_FALSE(parsedA);
+    EXPECT_FALSE(parsedB);
+    EXPECT_TRUE(parsedFallback);
   }
 }
 

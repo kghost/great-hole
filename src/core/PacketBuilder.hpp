@@ -14,10 +14,11 @@
 #include <variant>
 
 #include "Utils/All.hpp"
-#include "Utils/IndexOf.hpp"
+#include "Utils/ToC.hpp"
 
 namespace gh {
 
+// ---------------------------------- Concepts ---------------------------------- //
 template <typename T>
 concept PacketField = requires {
   typename T::TargetType;
@@ -27,6 +28,110 @@ concept PacketField = requires {
   { T::Set(std::declval<std::span<uint8_t, T::Size>>(), std::declval<typename T::TargetType>()) } -> std::same_as<void>;
 };
 
+template <typename T> struct CanSetWith {
+  template <typename ArgsTuple> struct Test : std::false_type {};
+
+  template <typename... Args> struct Test<std::tuple<Args...>> {
+    static constexpr bool value =
+        requires { T::Set(std::declval<std::span<uint8_t, T::BuilderDataSize>>(), std::declval<Args>()...); };
+  };
+};
+
+template <typename T>
+concept PacketComponent = requires {
+  { T::Validate(std::declval<std::span<const uint8_t>>()) } -> std::same_as<bool>;
+  requires std::same_as<decltype(T::BuilderDataSize), const size_t>;
+  typename T::BuilderArgumentsList;
+  requires All<CanSetWith<T>::template Test, typename T::BuilderArgumentsList>::value;
+};
+
+// ---------------------------------- PacketComponentEnd ---------------------------------- //
+class PacketComponentEnd {
+public:
+  static constexpr size_t BuilderDataSize = 0;
+  using BuilderArgumentsList = std::tuple<>;
+  static bool Validate(std::span<const uint8_t> data) { return true; }
+};
+
+// ---------------------------------- Builder / Parser ---------------------------------- //
+template <typename Target, size_t Offset>
+  requires PacketComponent<Target>
+class PacketBuilder {
+public:
+  explicit PacketBuilder(std::span<uint8_t> data) : _Data(data) {}
+
+  template <typename... Args> auto operator()(Args&&... args) {
+    auto ret = Target::Set(_Data.template subspan<Offset, Target::BuilderDataSize>(), std::forward<Args>(args)...);
+    return PacketBuilder<decltype(ret), Offset + Target::BuilderDataSize>(_Data);
+  }
+
+private:
+  std::span<uint8_t> _Data;
+};
+
+template <typename Result> class ParseEnd {
+public:
+  template <typename... Args> ParseEnd(Args&&... args) : _Result(std::forward<Args>(args)...) {}
+  Result Value() { return std::move(_Result); }
+
+private:
+  Result _Result;
+};
+
+template <> class ParseEnd<void> {
+public:
+  ParseEnd() {}
+};
+
+template <typename Result, typename Target, size_t Offset>
+  requires PacketComponent<Target>
+class PacketParser {
+private:
+  struct NextParserCaller {
+    std::span<const uint8_t> Data;
+
+    template <typename NextComponent, typename NextUserParseFunc>
+      requires(!std::same_as<NextComponent, PacketComponentEnd>)
+    auto operator()(NextUserParseFunc&& nextUserParseFunc) const -> ParseEnd<Result> {
+      return PacketParser<Result, NextComponent, Offset + Target::BuilderDataSize>{Data}
+          .template operator()<decltype(nextUserParseFunc)>(std::forward<NextUserParseFunc>(nextUserParseFunc));
+    }
+
+    template <typename NextComponent, typename NextUserParseFunc>
+      requires(!std::same_as<NextComponent, PacketComponentEnd>)
+    auto operator()(NextComponent, NextUserParseFunc&& nextUserParseFunc) const -> ParseEnd<Result> {
+      return PacketParser<Result, NextComponent, Offset + Target::BuilderDataSize>{Data}
+          .template operator()<decltype(nextUserParseFunc)>(std::forward<NextUserParseFunc>(nextUserParseFunc));
+    }
+
+    template <typename ComponentEnd, typename ResultType>
+      requires std::same_as<ComponentEnd, PacketComponentEnd>
+    auto operator()(ComponentEnd, ResultType result) const -> ParseEnd<Result> {
+      return result;
+    }
+
+    template <typename ComponentEnd, typename ResultType>
+      requires std::same_as<ComponentEnd, PacketComponentEnd>
+    auto operator()(ResultType result) const -> ParseEnd<Result> {
+      return result;
+    }
+
+    template <typename ComponentEnd> auto operator()() const -> ParseEnd<Result> { return {}; }
+  };
+
+public:
+  explicit PacketParser(std::span<const uint8_t> data) : _Data(data) {}
+
+  template <typename Function> auto operator()(Function&& func) const -> ParseEnd<Result> {
+    return Target::template Parse<Result>(_Data.template subspan<Offset, Target::BuilderDataSize>(),
+                                          std::forward<Function>(func), NextParserCaller{_Data});
+  }
+
+private:
+  std::span<const uint8_t> _Data;
+};
+
+// ---------------------------------- Predefined Field Types ---------------------------------- //
 template <typename EnumType>
   requires(std::is_scoped_enum_v<EnumType>)
 class PacketFieldEnum {
@@ -80,28 +185,7 @@ public:
   static void Set(std::span<uint8_t, Size> data, TargetType val) { UnderlyingType::Set(data, val); }
 };
 
-template <typename Target, size_t Offset> class PacketBuilder;
-template <typename Target, size_t Offset> class PacketParser;
-
-template <typename T> struct CanSetWith {
-  template <typename ArgsTuple> struct Test : std::false_type {};
-
-  template <typename... Args> struct Test<std::tuple<Args...>> {
-    static constexpr bool value =
-        requires { T::Set(std::declval<std::span<uint8_t, T::BuilderDataSize>>(), std::declval<Args>()...); };
-  };
-};
-
-template <typename T>
-concept PacketComponent = requires {
-  { T::Validate(std::declval<std::span<const uint8_t>>()) } -> std::same_as<bool>;
-  requires std::same_as<decltype(T::BuilderDataSize), const size_t>;
-  typename T::BuilderArgumentsList;
-  requires All<CanSetWith<T>::template Test, typename T::BuilderArgumentsList>::value;
-};
-
-class PacketComponentEnd {};
-
+// ---------------------------------- PacketComponentContainer ---------------------------------- //
 template <typename FieldsTuple, typename NextComponent> class PacketComponentContainer;
 
 template <typename... Fields, typename NextComponent>
@@ -115,7 +199,7 @@ public:
     size_t Size = 0;
   };
 
-  static constexpr const std::array<FieldInfo, sizeof...(Fields)> FieldOffsets = []() consteval {
+  static constexpr const std::array<FieldInfo, sizeof...(Fields)> FieldInfos = []() consteval {
     std::array<FieldInfo, sizeof...(Fields)> result{};
     auto process = [&]<std::size_t Is, typename Field>() {
       result[Is].Size = Field::Size;
@@ -135,7 +219,7 @@ public:
     if constexpr (sizeof...(Fields) == 0) {
       return 0;
     } else {
-      return FieldOffsets[sizeof...(Fields) - 1].Offset + FieldOffsets[sizeof...(Fields) - 1].Size;
+      return FieldInfos[sizeof...(Fields) - 1].Offset + FieldInfos[sizeof...(Fields) - 1].Size;
     }
   }();
 
@@ -144,21 +228,45 @@ public:
 
   static bool Validate(std::span<const uint8_t> data) {
     return (data.size() >= Size) && [&]<std::size_t... Is>(std::index_sequence<Is...>) -> bool {
-      return (Fields::Validate(data.template subspan<FieldOffsets[Is].Offset, FieldOffsets[Is].Size>()) && ...);
+      return (Fields::Validate(data.template subspan<FieldInfos[Is].Offset, FieldInfos[Is].Size>()) && ...);
     }(std::make_index_sequence<sizeof...(Fields)>{});
   }
 
   static auto Set(std::span<uint8_t, BuilderDataSize> data, typename Fields::TargetType... args) {
     [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-      ((Fields::Set(data.template subspan<FieldOffsets[Is].Offset, Fields::Size>(), args)), ...);
+      ((Fields::Set(data.template subspan<FieldInfos[Is].Offset, FieldInfos[Is].Size>(), args)), ...);
     }(std::make_index_sequence<sizeof...(Fields)>{});
     return NextComponent{};
   }
+
+  template <typename RetType, typename Function, typename CallNextParse>
+  static ParseEnd<RetType> Parse(std::span<const uint8_t, BuilderDataSize> data, Function&& func,
+                                 CallNextParse&& next) {
+    return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> ParseEnd<RetType> {
+      using ResultType =
+          decltype(func(Fields::Get(data.template subspan<FieldInfos[Is].Offset, FieldInfos[Is].Size>())...));
+      if constexpr (std::is_void_v<ResultType>) {
+        func(Fields::Get(data.template subspan<FieldInfos[Is].Offset, FieldInfos[Is].Size>())...);
+        return next.template operator()<NextComponent>();
+      } else {
+        return next.template operator()<NextComponent, ResultType>(
+            func(Fields::Get(data.template subspan<FieldInfos[Is].Offset, FieldInfos[Is].Size>())...));
+      }
+    }(std::make_index_sequence<sizeof...(Fields)>{});
+  }
 };
 
+// ---------------------------------- PacketComponentEnumMap ---------------------------------- //
 class PacketComponentEnumMapParseFailedPacket {
 public:
+  static constexpr size_t BuilderDataSize = 0;
+  using BuilderArgumentsList = std::tuple<>;
   static bool Validate(std::span<const uint8_t> data) { return false; }
+  template <typename RetType, typename CallNextParse>
+  static ParseEnd<RetType> Parse(std::span<const uint8_t, BuilderDataSize> data, ParseEnd<RetType>&& end,
+                                 CallNextParse&& next) {
+    return std::move(end);
+  }
 };
 
 template <auto EnumValue, typename TargetPacketComponent>
@@ -167,12 +275,22 @@ struct PacketComponentEnumMapEntry {
   static constexpr auto Value = EnumValue;
   using EnumType = decltype(EnumValue);
   using Type = TargetPacketComponent;
+  using IsPacketComponentEnumMapEntry = std::true_type;
 };
 
-template <typename... Entries> class PacketComponentEnumMap {
+template <typename T>
+concept IsPacketComponentEnumMapEntryType = requires { typename T::IsPacketComponentEnumMapEntry; };
+
+template <typename MapTuple, typename FallbackComponent = PacketComponentEnumMapParseFailedPacket>
+class PacketComponentEnumMap;
+
+template <typename... Entries, typename FallbackComponent>
+  requires(IsPacketComponentEnumMapEntryType<Entries> && ...) && PacketComponent<FallbackComponent>
+class PacketComponentEnumMap<std::tuple<Entries...>, FallbackComponent> {
 public:
   using FirstType = std::tuple_element_t<0, std::tuple<Entries...>>;
   using EnumType = typename FirstType::EnumType;
+  using EnumField = PacketFieldEnum<EnumType>;
 
   static_assert((std::is_same_v<EnumType, typename Entries::EnumType> && ...),
                 "All entries must have the same enum type");
@@ -182,108 +300,94 @@ public:
   static constexpr size_t BuilderDataSize = sizeof(EnumType);
 
   static bool Validate(std::span<const uint8_t> data) {
-    using Enum = PacketFieldEnum<EnumType>;
-    if (!Enum::Validate(data)) {
+    if (!EnumField::Validate(data)) {
       return false;
     }
     return std::visit(
         [&]<typename ComponentType>(ComponentType component) {
-          return ComponentType::Validate(data.template subspan<Enum::Size>());
+          return ComponentType::Validate(data.template subspan<EnumField::Size>());
         },
-        EnumToVariant(Enum::Get(std::span<const uint8_t, Enum::Size>(data.data(), Enum::Size))));
+        EnumToVariant(EnumField::Get(std::span<const uint8_t, EnumField::Size>(data.data(), EnumField::Size))));
   }
 
-  template <EnumType value>
-  static auto Set(std::span<uint8_t, BuilderDataSize> data, std::integral_constant<EnumType, value> v) {
-    using Enum = PacketFieldEnum<EnumType>;
-    Enum::Set(data.template subspan<0, Enum::Size>(), v);
+private:
+  template <EnumType value, typename... SetEntries> struct SetResult;
 
-    auto ret = [&]<typename FirstEntry, typename... RestEntries>(this auto&& self) -> auto {
+  template <EnumType value, typename FirstEntry, typename... RestEntries>
+  struct SetResult<value, FirstEntry, RestEntries...> {
+    static auto operator()() {
       if constexpr (value == FirstEntry::Value) {
         return typename FirstEntry::Type{};
       } else {
-        return self.template operator()<RestEntries...>();
+        return SetResult<value, RestEntries...>::operator()();
       }
-    };
-    return ret.template operator()<Entries...>();
-  }
-
-  template <typename EntryComponent, size_t Offset>
-  static std::optional<PacketParser<EntryComponent, Offset + PacketFieldEnum<EnumType>::Size>>
-  As(std::span<const uint8_t> data) {
-    using Enum = PacketFieldEnum<EnumType>;
-    if (data.size() < Offset + Enum::Size) {
-      return std::nullopt;
     }
-    auto activeEnum = Enum::Get(data.subspan<Offset, Enum::Size>());
+  };
 
-    bool match = false;
-    auto check = [&]<typename Entry>() {
-      if constexpr (std::is_same_v<typename Entry::Type, EntryComponent>) {
-        if (Entry::Value == activeEnum) {
-          match = true;
-        }
-      }
-    };
-    (check.template operator()<Entries>(), ...);
+  template <EnumType value> struct SetResult<value> {
+    static auto operator()() { return FallbackComponent{}; }
+  };
 
-    if (match) {
-      return PacketParser<EntryComponent, Offset + Enum::Size>(data);
-    }
-    return std::nullopt;
+public:
+  template <EnumType value>
+  static auto Set(std::span<uint8_t, BuilderDataSize> data, std::integral_constant<EnumType, value> v) {
+    EnumField::Set(data.template subspan<0, EnumField::Size>(), v);
+    return SetResult<value, Entries...>::operator()();
   }
 
 private:
-  using Variant = std::variant<PacketComponentEnumMapParseFailedPacket, typename Entries::Type...>;
+  template <typename RetType, typename Overloaded, typename CallNextParse, typename... ParseEntries> struct ParseResult;
+
+  template <typename RetType, typename Overloaded, typename CallNextParse, typename FirstEntry, typename... RestEntries>
+  struct ParseResult<RetType, Overloaded, CallNextParse, FirstEntry, RestEntries...> {
+    static ParseEnd<RetType> operator()(EnumType value, Overloaded&& overloaded, CallNextParse&& next) {
+      if (value == FirstEntry::Value) {
+        return next(typename FirstEntry::Type{}, overloaded(ToC<FirstEntry::Value>()));
+      } else {
+        return ParseResult<RetType, Overloaded, CallNextParse, RestEntries...>::operator()(
+            value, std::forward<Overloaded>(overloaded), std::forward<CallNextParse>(next));
+      }
+    }
+  };
+
+  template <typename RetType, typename Overloaded, typename CallNextParse>
+  struct ParseResult<RetType, Overloaded, CallNextParse> {
+    static ParseEnd<RetType> operator()(EnumType value, Overloaded&& overloaded, CallNextParse&& next) {
+      return next(FallbackComponent{}, [&]() -> ParseEnd<RetType> {
+        if constexpr (std::is_void_v<decltype(overloaded(value))>) {
+          overloaded(value);
+          return {};
+        } else {
+          return {overloaded(value)};
+        }
+      }());
+    }
+  };
+
+public:
+  template <typename RetType, typename Overloaded, typename CallNextParse>
+  static ParseEnd<RetType> Parse(std::span<const uint8_t, BuilderDataSize> data, Overloaded&& overloaded,
+                                 CallNextParse&& next) {
+    return ParseResult<RetType, Overloaded, CallNextParse, Entries...>::operator()(
+        EnumField::Get(data.template subspan<0, EnumField::Size>()), std::forward<Overloaded>(overloaded),
+        std::forward<CallNextParse>(next));
+  }
+
+private:
+  using Variant = std::variant<FallbackComponent, typename Entries::Type...>;
 
   static constexpr Variant EnumToVariant(EnumType type) {
-    Variant result = PacketComponentEnumMapParseFailedPacket{};
-    auto test = [&]<typename Entry>() {
-      if (Entry::Value == type) {
-        result = typename Entry::Type{};
-      }
-    };
-    (test.template operator()<Entries>(), ...);
+    Variant result = FallbackComponent{};
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+      auto test = [&]<std::size_t I, typename Entry>() {
+        if (Entry::Value == type) {
+          result.template emplace<I + 1>(typename Entry::Type{});
+        }
+      };
+      (test.template operator()<Is, Entries>(), ...);
+    }(std::make_index_sequence<sizeof...(Entries)>{});
     return result;
   }
-};
-
-template <typename Target, size_t Offset> class PacketBuilder {
-public:
-  PacketBuilder(std::span<uint8_t> data) : _Data(data) {}
-
-  template <typename... Args> auto operator()(Args&&... args) {
-    auto ret = Target::Set(_Data.template subspan<Offset, Target::BuilderDataSize>(), std::forward<Args>(args)...);
-    return PacketBuilder<decltype(ret), Offset + Target::BuilderDataSize>(_Data);
-  }
-
-private:
-  std::span<uint8_t> _Data;
-};
-
-template <size_t Offset> class PacketBuilder<PacketComponentEnd, Offset> {
-public:
-  PacketBuilder(std::span<uint8_t> data) {}
-};
-
-template <typename Target, size_t Offset> class PacketParser {
-public:
-  PacketParser(std::span<const uint8_t> data) : _Data(data) {}
-
-  template <PacketField Field> typename Field::TargetType Get() const {
-    using FieldsTuple = typename Target::FieldsTuple;
-    constexpr int idx = IndexInTuple<Field, FieldsTuple>::value;
-    static_assert(idx != -1, "Field not found in this PacketComponent!");
-
-    constexpr size_t fieldOffset = Target::FieldOffsets[idx].Offset;
-    constexpr size_t fieldSize = Target::FieldOffsets[idx].Size;
-    return Field::Get(_Data.template subspan<Offset + fieldOffset, fieldSize>());
-  }
-
-  template <typename EntryComponent> auto As() const { return Target::template As<EntryComponent, Offset>(_Data); }
-
-private:
-  std::span<const uint8_t> _Data;
 };
 
 } // namespace gh

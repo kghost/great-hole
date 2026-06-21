@@ -32,6 +32,9 @@ This document describes the internal architecture, template design patterns, con
   PacketBuilder<ComponentA> -> operator() -> PacketBuilder<ComponentB>
   ```
 - **`PacketParser`**: Provides a type-safe `Get<Field>()` helper that calculates the index of `Field` inside `FieldsTuple` at compile time and reads the underlying memory with proper endian conversion.
+- **Branching Component Parsing (`PacketComponentEnumMap`)**:
+  - Dynamically branched packet headers use `PacketComponentEnumMap` which matches the parsed enum value at runtime to corresponding `PacketComponentEnumMapEntry` types.
+  - `PacketParser::operator()` delegates to `NextParserCaller`, which implements overloaded `operator()` methods disambiguated by template constraints (`requires (!std::same_as<NextComponent, PacketComponentEnd>)` and `requires std::same_as<ComponentEnd, PacketComponentEnd>`) to handle intermediate components, final targets, and early void exits.
 
 ---
 

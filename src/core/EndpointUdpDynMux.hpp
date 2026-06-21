@@ -10,7 +10,6 @@
 
 #include "Coroutine.hpp"
 #include "Endpoint.hpp"
-#include "EndpointUdpDynMuxProtocol.hpp"
 #include "ErrorCode.hpp"
 #include "Packet.hpp"
 #include "Pipe.hpp"
@@ -22,7 +21,7 @@ namespace gh {
 
 class UdpDynMux : public ServiceBase, public ResolveFor {
 public:
-  using PskType = UdpDynMuxProto::PskType;
+  using PskType = std::array<uint8_t, 16>;
 
   class Channel;
 
