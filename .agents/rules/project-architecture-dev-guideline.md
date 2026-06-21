@@ -46,6 +46,9 @@ Documentation in this project is split into two categories based on target audie
 - **libs/omni-fiber**:
   - [libs/omni-fiber/README.md](../../libs/omni-fiber/README.md) - Public API guidelines (concurrency, fiber lifecycle, joining policies).
   - [libs/omni-fiber/DESIGN.md](../../libs/omni-fiber/DESIGN.md) - Internal design specs (scheduling, state machines, symmetric transfer).
+- **libs/omni-timetravel**:
+  - [libs/omni-timetravel/README.md](../../libs/omni-timetravel/README.md) - Public API reference (time virtualization, event loop integration).
+  - [libs/omni-timetravel/DESIGN.md](../../libs/omni-timetravel/DESIGN.md) - Internal design specs (time namespaces, robust IPC protocol, Stop-Warp-Continue model).
 - **src/base**:
   - [src/base/README.md](../../src/base/README.md) - ServiceBase subclassing interface and thread-safety details.
 - **src/core**:

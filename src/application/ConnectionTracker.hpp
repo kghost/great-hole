@@ -117,21 +117,21 @@ public:
         : ConnectionEntry{mark, lastActive}, State(state) {}
 
     mutable TcpState State = TcpState::kSynSent;
-    static std::chrono::seconds SynTimeout;
-    static std::chrono::seconds EstablishedTimeout;
-    static std::chrono::seconds FinTimeout;
+    static constexpr std::chrono::seconds SynTimeout = std::chrono::seconds(60);
+    static constexpr std::chrono::seconds EstablishedTimeout = std::chrono::seconds(1200);
+    static constexpr std::chrono::seconds FinTimeout = std::chrono::seconds(30);
   };
 
   struct UdpEntry : public ConnectionEntry {
     UdpEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive)
         : ConnectionEntry{mark, lastActive} {}
-    static std::chrono::seconds Timeout;
+    static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
   };
 
   struct IcmpConnEntry : public ConnectionEntry {
     IcmpConnEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive)
         : ConnectionEntry{mark, lastActive} {}
-    static std::chrono::seconds Timeout;
+    static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
   };
 
   struct Ip4TcpEntry {

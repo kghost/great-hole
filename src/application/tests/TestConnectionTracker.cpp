@@ -1,4 +1,6 @@
 #include <chrono>
+#include <cstdlib>
+#include <iostream>
 
 #include <boost/asio.hpp>
 #include <gtest/gtest.h>
@@ -7,10 +9,31 @@
 #include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
 #include "Packet.hpp"
+#include "TimeTravel.hpp"
 
 using namespace gh;
 
 namespace {
+
+class AsioWarpListener : public Omni::TimeTravel::IWarpListener {
+public:
+  explicit AsioWarpListener(boost::asio::io_context& io) : _Io(io) {}
+
+  void OnPreWarp() override {
+    _Io.notify_fork(boost::asio::io_context::fork_prepare);
+  }
+
+  void OnPostWarpParent() override {
+    _Io.notify_fork(boost::asio::io_context::fork_parent);
+  }
+
+  void OnPostWarpChild() override {
+    _Io.notify_fork(boost::asio::io_context::fork_child);
+  }
+
+private:
+  boost::asio::io_context& _Io;
+};
 
 Packet CreateIPv6Packet(const boost::asio::ip::address_v6& src, const boost::asio::ip::address_v6& dst,
                         uint16_t srcPort, uint16_t dstPort, uint8_t protocol, uint8_t tcpFlags = 0) {
@@ -222,14 +245,16 @@ TEST(ConnectionTrackerTest, ExpirationAndPruning) {
   Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
+  Omni::TimeTravel::Client timeClient;
+  AsioWarpListener listener(io);
+  timeClient.RegisterListener(listener);
+
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     MockConnectionMark mark1("mark1");
     MockSelector selector(std::nullopt);
     auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
-
-    ConnectionTracker::TcpEntry::SynTimeout = std::chrono::seconds(1);
 
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
@@ -242,10 +267,8 @@ TEST(ConnectionTrackerTest, ExpirationAndPruning) {
     EXPECT_TRUE(res.has_value());
     EXPECT_EQ(&res->get(), &mark1);
 
-    // Wait for it to expire using a timer in fiber
-    boost::asio::steady_timer waitTimer(io);
-    waitTimer.expires_after(std::chrono::milliseconds(1100));
-    co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    // Warp monotonic clock forward for SYN timeout (61s)
+    timeClient.FastForward(std::chrono::seconds(61));
 
     // Lookup should return std::nullopt and prune the entry
     EXPECT_FALSE(tracker->Lookup(p1, ConnectionDirection::kOutput).has_value());
@@ -253,8 +276,6 @@ TEST(ConnectionTrackerTest, ExpirationAndPruning) {
     auto errStop = co_await tracker->Stop();
     EXPECT_FALSE(errStop);
     co_await tracker->WaitService();
-
-    ConnectionTracker::TcpEntry::SynTimeout = std::chrono::seconds(60);
 
     testPassed = true;
     co_return;
@@ -317,6 +338,10 @@ TEST(ConnectionTrackerTest, TcpStateTransitions) {
   Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
+  Omni::TimeTravel::Client timeClient;
+  AsioWarpListener listener(io);
+  timeClient.RegisterListener(listener);
+
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -324,18 +349,13 @@ TEST(ConnectionTrackerTest, TcpStateTransitions) {
     MockSelector selector(std::nullopt);
     auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
 
-    // Override timeouts specifically to verify different rates of expiration
-    ConnectionTracker::TcpEntry::SynTimeout = std::chrono::seconds(2);
-    ConnectionTracker::TcpEntry::EstablishedTimeout = std::chrono::seconds(10);
-    ConnectionTracker::TcpEntry::FinTimeout = std::chrono::seconds(4);
-
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
 
     auto clientIp = boost::asio::ip::make_address_v6("fd00::1");
     auto serverIp = boost::asio::ip::make_address_v6("fd00::2");
 
-    // 1. SYN packet (state starts at SynSent, timeout = 2s)
+    // 1. SYN packet (state starts at SynSent, default timeout = 60s)
     auto pSyn = CreateIPv6Packet(clientIp, serverIp, 1234, 80, 6, 0x02); // SYN
     tracker->Update(pSyn, mark1, ConnectionDirection::kOutput);
 
@@ -343,42 +363,33 @@ TEST(ConnectionTrackerTest, TcpStateTransitions) {
     EXPECT_TRUE(res.has_value());
     EXPECT_EQ(&res->get(), &mark1);
 
-    // Wait for SYN timeout (2.1s)
-    boost::asio::steady_timer waitTimer(io);
-    waitTimer.expires_after(std::chrono::milliseconds(2100));
-    co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    // Warp monotonic clock forward for SYN timeout (61s)
+    timeClient.FastForward(std::chrono::seconds(61));
 
     // Should be expired now
     EXPECT_FALSE(tracker->Lookup(pSyn, ConnectionDirection::kOutput).has_value());
 
-    // 2. Re-establish, then send SYN-ACK to establish (state transitions to Established, timeout = 10s)
+    // 2. Re-establish, then send SYN-ACK to establish (state transitions to Established, default timeout = 1200s)
     tracker->Update(pSyn, mark1, ConnectionDirection::kOutput);
     auto pSynAck = CreateIPv6Packet(serverIp, clientIp, 80, 1234, 6, 0x12); // SYN-ACK
     res = tracker->Lookup(pSynAck, ConnectionDirection::kInput);
     EXPECT_TRUE(res.has_value());
 
-    // Wait 2.1s again. In established state, it shouldn't expire!
-    waitTimer.expires_after(std::chrono::milliseconds(2100));
-    co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    // Warp monotonic clock forward 61s again. In established state, it shouldn't expire!
+    timeClient.FastForward(std::chrono::seconds(61));
     EXPECT_TRUE(tracker->Lookup(pSyn, ConnectionDirection::kOutput).has_value());
 
-    // 3. Send FIN packet (state transitions to FinWait, timeout = 4s)
+    // 3. Send FIN packet (state transitions to FinWait, default timeout = 30s)
     auto pFin = CreateIPv6Packet(clientIp, serverIp, 1234, 80, 6, 0x01); // FIN
     tracker->Update(pFin, mark1, ConnectionDirection::kOutput);
 
-    // Wait 4.1s. It should expire!
-    waitTimer.expires_after(std::chrono::milliseconds(4100));
-    co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    // Warp monotonic clock forward 31s. It should expire!
+    timeClient.FastForward(std::chrono::seconds(31));
     EXPECT_FALSE(tracker->Lookup(pSyn, ConnectionDirection::kOutput).has_value());
 
     auto errStop = co_await tracker->Stop();
     EXPECT_FALSE(errStop);
     co_await tracker->WaitService();
-
-    // Restore default timeouts
-    ConnectionTracker::TcpEntry::SynTimeout = std::chrono::seconds(60);
-    ConnectionTracker::TcpEntry::EstablishedTimeout = std::chrono::seconds(1200);
-    ConnectionTracker::TcpEntry::FinTimeout = std::chrono::seconds(30);
 
     testPassed = true;
     co_return;
@@ -452,3 +463,18 @@ TEST(ConnectionTrackerTest, IcmpDestinationUnreachable) {
   io.run();
   EXPECT_TRUE(testPassed);
 }
+
+int main(int argc, char* argv[]) {
+  if (std::getenv("OMNI_TIMETRAVEL_IS_CHILD")) {
+    std::cout << "[Child] Running Google Test suite..." << std::endl;
+    testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+  }
+
+  std::cout << "[Parent] Starting orchestrator..." << std::endl;
+  Omni::TimeTravel::Orchestrator orchestrator;
+  int status = orchestrator.Run(argv);
+  std::cout << "[Parent] Orchestrator completed. Child status: " << status << std::endl;
+  return status;
+}
+

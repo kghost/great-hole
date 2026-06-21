@@ -14,12 +14,6 @@
 
 namespace gh {
 
-std::chrono::seconds ConnectionTracker::TcpEntry::SynTimeout = std::chrono::seconds(60);
-std::chrono::seconds ConnectionTracker::TcpEntry::EstablishedTimeout = std::chrono::seconds(1200);
-std::chrono::seconds ConnectionTracker::TcpEntry::FinTimeout = std::chrono::seconds(30);
-std::chrono::seconds ConnectionTracker::UdpEntry::Timeout = std::chrono::seconds(30);
-std::chrono::seconds ConnectionTracker::IcmpConnEntry::Timeout = std::chrono::seconds(30);
-
 template <class... Ts> struct overloaded : Ts... {
   using Ts::operator()...;
 };

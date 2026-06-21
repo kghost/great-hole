@@ -1,4 +1,6 @@
 #include <chrono>
+#include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <vector>
 
@@ -15,6 +17,7 @@
 #include "ResolverStaticEndpoint.hpp"
 #include "Select.hpp"
 #include "SelectPair.hpp"
+#include "TimeTravel.hpp"
 #include "Utils.hpp"
 #include "VpnClientMultiChannel.hpp"
 #include "Yield.hpp"
@@ -22,6 +25,26 @@
 using namespace gh;
 
 namespace {
+
+class AsioWarpListener : public Omni::TimeTravel::IWarpListener {
+public:
+  explicit AsioWarpListener(boost::asio::io_context& io) : _Io(io) {}
+
+  void OnPreWarp() override {
+    _Io.notify_fork(boost::asio::io_context::fork_prepare);
+  }
+
+  void OnPostWarpParent() override {
+    _Io.notify_fork(boost::asio::io_context::fork_parent);
+  }
+
+  void OnPostWarpChild() override {
+    _Io.notify_fork(boost::asio::io_context::fork_child);
+  }
+
+private:
+  boost::asio::io_context& _Io;
+};
 
 Packet CreateTestIPv4Packet(const boost::asio::ip::address_v4& src, const boost::asio::ip::address_v4& dst,
                             uint8_t protocol, const std::vector<uint8_t>& payload) {
@@ -341,6 +364,10 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
   Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
+  Omni::TimeTravel::Client timeClient;
+  AsioWarpListener listener(io);
+  timeClient.RegisterListener(listener);
+
   auto udpClient = std::make_shared<UdpDynMux>(
       io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
   auto udpServer = std::make_shared<UdpDynMux>(
@@ -356,11 +383,6 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
   auto mockTun = std::make_shared<MockEndpoint>();
   auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, selector,
                                                            std::vector<std::shared_ptr<Filter>>{});
-  ConnectionTracker::TcpEntry::SynTimeout = std::chrono::seconds(1);
-  ConnectionTracker::TcpEntry::EstablishedTimeout = std::chrono::seconds(1);
-  ConnectionTracker::TcpEntry::FinTimeout = std::chrono::seconds(1);
-  ConnectionTracker::UdpEntry::Timeout = std::chrono::seconds(1);
-  ConnectionTracker::IcmpConnEntry::Timeout = std::chrono::seconds(1);
 
   bool testPassed = false;
 
@@ -458,10 +480,9 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     }
 
     // Test 4: Conntrack pruning
-    // Wait for 1.5 seconds so entry expires, then check if selector is called again
+    // Warp monotonic clock forward 61s so entry expires, then check if selector is called again
     {
-      waitTimer.expires_after(std::chrono::milliseconds(1500));
-      co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+      timeClient.FastForward(std::chrono::seconds(61));
 
       // Send packet for same connection
       auto srcIp = boost::asio::ip::make_address_v4("10.0.0.3");
@@ -483,13 +504,6 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     co_await udpClient->WaitService();
     co_await udpServer->Stop();
     co_await udpServer->WaitService();
-
-    // Restore default timeouts
-    ConnectionTracker::TcpEntry::SynTimeout = std::chrono::seconds(60);
-    ConnectionTracker::TcpEntry::EstablishedTimeout = std::chrono::seconds(1200);
-    ConnectionTracker::TcpEntry::FinTimeout = std::chrono::seconds(30);
-    ConnectionTracker::UdpEntry::Timeout = std::chrono::seconds(30);
-    ConnectionTracker::IcmpConnEntry::Timeout = std::chrono::seconds(30);
 
     co_await current.WaitAll();
     testPassed = true;
@@ -674,4 +688,19 @@ TEST(VpnClientMultiChannelTest, MigrateTun) {
   io.run();
   EXPECT_TRUE(testPassed);
 }
+
+int main(int argc, char* argv[]) {
+  if (std::getenv("OMNI_TIMETRAVEL_IS_CHILD")) {
+    std::cout << "[Child] Running Google Test suite..." << std::endl;
+    testing::InitGoogleTest(&argc, argv);
+    return RUN_ALL_TESTS();
+  }
+
+  std::cout << "[Parent] Starting orchestrator..." << std::endl;
+  Omni::TimeTravel::Orchestrator orchestrator;
+  int status = orchestrator.Run(argv);
+  std::cout << "[Parent] Orchestrator completed. Child status: " << status << std::endl;
+  return status;
+}
+
 
