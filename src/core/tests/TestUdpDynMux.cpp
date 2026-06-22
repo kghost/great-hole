@@ -485,7 +485,7 @@ TEST(UdpDynMuxTest, InvalidChannelAndRenegotiation) {
 
     co_await Omni::Fiber::Yield();
     boost::asio::steady_timer waitTimer2(io.get_executor());
-    waitTimer2.expires_after(std::chrono::milliseconds(200));
+    waitTimer2.expires_after(std::chrono::milliseconds(20));
     co_await waitTimer2.async_wait(Omni::Fiber::AsioUseFiber);
     co_await Omni::Fiber::Yield();
 
@@ -711,7 +711,7 @@ TEST(UdpDynMuxTest, KeepaliveRttHandshake) {
 
     // Verify server does not send any further keepalive packets
     boost::asio::steady_timer checkTimer(io.get_executor());
-    checkTimer.expires_after(std::chrono::milliseconds(50));
+    checkTimer.expires_after(std::chrono::milliseconds(20));
     co_await checkTimer.async_wait(Omni::Fiber::AsioUseFiber);
     EXPECT_EQ(rawSocket.available(), 0);
 
@@ -826,7 +826,7 @@ TEST(UdpDynMuxTest, InvalidAddressAndRenegotiation) {
     // Wait for Dev 2 to receive the packet and transition
     co_await Omni::Fiber::Yield();
     boost::asio::steady_timer waitTimer2(io.get_executor());
-    waitTimer2.expires_after(std::chrono::milliseconds(50));
+    waitTimer2.expires_after(std::chrono::milliseconds(20));
     co_await waitTimer2.async_wait(Omni::Fiber::AsioUseFiber);
 
     // Verify Dev 2 is in negotiating state and sends INITIATE to Dev 1

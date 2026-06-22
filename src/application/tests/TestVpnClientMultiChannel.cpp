@@ -30,17 +30,11 @@ class AsioWarpListener : public Omni::TimeTravel::IWarpListener {
 public:
   explicit AsioWarpListener(boost::asio::io_context& io) : _Io(io) {}
 
-  void OnPreWarp() override {
-    _Io.notify_fork(boost::asio::io_context::fork_prepare);
-  }
+  void OnPreWarp() override { _Io.notify_fork(boost::asio::io_context::fork_prepare); }
 
-  void OnPostWarpParent() override {
-    _Io.notify_fork(boost::asio::io_context::fork_parent);
-  }
+  void OnPostWarpParent() override { _Io.notify_fork(boost::asio::io_context::fork_parent); }
 
-  void OnPostWarpChild() override {
-    _Io.notify_fork(boost::asio::io_context::fork_child);
-  }
+  void OnPostWarpChild() override { _Io.notify_fork(boost::asio::io_context::fork_child); }
 
 private:
   boost::asio::io_context& _Io;
@@ -413,7 +407,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     // Wait for OnChannelEstablished to be invoked on connTrack
     // Server should accept client channel
     boost::asio::steady_timer waitTimer(io.get_executor());
-    waitTimer.expires_after(std::chrono::milliseconds(200));
+    waitTimer.expires_after(std::chrono::milliseconds(20));
     co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
 
     Cancel cancelObj;
@@ -558,7 +552,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
 
     // Wait for OnChannelEstablished
     boost::asio::steady_timer waitTimer(io.get_executor());
-    waitTimer.expires_after(std::chrono::milliseconds(200));
+    waitTimer.expires_after(std::chrono::milliseconds(20));
     co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
 
     Cancel cancelObj;
@@ -584,7 +578,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
       mockTun->PushRead(std::move(p));
 
       // Wait a brief moment to ensure no crash occurs and packet is dropped
-      waitTimer.expires_after(std::chrono::milliseconds(200));
+      waitTimer.expires_after(std::chrono::milliseconds(20));
       co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
 
       EXPECT_EQ(selectorCalls, 1);
@@ -702,5 +696,3 @@ int main(int argc, char* argv[]) {
   std::cout << "[Parent] Orchestrator completed. Child status: " << status << std::endl;
   return status;
 }
-
-

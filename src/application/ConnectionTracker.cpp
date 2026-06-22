@@ -24,6 +24,7 @@ ConnectionTracker::ConnectionTracker(boost::asio::any_io_executor executor, Sele
 Omni::Fiber::Coroutine<ErrorCode> ConnectionTracker::DoStart() { co_return ErrorCode{}; }
 
 Omni::Fiber::Coroutine<void> ConnectionTracker::DoWork() {
+  // TODO: merge these timers
   boost::asio::steady_timer tcpTimer(_Executor);
   boost::asio::steady_timer udpTimer(_Executor);
   boost::asio::steady_timer icmpTimer(_Executor);
@@ -92,6 +93,7 @@ Omni::Fiber::Coroutine<ErrorCode> ConnectionTracker::DoGracefulStop() {
 }
 
 void ConnectionTracker::Update(const Packet& packet, ConnectionMark& mark, ConnectionDirection direction) {
+  // TODO: merge lookup and update
   auto keyOpt = ParseConnectionKey(packet, direction);
   if (!keyOpt) {
     return;

@@ -181,7 +181,7 @@ TEST(VpnServerTest, EndToEndBidirectionalRouting) {
 
     // Wait for server notification / pipelines to set up
     boost::asio::steady_timer waitTimer(io.get_executor());
-    waitTimer.expires_after(std::chrono::milliseconds(100));
+    waitTimer.expires_after(std::chrono::milliseconds(20));
     co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
 
     boost::asio::posix::stream_descriptor clientStack(io.get_executor(), fdsClient[1]);
