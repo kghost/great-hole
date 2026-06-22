@@ -152,111 +152,119 @@ std::optional<std::reference_wrapper<ConnectionMark>> ConnectionTracker::ParseCo
   const IPHeader* iph = reinterpret_cast<const IPHeader*>(p.data());
   return iph->As(
       p, truncated,
-      Overload{[&](std::span<const uint8_t> ip4span, const IPv4Header* ip4) {
-                 auto srcAddr = boost::asio::ip::make_address_v4(ip4->GetSrcIp());
-                 auto dstAddr = boost::asio::ip::make_address_v4(ip4->GetDestIp());
-                 return ip4->Next(
-                     ip4span, truncated,
-                     Overload{
-                         [&](std::span<const uint8_t> tcpspan, const TCPHeader* tcp) {
-                           auto srcPort = tcp->GetSrcPort();
-                           auto dstPort = tcp->GetDestPort();
-                           if (direction == ConnectionDirection::kOutput) {
-                             return f(Ip4TcpKey{srcAddr, dstAddr, srcPort, dstPort}, tcp->Flags);
-                           } else {
-                             return f(Ip4TcpKey{dstAddr, srcAddr, dstPort, srcPort}, tcp->Flags);
-                           }
-                         },
-                         [&](std::span<const uint8_t> udpspan, const UDPHeader* udp) {
-                           auto srcPort = udp->GetSrcPort();
-                           auto dstPort = udp->GetDestPort();
-                           if (direction == ConnectionDirection::kOutput) {
-                             return f(Ip4UdpKey{srcAddr, dstAddr, srcPort, dstPort}, 0);
-                           } else {
-                             return f(Ip4UdpKey{dstAddr, srcAddr, dstPort, srcPort}, 0);
-                           }
-                         },
-                         [&](std::span<const uint8_t> icmpspan,
-                             const ICMPv4Header* icmp) -> std::optional<std::reference_wrapper<ConnectionMark>> {
-                           if (icmp->GetType() == IcmpType::EchoRequest || icmp->GetType() == IcmpType::EchoReply) {
-                             uint16_t id = icmp->GetEchoId();
-                             if (direction == ConnectionDirection::kOutput) {
-                               return f(IcmpKey{srcAddr, dstAddr, id}, 0);
-                             } else {
-                               return f(IcmpKey{dstAddr, srcAddr, id}, 0);
-                             }
-                           } else if (icmp->GetType() == IcmpType::DestinationUnreachable) {
-                             if constexpr (direction == ConnectionDirection::kOutput) {
-                               return ParseConnectionKey<ConnectionDirection::kInput>(
-                                   icmpspan.template subspan<sizeof(ICMPv4Header)>(), true, std::forward<F>(f));
-                             } else {
-                               return ParseConnectionKey<ConnectionDirection::kOutput>(
-                                   icmpspan.template subspan<sizeof(ICMPv4Header)>(), true, std::forward<F>(f));
-                             }
-                           }
-                           return std::nullopt;
-                         },
-                         [&](std::span<const uint8_t> span) -> std::optional<std::reference_wrapper<ConnectionMark>> {
-                           return std::nullopt;
-                         },
-                     });
-               },
-               [&](std::span<const uint8_t> ip6span, const IPv6Header* ip6) {
-                 auto srcAddr = boost::asio::ip::make_address_v6(std::to_array(ip6->SrcIp));
-                 auto dstAddr = boost::asio::ip::make_address_v6(std::to_array(ip6->DestIp));
-                 return ip6->Next(
-                     ip6span, truncated,
-                     Overload{
-                         [&](this auto& me, std::span<const uint8_t> hopByHopSpan, const IPv6HopByHopHeader* hopByHop)
-                             -> std::optional<std::reference_wrapper<ConnectionMark>> {
-                           return hopByHop->Next(hopByHopSpan, truncated, me);
-                         },
-                         [&](std::span<const uint8_t> tcpspan, const TCPHeader* tcp) {
-                           auto srcPort = tcp->GetSrcPort();
-                           auto dstPort = tcp->GetDestPort();
-                           if (direction == ConnectionDirection::kOutput) {
-                             return f(Ip6TcpKey{srcAddr, dstAddr, srcPort, dstPort}, tcp->Flags);
-                           } else {
-                             return f(Ip6TcpKey{dstAddr, srcAddr, dstPort, srcPort}, tcp->Flags);
-                           }
-                         },
-                         [&](std::span<const uint8_t> udpspan, const UDPHeader* udp) {
-                           auto srcPort = udp->GetSrcPort();
-                           auto dstPort = udp->GetDestPort();
-                           if (direction == ConnectionDirection::kOutput) {
-                             return f(Ip6UdpKey{srcAddr, dstAddr, srcPort, dstPort}, 0);
-                           } else {
-                             return f(Ip6UdpKey{dstAddr, srcAddr, dstPort, srcPort}, 0);
-                           }
-                         },
-                         [&](std::span<const uint8_t> icmp6span,
-                             const ICMPv6Header* icmp6) -> std::optional<std::reference_wrapper<ConnectionMark>> {
-                           if (icmp6->GetType() == Icmp6Type::EchoRequest || icmp6->GetType() == Icmp6Type::EchoReply) {
-                             uint16_t id = icmp6->GetEchoId();
-                             if (direction == ConnectionDirection::kOutput) {
-                               return f(Icmp6Key{srcAddr, dstAddr, id}, 0);
-                             } else {
-                               return f(Icmp6Key{dstAddr, srcAddr, id}, 0);
-                             }
-                           } else if (icmp6->GetType() == Icmp6Type::DestinationUnreachable) {
-                             if constexpr (direction == ConnectionDirection::kOutput) {
-                               return ParseConnectionKey<ConnectionDirection::kInput>(
-                                   icmp6span.template subspan<sizeof(ICMPv6Header)>(), true, std::forward<F>(f));
-                             } else {
-                               return ParseConnectionKey<ConnectionDirection::kOutput>(
-                                   icmp6span.template subspan<sizeof(ICMPv6Header)>(), true, std::forward<F>(f));
-                             }
-                           }
-                           return std::nullopt;
-                         },
-                         [&](std::span<const uint8_t> span) -> std::optional<std::reference_wrapper<ConnectionMark>> {
-                           return std::nullopt;
-                         },
-                     });
-               },
-               [&](std::span<const uint8_t> span) -> std::optional<std::reference_wrapper<ConnectionMark>> {
-                 return std::nullopt;
-               }});
+      Overload{
+          [&](std::span<const uint8_t> ip4span, const IPv4Header* ip4) {
+            auto srcAddr = boost::asio::ip::make_address_v4(ip4->GetSrcIp());
+            auto dstAddr = boost::asio::ip::make_address_v4(ip4->GetDestIp());
+            return ip4->Next(
+                ip4span, truncated,
+                Overload{
+                    [&](std::span<const uint8_t> tcpspan, const TCPHeader* tcp) {
+                      auto srcPort = tcp->GetSrcPort();
+                      auto dstPort = tcp->GetDestPort();
+                      if (direction == ConnectionDirection::kOutput) {
+                        return f(Ip4TcpKey{srcAddr, dstAddr, srcPort, dstPort}, tcp->Flags);
+                      } else {
+                        return f(Ip4TcpKey{dstAddr, srcAddr, dstPort, srcPort}, tcp->Flags);
+                      }
+                    },
+                    [&](std::span<const uint8_t> udpspan, const UDPHeader* udp) {
+                      auto srcPort = udp->GetSrcPort();
+                      auto dstPort = udp->GetDestPort();
+                      if (direction == ConnectionDirection::kOutput) {
+                        return f(Ip4UdpKey{srcAddr, dstAddr, srcPort, dstPort}, 0);
+                      } else {
+                        return f(Ip4UdpKey{dstAddr, srcAddr, dstPort, srcPort}, 0);
+                      }
+                    },
+                    [&](std::span<const uint8_t> icmpspan,
+                        const ICMPv4Header* icmp) -> std::optional<std::reference_wrapper<ConnectionMark>> {
+                      if (icmp->GetType() == IcmpType::EchoRequest || icmp->GetType() == IcmpType::EchoReply) {
+                        uint16_t id = icmp->GetEchoId();
+                        if (direction == ConnectionDirection::kOutput) {
+                          return f(IcmpKey{srcAddr, dstAddr, id}, 0);
+                        } else {
+                          return f(IcmpKey{dstAddr, srcAddr, id}, 0);
+                        }
+                      } else if (icmp->GetType() == IcmpType::DestinationUnreachable) {
+                        if constexpr (direction == ConnectionDirection::kOutput) {
+                          return ParseConnectionKey<ConnectionDirection::kInput>(
+                              icmpspan.template subspan<sizeof(ICMPv4Header)>(), true, std::forward<F>(f));
+                        } else {
+                          return ParseConnectionKey<ConnectionDirection::kOutput>(
+                              icmpspan.template subspan<sizeof(ICMPv4Header)>(), true, std::forward<F>(f));
+                        }
+                      }
+                      return std::nullopt;
+                    },
+                    [&](std::span<const uint8_t> span,
+                        std::string err) -> std::optional<std::reference_wrapper<ConnectionMark>> {
+                      BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {} -> {} {}", srcAddr.to_string(),
+                                                             dstAddr.to_string(), err);
+                      return std::nullopt;
+                    },
+                });
+          },
+          [&](std::span<const uint8_t> ip6span, const IPv6Header* ip6) {
+            auto srcAddr = boost::asio::ip::make_address_v6(std::to_array(ip6->SrcIp));
+            auto dstAddr = boost::asio::ip::make_address_v6(std::to_array(ip6->DestIp));
+            return ip6->Next(
+                ip6span, truncated,
+                Overload{
+                    [&](this auto& me, std::span<const uint8_t> hopByHopSpan,
+                        const IPv6HopByHopHeader* hopByHop) -> std::optional<std::reference_wrapper<ConnectionMark>> {
+                      return hopByHop->Next(hopByHopSpan, truncated, me);
+                    },
+                    [&](std::span<const uint8_t> tcpspan, const TCPHeader* tcp) {
+                      auto srcPort = tcp->GetSrcPort();
+                      auto dstPort = tcp->GetDestPort();
+                      if (direction == ConnectionDirection::kOutput) {
+                        return f(Ip6TcpKey{srcAddr, dstAddr, srcPort, dstPort}, tcp->Flags);
+                      } else {
+                        return f(Ip6TcpKey{dstAddr, srcAddr, dstPort, srcPort}, tcp->Flags);
+                      }
+                    },
+                    [&](std::span<const uint8_t> udpspan, const UDPHeader* udp) {
+                      auto srcPort = udp->GetSrcPort();
+                      auto dstPort = udp->GetDestPort();
+                      if (direction == ConnectionDirection::kOutput) {
+                        return f(Ip6UdpKey{srcAddr, dstAddr, srcPort, dstPort}, 0);
+                      } else {
+                        return f(Ip6UdpKey{dstAddr, srcAddr, dstPort, srcPort}, 0);
+                      }
+                    },
+                    [&](std::span<const uint8_t> icmp6span,
+                        const ICMPv6Header* icmp6) -> std::optional<std::reference_wrapper<ConnectionMark>> {
+                      if (icmp6->GetType() == Icmp6Type::EchoRequest || icmp6->GetType() == Icmp6Type::EchoReply) {
+                        uint16_t id = icmp6->GetEchoId();
+                        if (direction == ConnectionDirection::kOutput) {
+                          return f(Icmp6Key{srcAddr, dstAddr, id}, 0);
+                        } else {
+                          return f(Icmp6Key{dstAddr, srcAddr, id}, 0);
+                        }
+                      } else if (icmp6->GetType() == Icmp6Type::DestinationUnreachable) {
+                        if constexpr (direction == ConnectionDirection::kOutput) {
+                          return ParseConnectionKey<ConnectionDirection::kInput>(
+                              icmp6span.template subspan<sizeof(ICMPv6Header)>(), true, std::forward<F>(f));
+                        } else {
+                          return ParseConnectionKey<ConnectionDirection::kOutput>(
+                              icmp6span.template subspan<sizeof(ICMPv6Header)>(), true, std::forward<F>(f));
+                        }
+                      }
+                      return std::nullopt;
+                    },
+                    [&](std::span<const uint8_t> span,
+                        std::string err) -> std::optional<std::reference_wrapper<ConnectionMark>> {
+                      BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {} -> {} {}", srcAddr.to_string(),
+                                                             dstAddr.to_string(), err);
+                      return std::nullopt;
+                    },
+                });
+          },
+          [&](std::span<const uint8_t> span, std::string err) -> std::optional<std::reference_wrapper<ConnectionMark>> {
+            BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {}", err);
+            return std::nullopt;
+          }});
 }
 
 } // namespace gh
