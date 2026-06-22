@@ -144,14 +144,27 @@ private:
   State _State = State::kNegotiating;
   std::optional<boost::asio::ip::udp::endpoint> _Peer;
   std::chrono::steady_clock::time_point _LastSeen;
+  std::chrono::steady_clock::time_point _LastPingSentTime;
+  std::chrono::steady_clock::time_point _NextKeepaliveSilentTime;
   std::chrono::steady_clock::time_point _NextKeepaliveTime;
-  std::optional<std::chrono::steady_clock::time_point> _LastPingSentTime;
   Omni::Fiber::Pipe<Packet> _DataPacket;
   Omni::Fiber::Pipe<std::tuple<boost::asio::ip::udp::endpoint, Packet>> _ControlPacket;
+
+  static constexpr std::chrono::seconds MinKeepaliveInterval = std::chrono::seconds(60);
+  static constexpr std::chrono::seconds MaxKeepaliveInterval = std::chrono::seconds(90);
+  static constexpr std::chrono::seconds KeepaliveTimeout = 3 * MaxKeepaliveInterval;
 
   Omni::Fiber::Coroutine<State> DoWorkNegotiating();
   Omni::Fiber::Coroutine<State> DoWorkRunning();
   Omni::Fiber::Coroutine<UdpDynMux::Channel::State> HandleControlPacket(boost::asio::ip::udp::endpoint, Packet&);
+  void AdjustKeepaliveTimers(std::chrono::steady_clock::time_point now) {
+    _LastPingSentTime = now;
+    _NextKeepaliveSilentTime = now + MinKeepaliveInterval;
+    std::uniform_int_distribution<long long> dist(
+        std::chrono::duration_cast<std::chrono::seconds>(MinKeepaliveInterval).count(),
+        std::chrono::duration_cast<std::chrono::seconds>(MaxKeepaliveInterval).count());
+    _NextKeepaliveTime = now + std::chrono::seconds(dist(_Parent._Prng));
+  }
 };
 
 } // namespace gh

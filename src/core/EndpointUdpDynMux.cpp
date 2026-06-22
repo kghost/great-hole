@@ -147,7 +147,7 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNego
 Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkRunning() {
   while (!_Service.value()._Stop.IsTriggered()) {
     auto now = std::chrono::steady_clock::now();
-    if (now - _LastSeen > std::chrono::seconds(180)) {
+    if (now - _LastSeen > KeepaliveTimeout) {
       BOOST_LOG_TRIVIAL(warning) << GetName() << " session timeout, resetting to negotiating";
       _Peer = std::nullopt;
       _RemoteRxId = 0;
@@ -155,10 +155,8 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkRunn
     }
 
     if (now >= _NextKeepaliveTime) {
-      _LastPingSentTime = now;
-      co_await _Parent.SendControlKeepalive(_Peer.value(), _Psk, 0x01); // Ping=1, Pong=0
-      std::uniform_int_distribution<int> dist(30, 60);
-      _NextKeepaliveTime = now + std::chrono::seconds(dist(_Parent._Prng));
+      AdjustKeepaliveTimers(now);
+      co_await _Parent.SendControlKeepalive(_Peer.value(), _Psk, KeepaliveFlags::kPing);
     }
 
     boost::asio::steady_timer timer(_Parent._Socket.get_executor());
@@ -305,22 +303,18 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
                         _LastSeen = now;
 
                         if (flag & KeepaliveFlags::kPong) {
-                          if (_LastPingSentTime.has_value()) {
-                            auto rtt =
-                                std::chrono::duration_cast<std::chrono::milliseconds>(now - *_LastPingSentTime).count();
-                            BOOST_LOG_TRIVIAL(info) << GetName() << " measured RTT: " << rtt << " ms";
-                            _LastPingSentTime = std::nullopt;
-                          }
+                          auto rtt =
+                              std::chrono::duration_cast<std::chrono::milliseconds>(now - _LastPingSentTime).count();
+                          BOOST_LOG_TRIVIAL(info) << GetName() << " measured RTT: " << rtt << " ms";
                         }
 
                         if (flag & KeepaliveFlags::kPing) {
-                          uint8_t flags = KeepaliveFlags::kPong; // Pong is always set in response
-                          if (!(flag & KeepaliveFlags::kPong)) {
-                            // Received pure Ping (first packet in handshake). Set Ping flag to also measure RTT.
-                            flags |= KeepaliveFlags::kPing;
-                            _LastPingSentTime = now;
+                          uint8_t responseFlags = KeepaliveFlags::kPong;
+                          if (now > _NextKeepaliveSilentTime) {
+                            responseFlags |= KeepaliveFlags::kPing;
+                            AdjustKeepaliveTimers(now);
                           }
-                          co_await _Parent.SendControlKeepalive(peer, _Psk, flags);
+                          co_await _Parent.SendControlKeepalive(peer, _Psk, responseFlags);
                         }
                       } else {
                         co_await _Parent.SendControlInvalidAddress(peer, _LocalRxId);
@@ -471,9 +465,10 @@ Omni::Fiber::Coroutine<std::shared_ptr<UdpDynMux::Channel>>
 UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver) {
   auto reply = co_await _ChannelRpc.Call(
       [&udp = *this, psk, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
+        auto now = std::chrono::steady_clock::now();
         auto channel = std::make_shared<Channel>(udp, psk, udp.AllocateUniqueRxId(), resolver);
-        channel->_LastSeen = std::chrono::steady_clock::now();
-        channel->_NextKeepaliveTime = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        channel->_LastSeen = now;
+        channel->_NextKeepaliveTime = now + UdpDynMux::Channel::MinKeepaliveInterval;
 
         auto [it, inserted] = udp._Channels.try_emplace(psk, channel);
         assert(inserted);
