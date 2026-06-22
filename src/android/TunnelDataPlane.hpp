@@ -51,7 +51,7 @@ public:
 
   std::optional<std::reference_wrapper<ConnectionMark>> FindSessionByHandle(VpnClientMultiChannel::Session* session);
 
-  std::optional<TrafficStats> GetTrafficStats(VpnClientMultiChannel::Session* session);
+  std::optional<VpnTrafficStats> GetTrafficStats(VpnClientMultiChannel::Session* session);
 
 private:
   boost::asio::any_io_executor _Executor;

@@ -94,6 +94,7 @@ public static class TrafficStats {
     public long rxBytes;
     public long txPackets;
     public long rxPackets;
+    public long rttMs;
 }
 ```
 
@@ -104,7 +105,7 @@ Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeGetT
     JNIEnv* env, jclass clazz, jlong session_handle, jlong endpoint_handle, jobject stats);
 ```
 - **Returns**: `jboolean` (true if successful).
-- **Parameters**: `stats` is a `TrafficStats` object whose `txBytes` and `rxBytes` fields will be populated by native code.
+- **Parameters**: `stats` is a `TrafficStats` object whose `txBytes`, `rxBytes`, `txPackets`, `rxPackets`, and `rttMs` fields will be populated by native code.
 
 ### `nativeStop`
 ```c

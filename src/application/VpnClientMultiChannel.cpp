@@ -382,9 +382,13 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::MigrateTun(std::shared_
   }
 }
 
-std::optional<TrafficStats> VpnClientMultiChannel::GetStats(Session& session) const {
+std::optional<VpnTrafficStats> VpnClientMultiChannel::GetStats(Session& session) const {
   if (session.SessionPipeline) {
-    return session.SessionPipeline->GetTrafficStats();
+    int64_t rttMs = -1;
+    if (session.Channel) {
+      rttMs = session.Channel->GetRoundTripTime().count();
+    }
+    return VpnTrafficStats{session.SessionPipeline->GetTrafficStats(), rttMs};
   }
   return std::nullopt;
 }

@@ -152,7 +152,7 @@ TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannel::Session* session) {
   return std::nullopt;
 }
 
-std::optional<TrafficStats> TunnelDataPlane::GetTrafficStats(VpnClientMultiChannel::Session* session) {
+std::optional<VpnTrafficStats> TunnelDataPlane::GetTrafficStats(VpnClientMultiChannel::Session* session) {
   if (!_Client || !_Endpoints.contains(session)) {
     return std::nullopt;
   }

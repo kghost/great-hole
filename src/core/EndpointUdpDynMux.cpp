@@ -303,9 +303,8 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
                         _LastSeen = now;
 
                         if (flag & KeepaliveFlags::kPong) {
-                          auto rtt =
-                              std::chrono::duration_cast<std::chrono::milliseconds>(now - _LastPingSentTime).count();
-                          BOOST_LOG_TRIVIAL(info) << GetName() << " measured RTT: " << rtt << " ms";
+                          _RoundTripTime =
+                              std::chrono::duration_cast<std::chrono::milliseconds>(now - _LastPingSentTime);
                         }
 
                         if (flag & KeepaliveFlags::kPing) {

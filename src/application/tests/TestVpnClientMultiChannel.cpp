@@ -696,6 +696,80 @@ TEST(VpnClientMultiChannelTest, MigrateTun) {
   EXPECT_TRUE(testPassed);
 }
 
+TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  auto udpClient = std::make_shared<UdpDynMux>(
+      io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udpServer = std::make_shared<UdpDynMux>(
+      io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+
+  UdpDynMux::PskType psk = {1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6};
+
+  std::optional<std::reference_wrapper<VpnClientMultiChannel::Session>> resolvedSession;
+  int selectorCalls = 0;
+
+  RoutingSelector selector(resolvedSession, selectorCalls);
+
+  auto mockTun = std::make_shared<MockEndpoint>();
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, selector,
+                                                           std::vector<std::shared_ptr<Filter>>{});
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+
+    // Start all services
+    EXPECT_FALSE(co_await udpClient->Start());
+    EXPECT_FALSE(co_await udpServer->Start());
+    EXPECT_FALSE(co_await connTrack->Start());
+
+    // Before session channel is established/registered, stats should be nullopt
+    auto& session = (co_await connTrack->RegisterChannel(psk, nullptr)).get();
+    EXPECT_NE(session.Channel, nullptr);
+    resolvedSession = session;
+
+    auto initialStats = connTrack->GetStats(session);
+    EXPECT_FALSE(initialStats.has_value());
+
+    // Connect client to server to establish pipeline and running session
+    auto resolver = std::make_shared<ResolverStaticEndpoint>(udpServer->LocalEndpoint());
+    auto clientChannel = co_await udpClient->CreateChannel(psk, resolver);
+    EXPECT_NE(clientChannel, nullptr);
+
+    // Wait for OnChannelEstablished
+    boost::asio::steady_timer waitTimer(io.get_executor());
+    waitTimer.expires_after(std::chrono::milliseconds(20));
+    co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+
+    // Now stats should be available and RttMs should be initialized/retrieved
+    auto stats = connTrack->GetStats(session);
+    EXPECT_TRUE(stats.has_value());
+    if (stats.has_value()) {
+      EXPECT_EQ(stats->RttMs, 0); // initial default value
+    }
+
+    // Cleanup
+    co_await connTrack->Stop();
+    co_await connTrack->WaitService();
+    co_await udpClient->Stop();
+    co_await udpClient->WaitService();
+    co_await udpServer->Stop();
+    co_await udpServer->WaitService();
+
+    co_await current.WaitAll();
+    testPassed = true;
+    co_return;
+  });
+
+  io.restart();
+  io.run();
+  EXPECT_TRUE(testPassed);
+}
+
 int main(int argc, char* argv[]) {
   if (std::getenv("OMNI_TIMETRAVEL_IS_CHILD")) {
     std::cout << "[Child] Running Google Test suite..." << std::endl;

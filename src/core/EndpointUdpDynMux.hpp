@@ -130,6 +130,7 @@ public:
   UdpDynMux::PskType GetPsk() const { return _Psk; }
   uint16_t GetLocalRxId() const { return _LocalRxId; }
   uint16_t GetRemoteRxId() const { return _RemoteRxId; }
+  std::chrono::milliseconds GetRoundTripTime() const { return _RoundTripTime; }
 
   Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override;
   Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel& c) override;
@@ -149,6 +150,7 @@ private:
   std::chrono::steady_clock::time_point _NextKeepaliveTime;
   Omni::Fiber::Pipe<Packet> _DataPacket;
   Omni::Fiber::Pipe<std::tuple<boost::asio::ip::udp::endpoint, Packet>> _ControlPacket;
+  std::chrono::milliseconds _RoundTripTime{0};
 
   static constexpr std::chrono::seconds MinKeepaliveInterval = std::chrono::seconds(60);
   static constexpr std::chrono::seconds MaxKeepaliveInterval = std::chrono::seconds(90);

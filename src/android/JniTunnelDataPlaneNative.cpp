@@ -76,7 +76,7 @@ public:
   bool ProtectSocket(int fd);
   void OnVpnStateChanged(TunnelState state, const std::string& message) override;
   void OnTunnelStateChanged(int64_t endpointHandle, int state, const std::string& error) override;
-  std::optional<TrafficStats> GetTrafficStats(jlong endpointHandle);
+  std::optional<VpnTrafficStats> GetTrafficStats(jlong endpointHandle);
 
   template <typename Func> void PostTask(Func&& func) {
     _IoContext.post([this, func = std::forward<Func>(func)]() mutable {
@@ -378,8 +378,8 @@ void JniSession::OnTunnelStateChanged(int64_t endpointHandle, int state, const s
   }
 }
 
-std::optional<TrafficStats> JniSession::GetTrafficStats(jlong endpointHandle) {
-  std::promise<std::optional<TrafficStats>> promise;
+std::optional<VpnTrafficStats> JniSession::GetTrafficStats(jlong endpointHandle) {
+  std::promise<std::optional<VpnTrafficStats>> promise;
   auto future = promise.get_future();
 
   PostTask([&promise, endpointHandle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
@@ -578,7 +578,8 @@ JNIEXPORT jboolean JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunne
   jfieldID rxBytesField = env->GetFieldID(statsClass, "rxBytes", "J");
   jfieldID txPacketsField = env->GetFieldID(statsClass, "txPackets", "J");
   jfieldID rxPacketsField = env->GetFieldID(statsClass, "rxPackets", "J");
-  if (!txBytesField || !rxBytesField || !txPacketsField || !rxPacketsField) {
+  jfieldID rttMsField = env->GetFieldID(statsClass, "rttMs", "J");
+  if (!txBytesField || !rxBytesField || !txPacketsField || !rxPacketsField || !rttMsField) {
     return JNI_FALSE;
   }
 
@@ -586,6 +587,7 @@ JNIEXPORT jboolean JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunne
   env->SetLongField(stats, rxBytesField, static_cast<jlong>(res->ForwardBytes));
   env->SetLongField(stats, txPacketsField, static_cast<jlong>(res->BackwardPackets));
   env->SetLongField(stats, rxPacketsField, static_cast<jlong>(res->ForwardPackets));
+  env->SetLongField(stats, rttMsField, static_cast<jlong>(res->RttMs));
   return JNI_TRUE;
 }
 

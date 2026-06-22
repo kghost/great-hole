@@ -20,6 +20,13 @@
 
 namespace gh {
 
+struct VpnTrafficStats : public TrafficStats {
+  VpnTrafficStats() = default;
+  explicit VpnTrafficStats(const TrafficStats& stats, int64_t rttMs = -1) : TrafficStats(stats), RttMs(rttMs) {}
+
+  int64_t RttMs{-1};
+};
+
 class VpnClientMultiChannel : public ServiceBase, public UdpDynMux::ChannelNotification {
 public:
   class TunSideEndpoint;
@@ -75,7 +82,7 @@ public:
   Omni::Fiber::Coroutine<void> UnregisterChannel(Session& session);
   Omni::Fiber::Coroutine<ErrorCode> MigrateTun(std::shared_ptr<Endpoint> newTun);
 
-  std::optional<TrafficStats> GetStats(Session& session) const;
+  std::optional<VpnTrafficStats> GetStats(Session& session) const;
 
   Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override;
   Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override;
