@@ -58,7 +58,7 @@ public:
   static NoopSessionStateListener _NoopSessionStateListener;
 
   VpnClientMultiChannel(boost::asio::any_io_executor executor, std::shared_ptr<Endpoint> tun,
-                        std::shared_ptr<UdpDynMux> udpDynMux, ConnectionTracker::SelectorType selector,
+                        std::shared_ptr<UdpDynMux> udpDynMux, ConnectionTracker::Selector& selector,
                         std::vector<std::shared_ptr<Filter>> filters,
                         SessionStateListener& listener = _NoopSessionStateListener);
   ~VpnClientMultiChannel() override;
@@ -89,7 +89,7 @@ private:
   boost::asio::any_io_executor _Executor;
   std::shared_ptr<Endpoint> _Tun;
   std::shared_ptr<UdpDynMux> _UdpDynMux;
-  ConnectionTracker::SelectorType _Selector;
+  ConnectionTracker::Selector& _Selector;
   std::vector<std::shared_ptr<Filter>> _Filters;
 
   std::shared_ptr<TunSideEndpoint> _TunSide;

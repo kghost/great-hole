@@ -175,7 +175,7 @@ VpnClientMultiChannel::NoopSessionStateListener VpnClientMultiChannel::_NoopSess
 
 VpnClientMultiChannel::VpnClientMultiChannel(boost::asio::any_io_executor executor, std::shared_ptr<Endpoint> tun,
                                              std::shared_ptr<UdpDynMux> udpDynMux,
-                                             ConnectionTracker::SelectorType selector,
+                                             ConnectionTracker::Selector& selector,
                                              std::vector<std::shared_ptr<Filter>> filters,
                                              SessionStateListener& listener)
     : _Executor(executor), _Tun(tun), _UdpDynMux(udpDynMux), _Selector(selector), _Filters(filters),

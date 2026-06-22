@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <compare>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <set>
@@ -94,11 +95,9 @@ public:
     virtual std::optional<std::reference_wrapper<ConnectionMark>> operator()(const Icmp6Key&) const = 0;
   };
 
-  using SelectorType = Selector&;
-
   using ValidatorType = std::function<bool(ConnectionMark&)>;
 
-  explicit ConnectionTracker(boost::asio::any_io_executor executor, SelectorType selector);
+  explicit ConnectionTracker(boost::asio::any_io_executor executor, Selector& selector);
   ~ConnectionTracker() override = default;
 
   struct ConnectionEntry {
@@ -109,11 +108,10 @@ public:
   struct TcpEntry : public ConnectionEntry {
     enum class TcpState { kSynSent, kEstablished, kFinWait, kClosed };
 
-    TcpEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive,
-             TcpState state = TcpState::kSynSent)
-        : ConnectionEntry{mark, lastActive}, State(state) {}
+    explicit TcpEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive, uint8_t flags)
+        : ConnectionEntry{mark, lastActive}, State(InitialState(flags)) {}
 
-    TcpState State = TcpState::kSynSent;
+    TcpState State;
     static constexpr std::chrono::seconds SynTimeout = std::chrono::seconds(60);
     static constexpr std::chrono::seconds EstablishedTimeout = std::chrono::seconds(1200);
     static constexpr std::chrono::seconds FinTimeout = std::chrono::seconds(30);
@@ -130,7 +128,20 @@ public:
       }
     }
 
-    void UpdateTcpState(uint8_t flags) {
+    static TcpState InitialState(uint8_t flags) {
+      if (flags & 0x04) { // RST
+        return TcpEntry::TcpState::kClosed;
+      } else if (flags & 0x01) { // FIN
+        return TcpEntry::TcpState::kFinWait;
+      } else if ((flags & 0x02) && !(flags & 0x10)) { // SYN only
+        return TcpEntry::TcpState::kSynSent;
+      } else if (flags & 0x10) { // ACK
+        return TcpEntry::TcpState::kEstablished;
+      }
+      return TcpEntry::TcpState::kClosed;
+    }
+
+    void UpdateState(uint8_t flags) {
       if (flags & 0x04) { // RST
         State = TcpEntry::TcpState::kClosed;
       } else if (flags & 0x01) { // FIN
@@ -146,17 +157,19 @@ public:
   };
 
   struct UdpEntry : public ConnectionEntry {
-    UdpEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive)
+    UdpEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive, int)
         : ConnectionEntry{mark, lastActive} {}
     static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
     std::chrono::seconds GetTimeout() const { return Timeout; }
+    void UpdateState(int) {}
   };
 
   struct IcmpConnEntry : public ConnectionEntry {
-    IcmpConnEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive)
+    IcmpConnEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive, int)
         : ConnectionEntry{mark, lastActive} {}
     static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
     std::chrono::seconds GetTimeout() const { return Timeout; }
+    void UpdateState(int) {}
   };
 
   struct Ip4TcpEntry {
@@ -221,10 +234,11 @@ protected:
 
 private:
   template <ConnectionDirection, typename F>
-  static bool ParseConnectionKey(std::span<const uint8_t> p, bool truncated, F&& f);
+  static std::optional<std::reference_wrapper<ConnectionMark>> ParseConnectionKey(std::span<const uint8_t> p,
+                                                                                  bool truncated, F&& f);
 
   boost::asio::any_io_executor _Executor;
-  SelectorType _Selector;
+  Selector& _Selector;
   std::set<Ip4TcpEntry, EntryCompare<Ip4TcpEntry>> _Ip4TcpTable;
   std::set<Ip6TcpEntry, EntryCompare<Ip6TcpEntry>> _Ip6TcpTable;
   std::set<Ip4UdpEntry, EntryCompare<Ip4UdpEntry>> _Ip4UdpTable;

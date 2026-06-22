@@ -17,7 +17,7 @@
 
 namespace gh {
 
-TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::SelectorType selector,
+TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
                                  DataPlaneCallbacks& callbacks)
     : _Executor(executor), _Selector(selector), _Callbacks(callbacks) {}
 

@@ -18,7 +18,7 @@
 
 namespace gh {
 
-ConnectionTracker::ConnectionTracker(boost::asio::any_io_executor executor, SelectorType selector)
+ConnectionTracker::ConnectionTracker(boost::asio::any_io_executor executor, Selector& selector)
     : _Executor(executor), _Selector(selector) {}
 
 Omni::Fiber::Coroutine<ErrorCode> ConnectionTracker::DoStart() { co_return ErrorCode{}; }
@@ -61,80 +61,62 @@ std::optional<std::reference_wrapper<ConnectionMark>>
 ConnectionTracker::LookupAndUpdate(const Packet& packet, std::optional<std::reference_wrapper<ConnectionMark>> mark,
                                    ValidatorType validator) {
   auto now = std::chrono::steady_clock::now();
-  std::optional<std::reference_wrapper<ConnectionMark>> resultMark = std::nullopt;
-
-  bool success = ParseConnectionKey<Direction>(packet.Data(), false, [&](auto&& key, auto keyExtra) -> bool {
-    using T = std::decay_t<decltype(key)>;
-    auto& table = [&]() -> auto& {
-      if constexpr (std::is_same_v<T, Ip4TcpKey>) {
-        return _Ip4TcpTable;
-      } else if constexpr (std::is_same_v<T, Ip6TcpKey>) {
-        return _Ip6TcpTable;
-      } else if constexpr (std::is_same_v<T, Ip4UdpKey>) {
-        return _Ip4UdpTable;
-      } else if constexpr (std::is_same_v<T, Ip6UdpKey>) {
-        return _Ip6UdpTable;
-      } else if constexpr (std::is_same_v<T, IcmpKey>) {
-        return _IcmpTable;
-      } else if constexpr (std::is_same_v<T, Icmp6Key>) {
-        return _Icmp6Table;
-      }
-    }();
-
-    auto it = table.find(key);
-    if (it != table.end()) {
-      if (now - it->Entry.LastActive <= it->Entry.GetTimeout()) {
-        auto& currentMark = it->Entry.Mark;
-        if (validator && !validator(currentMark)) {
-          table.erase(it);
-        } else {
-          it->Entry.LastActive = now;
-          if constexpr (std::is_same_v<T, Ip4TcpKey> || std::is_same_v<T, Ip6TcpKey>) {
-            it->Entry.UpdateTcpState(keyExtra);
+  return ParseConnectionKey<Direction>(
+      packet.Data(), false, [&](auto&& key, auto keyExtra) -> std::optional<std::reference_wrapper<ConnectionMark>> {
+        using T = std::decay_t<decltype(key)>;
+        auto& table = [&]() -> auto& {
+          if constexpr (std::is_same_v<T, Ip4TcpKey>) {
+            return _Ip4TcpTable;
+          } else if constexpr (std::is_same_v<T, Ip6TcpKey>) {
+            return _Ip6TcpTable;
+          } else if constexpr (std::is_same_v<T, Ip4UdpKey>) {
+            return _Ip4UdpTable;
+          } else if constexpr (std::is_same_v<T, Ip6UdpKey>) {
+            return _Ip6UdpTable;
+          } else if constexpr (std::is_same_v<T, IcmpKey>) {
+            return _IcmpTable;
+          } else if constexpr (std::is_same_v<T, Icmp6Key>) {
+            return _Icmp6Table;
           }
-          resultMark = currentMark;
-        }
-      } else {
-        table.erase(it);
-      }
-    }
+        }();
 
-    if (!resultMark.has_value()) {
-      std::optional<std::reference_wrapper<ConnectionMark>> targetMark = std::nullopt;
-      if (mark.has_value()) {
-        if (!validator || validator(mark.value().get())) {
-          targetMark = mark;
-        }
-      } else {
-        auto selected = _Selector(key);
-        if (selected.has_value()) {
-          if (!validator || validator(selected.value().get())) {
-            targetMark = selected;
+        auto it = table.find(key);
+        if (it != table.end()) {
+          if (now - it->Entry.LastActive <= it->Entry.GetTimeout()) {
+            auto& currentMark = it->Entry.Mark;
+            if (validator && !validator(currentMark)) {
+              table.erase(it);
+            } else {
+              it->Entry.LastActive = now;
+              it->Entry.UpdateState(keyExtra);
+              return currentMark;
+            }
+          } else {
+            table.erase(it);
           }
         }
-      }
 
-      if (targetMark.has_value()) {
-        using EntryType = typename std::decay_t<decltype(table)>::value_type;
-        if constexpr (std::is_same_v<T, Ip4TcpKey> || std::is_same_v<T, Ip6TcpKey>) {
-          EntryType fullEntry{key, TcpEntry{targetMark.value().get(), now, TcpEntry::TcpState::kSynSent}};
-          fullEntry.Entry.UpdateTcpState(keyExtra);
-          table.emplace(fullEntry);
-        } else if constexpr (std::is_same_v<T, Ip4UdpKey> || std::is_same_v<T, Ip6UdpKey>) {
-          table.emplace(EntryType{key, UdpEntry{targetMark.value().get(), now}});
+        std::optional<std::reference_wrapper<ConnectionMark>> targetMark = std::nullopt;
+        if (mark.has_value()) {
+          if (!validator || validator(mark.value().get())) {
+            targetMark = mark;
+          }
         } else {
-          table.emplace(EntryType{key, IcmpConnEntry{targetMark.value().get(), now}});
+          auto selected = _Selector(key);
+          if (selected.has_value()) {
+            if (!validator || validator(selected.value().get())) {
+              targetMark = selected;
+            }
+          }
         }
-        resultMark = targetMark;
-      }
-    }
-    return true;
-  });
 
-  if (!success) {
-    return std::nullopt;
-  }
-  return resultMark;
+        if (targetMark.has_value()) {
+          using EntryType = typename std::decay_t<decltype(table)>::value_type;
+          table.emplace(EntryType{key, decltype(EntryType::Entry){targetMark.value().get(), now, keyExtra}});
+          return targetMark;
+        }
+        return std::nullopt;
+      });
 }
 
 template std::optional<std::reference_wrapper<ConnectionMark>>
@@ -165,7 +147,8 @@ void ConnectionTracker::Clear() {
 }
 
 template <ConnectionDirection direction, typename F>
-bool ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> p, bool truncated, F&& f) {
+std::optional<std::reference_wrapper<ConnectionMark>> ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> p,
+                                                                                            bool truncated, F&& f) {
   const IPHeader* iph = reinterpret_cast<const IPHeader*>(p.data());
   return iph->As(
       p, truncated,
@@ -175,7 +158,7 @@ bool ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> p, bool trun
                  return ip4->Next(
                      ip4span, truncated,
                      Overload{
-                         [&](std::span<const uint8_t> tcpspan, const TCPHeader* tcp) -> bool {
+                         [&](std::span<const uint8_t> tcpspan, const TCPHeader* tcp) {
                            auto srcPort = tcp->GetSrcPort();
                            auto dstPort = tcp->GetDestPort();
                            if (direction == ConnectionDirection::kOutput) {
@@ -184,7 +167,7 @@ bool ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> p, bool trun
                              return f(Ip4TcpKey{dstAddr, srcAddr, dstPort, srcPort}, tcp->Flags);
                            }
                          },
-                         [&](std::span<const uint8_t> udpspan, const UDPHeader* udp) -> bool {
+                         [&](std::span<const uint8_t> udpspan, const UDPHeader* udp) {
                            auto srcPort = udp->GetSrcPort();
                            auto dstPort = udp->GetDestPort();
                            if (direction == ConnectionDirection::kOutput) {
@@ -193,7 +176,8 @@ bool ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> p, bool trun
                              return f(Ip4UdpKey{dstAddr, srcAddr, dstPort, srcPort}, 0);
                            }
                          },
-                         [&](std::span<const uint8_t> icmpspan, const ICMPv4Header* icmp) -> bool {
+                         [&](std::span<const uint8_t> icmpspan,
+                             const ICMPv4Header* icmp) -> std::optional<std::reference_wrapper<ConnectionMark>> {
                            if (icmp->GetType() == IcmpType::EchoRequest || icmp->GetType() == IcmpType::EchoReply) {
                              uint16_t id = icmp->GetEchoId();
                              if (direction == ConnectionDirection::kOutput) {
@@ -210,9 +194,11 @@ bool ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> p, bool trun
                                    icmpspan.template subspan<sizeof(ICMPv4Header)>(), true, std::forward<F>(f));
                              }
                            }
-                           return false;
+                           return std::nullopt;
                          },
-                         [&](std::span<const uint8_t> span) -> bool { return false; },
+                         [&](std::span<const uint8_t> span) -> std::optional<std::reference_wrapper<ConnectionMark>> {
+                           return std::nullopt;
+                         },
                      });
                },
                [&](std::span<const uint8_t> ip6span, const IPv6Header* ip6) {
@@ -222,7 +208,9 @@ bool ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> p, bool trun
                      ip6span, truncated,
                      Overload{
                          [&](this auto& me, std::span<const uint8_t> hopByHopSpan, const IPv6HopByHopHeader* hopByHop)
-                             -> bool { return hopByHop->Next(hopByHopSpan, truncated, me); },
+                             -> std::optional<std::reference_wrapper<ConnectionMark>> {
+                           return hopByHop->Next(hopByHopSpan, truncated, me);
+                         },
                          [&](std::span<const uint8_t> tcpspan, const TCPHeader* tcp) {
                            auto srcPort = tcp->GetSrcPort();
                            auto dstPort = tcp->GetDestPort();
@@ -241,7 +229,8 @@ bool ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> p, bool trun
                              return f(Ip6UdpKey{dstAddr, srcAddr, dstPort, srcPort}, 0);
                            }
                          },
-                         [&](std::span<const uint8_t> icmp6span, const ICMPv6Header* icmp6) {
+                         [&](std::span<const uint8_t> icmp6span,
+                             const ICMPv6Header* icmp6) -> std::optional<std::reference_wrapper<ConnectionMark>> {
                            if (icmp6->GetType() == Icmp6Type::EchoRequest || icmp6->GetType() == Icmp6Type::EchoReply) {
                              uint16_t id = icmp6->GetEchoId();
                              if (direction == ConnectionDirection::kOutput) {
@@ -258,12 +247,16 @@ bool ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> p, bool trun
                                    icmp6span.template subspan<sizeof(ICMPv6Header)>(), true, std::forward<F>(f));
                              }
                            }
-                           return false;
+                           return std::nullopt;
                          },
-                         [&](std::span<const uint8_t> span) -> bool { return false; },
+                         [&](std::span<const uint8_t> span) -> std::optional<std::reference_wrapper<ConnectionMark>> {
+                           return std::nullopt;
+                         },
                      });
                },
-               [&](std::span<const uint8_t> span) { return false; }});
+               [&](std::span<const uint8_t> span) -> std::optional<std::reference_wrapper<ConnectionMark>> {
+                 return std::nullopt;
+               }});
 }
 
 } // namespace gh

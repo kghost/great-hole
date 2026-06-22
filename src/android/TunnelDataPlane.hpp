@@ -27,7 +27,7 @@ public:
 
 class TunnelDataPlane : public VpnClientMultiChannel::SessionStateListener {
 public:
-  TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::SelectorType selector,
+  TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
                   DataPlaneCallbacks& callbacks);
   ~TunnelDataPlane();
 
@@ -55,7 +55,7 @@ public:
 
 private:
   boost::asio::any_io_executor _Executor;
-  ConnectionTracker::SelectorType& _Selector;
+  ConnectionTracker::Selector& _Selector;
   DataPlaneCallbacks& _Callbacks;
 
   std::shared_ptr<Tun> _Tun;
