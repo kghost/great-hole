@@ -5,7 +5,6 @@
 #include <functional>
 #include <optional>
 #include <set>
-#include <variant>
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/address_v4.hpp>
@@ -84,10 +83,6 @@ public:
     bool operator==(const Icmp6Key&) const = default;
   };
 
-  enum class TcpState { kSynSent, kEstablished, kFinWait, kClosed };
-
-  using ConnectionKey = std::variant<Ip4TcpKey, Ip6TcpKey, Ip4UdpKey, Ip6UdpKey, IcmpKey, Icmp6Key>;
-
   class Selector {
   public:
     virtual ~Selector() = default;
@@ -108,30 +103,60 @@ public:
 
   struct ConnectionEntry {
     ConnectionMark& Mark;
-    mutable std::chrono::steady_clock::time_point LastActive;
+    std::chrono::steady_clock::time_point LastActive;
   };
 
   struct TcpEntry : public ConnectionEntry {
+    enum class TcpState { kSynSent, kEstablished, kFinWait, kClosed };
+
     TcpEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive,
              TcpState state = TcpState::kSynSent)
         : ConnectionEntry{mark, lastActive}, State(state) {}
 
-    mutable TcpState State = TcpState::kSynSent;
+    TcpState State = TcpState::kSynSent;
     static constexpr std::chrono::seconds SynTimeout = std::chrono::seconds(60);
     static constexpr std::chrono::seconds EstablishedTimeout = std::chrono::seconds(1200);
     static constexpr std::chrono::seconds FinTimeout = std::chrono::seconds(30);
+    std::chrono::seconds GetTimeout() const {
+      switch (State) {
+      case TcpState::kSynSent:
+        return SynTimeout;
+      case TcpState::kEstablished:
+        return EstablishedTimeout;
+      case TcpState::kFinWait:
+        return FinTimeout;
+      case TcpState::kClosed:
+        return FinTimeout;
+      }
+    }
+
+    void UpdateTcpState(uint8_t flags) {
+      if (flags & 0x04) { // RST
+        State = TcpEntry::TcpState::kClosed;
+      } else if (flags & 0x01) { // FIN
+        State = TcpEntry::TcpState::kFinWait;
+      } else if ((flags & 0x02) && !(flags & 0x10)) { // SYN only
+        State = TcpEntry::TcpState::kSynSent;
+      } else if (flags & 0x10) { // ACK
+        if (State == TcpEntry::TcpState::kSynSent) {
+          State = TcpEntry::TcpState::kEstablished;
+        }
+      }
+    }
   };
 
   struct UdpEntry : public ConnectionEntry {
     UdpEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive)
         : ConnectionEntry{mark, lastActive} {}
     static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
+    std::chrono::seconds GetTimeout() const { return Timeout; }
   };
 
   struct IcmpConnEntry : public ConnectionEntry {
     IcmpConnEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive)
         : ConnectionEntry{mark, lastActive} {}
     static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
+    std::chrono::seconds GetTimeout() const { return Timeout; }
   };
 
   struct Ip4TcpEntry {
@@ -178,10 +203,10 @@ public:
   ConnectionTracker(ConnectionTracker&&) = delete;
   ConnectionTracker& operator=(ConnectionTracker&&) = delete;
 
-  void Update(const Packet& packet, ConnectionMark& mark, ConnectionDirection direction);
-
-  std::optional<std::reference_wrapper<ConnectionMark>> Lookup(const Packet& packet, ConnectionDirection direction,
-                                                               ValidatorType validator = nullptr);
+  template <ConnectionDirection Direction>
+  std::optional<std::reference_wrapper<ConnectionMark>>
+  LookupAndUpdate(const Packet& packet, std::optional<std::reference_wrapper<ConnectionMark>> mark = std::nullopt,
+                  ValidatorType validator = nullptr);
 
   void RemoveMark(const ConnectionMark& mark);
 
@@ -195,22 +220,8 @@ protected:
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 
 private:
-  static std::optional<ConnectionKey> ParseConnectionKey(const Packet& p, ConnectionDirection direction);
-  static std::optional<uint8_t> GetTcpFlags(const Packet& p);
-
-  static void UpdateTcpState(TcpEntry& entry, uint8_t flags) {
-    if (flags & 0x04) { // RST
-      entry.State = TcpState::kClosed;
-    } else if (flags & 0x01) { // FIN
-      entry.State = TcpState::kFinWait;
-    } else if ((flags & 0x02) && !(flags & 0x10)) { // SYN only
-      entry.State = TcpState::kSynSent;
-    } else if (flags & 0x10) { // ACK
-      if (entry.State == TcpState::kSynSent) {
-        entry.State = TcpState::kEstablished;
-      }
-    }
-  }
+  template <ConnectionDirection, typename F>
+  static bool ParseConnectionKey(std::span<const uint8_t> p, bool truncated, F&& f);
 
   boost::asio::any_io_executor _Executor;
   SelectorType _Selector;

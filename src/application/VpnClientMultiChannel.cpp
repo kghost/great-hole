@@ -39,7 +39,7 @@ public:
     }
     auto [cancelFired, queueFired] =
         co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}),
-                                     Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&p](auto pkt) mutable -> ErrorCode {
+                                     Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&p](auto pkt) -> ErrorCode {
                                        if (pkt.has_value()) {
                                          p = std::move(pkt.value());
                                          return ErrorCode{};
@@ -107,7 +107,7 @@ public:
           if (entry.has_value()) {
             p = std::move(entry.value().Pkt);
             // Perform connection tracking for incoming traffic
-            _ConnectionTracker->Update(p, entry.value().PacketSession, ConnectionDirection::kInput);
+            _ConnectionTracker->LookupAndUpdate<ConnectionDirection::kInput>(p, entry.value().PacketSession);
             return ErrorCode{};
           } else {
             return ErrorCode{AppErrorCategory::kEndOfStream, kAppError};
@@ -128,9 +128,8 @@ public:
       co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
     }
 
-    auto mark = _ConnectionTracker->Lookup(p, ConnectionDirection::kOutput, [this](ConnectionMark& mark) -> bool {
-      return dynamic_cast<Session&>(mark).Running;
-    });
+    auto mark = _ConnectionTracker->LookupAndUpdate<ConnectionDirection::kOutput>(
+        p, std::nullopt, [this](ConnectionMark& mark) -> bool { return dynamic_cast<Session&>(mark).Running; });
 
     if (!mark.has_value()) {
       BOOST_LOG_TRIVIAL(debug) << _Parent.GetName() << ": No channel found or selected, dropping packet";

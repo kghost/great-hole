@@ -1,9 +1,12 @@
 #include "ResolverServicePort.hpp"
 
 #include <arpa/inet.h>
+#include <cstdint>
 #include <netdb.h>
 
 #include <boost/asio.hpp>
+
+#include "Utils/Endian.hpp"
 
 namespace gh {
 
@@ -25,7 +28,7 @@ Omni::Fiber::Coroutine<void> ResolverServicePort::DoWork() {
     _ResolveError = make_error_code(boost::asio::error::invalid_argument);
     co_return;
   }
-  _Port = ntohs(s->s_port);
+  _Port = ArchEndian(static_cast<decltype(_Port)>(s->s_port));
   _ResolveError = ErrorCode{};
 }
 

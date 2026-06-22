@@ -1,6 +1,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <vector>
 
 #include <boost/asio.hpp>
 #include <gtest/gtest.h>
@@ -11,6 +12,8 @@
 #include "Packet.hpp"
 #include "TimeTravel.hpp"
 
+#include "CapturedPackets.hpp"
+
 using namespace gh;
 
 namespace {
@@ -19,123 +22,15 @@ class AsioWarpListener : public Omni::TimeTravel::IWarpListener {
 public:
   explicit AsioWarpListener(boost::asio::io_context& io) : _Io(io) {}
 
-  void OnPreWarp() override {
-    _Io.notify_fork(boost::asio::io_context::fork_prepare);
-  }
+  void OnPreWarp() override { _Io.notify_fork(boost::asio::io_context::fork_prepare); }
 
-  void OnPostWarpParent() override {
-    _Io.notify_fork(boost::asio::io_context::fork_parent);
-  }
+  void OnPostWarpParent() override { _Io.notify_fork(boost::asio::io_context::fork_parent); }
 
-  void OnPostWarpChild() override {
-    _Io.notify_fork(boost::asio::io_context::fork_child);
-  }
+  void OnPostWarpChild() override { _Io.notify_fork(boost::asio::io_context::fork_child); }
 
 private:
   boost::asio::io_context& _Io;
 };
-
-Packet CreateIPv6Packet(const boost::asio::ip::address_v6& src, const boost::asio::ip::address_v6& dst,
-                        uint16_t srcPort, uint16_t dstPort, uint8_t protocol, uint8_t tcpFlags = 0) {
-  Packet p(54, 0);
-  auto data = p.Data();
-  std::fill(data.begin(), data.end(), 0);
-  data[0] = 0x60;     // Version 6
-  data[6] = protocol; // Next Header
-
-  auto srcBytes = src.to_bytes();
-  std::copy(srcBytes.begin(), srcBytes.end(), data.begin() + 8);
-
-  auto dstBytes = dst.to_bytes();
-  std::copy(dstBytes.begin(), dstBytes.end(), data.begin() + 24);
-
-  if (protocol == 6 || protocol == 17) {
-    data[40] = (srcPort >> 8) & 0xFF;
-    data[41] = srcPort & 0xFF;
-    data[42] = (dstPort >> 8) & 0xFF;
-    data[43] = dstPort & 0xFF;
-    if (protocol == 6) {
-      data[53] = tcpFlags;
-    }
-  }
-
-  return p;
-}
-
-Packet CreateIPv4Packet(const boost::asio::ip::address_v4& src, const boost::asio::ip::address_v4& dst,
-                        uint16_t srcPort, uint16_t dstPort, uint8_t protocol, uint8_t tcpFlags = 0) {
-  Packet p(40, 0);
-  auto data = p.Data();
-  std::fill(data.begin(), data.end(), 0);
-  data[0] = 0x45; // Version 4, IHL 5
-  data[9] = protocol;
-
-  auto srcBytes = src.to_bytes();
-  std::copy(srcBytes.begin(), srcBytes.end(), data.begin() + 12);
-
-  auto dstBytes = dst.to_bytes();
-  std::copy(dstBytes.begin(), dstBytes.end(), data.begin() + 16);
-
-  if (protocol == 6 || protocol == 17) {
-    data[20] = (srcPort >> 8) & 0xFF;
-    data[21] = srcPort & 0xFF;
-    data[22] = (dstPort >> 8) & 0xFF;
-    data[23] = dstPort & 0xFF;
-    if (protocol == 6) {
-      data[33] = tcpFlags;
-    }
-  }
-
-  return p;
-}
-
-Packet CreateIcmp4DestUnreachable(const boost::asio::ip::address_v4& src, const boost::asio::ip::address_v4& dst,
-                                  const Packet& originalPacket) {
-  size_t originalSize = originalPacket.DataSize();
-  size_t totalSize = 20 + 8 + originalSize;
-  Packet p(totalSize, 0);
-  auto data = p.Data();
-  std::fill(data.begin(), data.end(), 0);
-
-  data[0] = 0x45; // Version 4, IHL 5
-  data[9] = 1;    // ICMP
-
-  auto srcBytes = src.to_bytes();
-  std::copy(srcBytes.begin(), srcBytes.end(), data.begin() + 12);
-
-  auto dstBytes = dst.to_bytes();
-  std::copy(dstBytes.begin(), dstBytes.end(), data.begin() + 16);
-
-  data[20] = 3; // Type: Destination Unreachable
-  data[21] = 1; // Code: Host Unreachable
-
-  std::copy_n(originalPacket.Data().data(), originalSize, data.data() + 28);
-  return p;
-}
-
-Packet CreateIcmp6DestUnreachable(const boost::asio::ip::address_v6& src, const boost::asio::ip::address_v6& dst,
-                                  const Packet& originalPacket) {
-  size_t originalSize = originalPacket.DataSize();
-  size_t totalSize = 40 + 8 + originalSize;
-  Packet p(totalSize, 0);
-  auto data = p.Data();
-  std::fill(data.begin(), data.end(), 0);
-
-  data[0] = 0x60; // Version 6
-  data[6] = 58;   // ICMPv6
-
-  auto srcBytes = src.to_bytes();
-  std::copy(srcBytes.begin(), srcBytes.end(), data.begin() + 8);
-
-  auto dstBytes = dst.to_bytes();
-  std::copy(dstBytes.begin(), dstBytes.end(), data.begin() + 24);
-
-  data[40] = 1; // Type: Destination Unreachable
-  data[41] = 1; // Code
-
-  std::copy_n(originalPacket.Data().data(), originalSize, data.data() + 48);
-  return p;
-}
 
 class MockConnectionMark : public ConnectionMark {
 public:
@@ -172,6 +67,12 @@ public:
   mutable std::optional<std::reference_wrapper<ConnectionMark>> Result;
 };
 
+Packet CreatePacket(const std::vector<uint8_t>& bytes) {
+  Packet p(bytes.size(), 0);
+  std::copy(bytes.begin(), bytes.end(), p.Data().begin());
+  return p;
+}
+
 } // namespace
 
 TEST(ConnectionTrackerTest, BasicOperations) {
@@ -190,42 +91,39 @@ TEST(ConnectionTrackerTest, BasicOperations) {
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
 
-    auto p1 = CreateIPv6Packet(boost::asio::ip::make_address_v6("fd00::1"), boost::asio::ip::make_address_v6("fd00::2"),
-                               1234, 80, 6);
-    auto p1_reply = CreateIPv6Packet(boost::asio::ip::make_address_v6("fd00::2"),
-                                     boost::asio::ip::make_address_v6("fd00::1"), 80, 1234, 6);
+    // Using real captured IPv6 TCP packets
+    auto p1 = CreatePacket(test::captured::Ip6TcpSyn);
+    auto p1_reply = CreatePacket(test::captured::Ip6TcpSynAck);
 
-    auto p2 = CreateIPv6Packet(boost::asio::ip::make_address_v6("fd00::3"), boost::asio::ip::make_address_v6("fd00::4"),
-                               5678, 443, 6);
+    // Using real captured IPv4 TCP packets
+    auto p2 = CreatePacket(test::captured::Ip4TcpSyn);
 
     // Initially empty
-    EXPECT_FALSE(tracker->Lookup(p1, ConnectionDirection::kOutput).has_value());
+    EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1).has_value());
 
     // Update/Insert p1
-    tracker->Update(p1, mark1, ConnectionDirection::kOutput);
-    auto res1 = tracker->Lookup(p1, ConnectionDirection::kOutput);
+    auto res1 = tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1, mark1);
     EXPECT_TRUE(res1.has_value());
     EXPECT_EQ(&res1->get(), &mark1);
 
-    auto res1_reply = tracker->Lookup(p1_reply, ConnectionDirection::kInput);
+    auto res1_reply = tracker->LookupAndUpdate<ConnectionDirection::kInput>(p1_reply);
     EXPECT_TRUE(res1_reply.has_value());
     EXPECT_EQ(&res1_reply->get(), &mark1);
 
     // Update/Insert p2
-    tracker->Update(p2, mark2, ConnectionDirection::kOutput);
-    auto res2 = tracker->Lookup(p2, ConnectionDirection::kOutput);
+    auto res2 = tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p2, mark2);
     EXPECT_TRUE(res2.has_value());
     EXPECT_EQ(&res2->get(), &mark2);
 
     // Remove mark1
     tracker->RemoveMark(mark1);
-    EXPECT_FALSE(tracker->Lookup(p1, ConnectionDirection::kOutput).has_value());
-    EXPECT_TRUE(tracker->Lookup(p2, ConnectionDirection::kOutput).has_value());
-    EXPECT_EQ(&tracker->Lookup(p2, ConnectionDirection::kOutput)->get(), &mark2);
+    EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1).has_value());
+    EXPECT_TRUE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p2).has_value());
+    EXPECT_EQ(&tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p2)->get(), &mark2);
 
     // Clear
     tracker->Clear();
-    EXPECT_FALSE(tracker->Lookup(p2, ConnectionDirection::kOutput).has_value());
+    EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p2).has_value());
 
     auto errStop = co_await tracker->Stop();
     EXPECT_FALSE(errStop);
@@ -259,11 +157,9 @@ TEST(ConnectionTrackerTest, ExpirationAndPruning) {
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
 
-    auto p1 = CreateIPv6Packet(boost::asio::ip::make_address_v6("fd00::1"), boost::asio::ip::make_address_v6("fd00::2"),
-                               1234, 80, 6);
+    auto p1 = CreatePacket(test::captured::Ip6TcpSyn);
 
-    tracker->Update(p1, mark1, ConnectionDirection::kOutput);
-    auto res = tracker->Lookup(p1, ConnectionDirection::kOutput);
+    auto res = tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1, mark1);
     EXPECT_TRUE(res.has_value());
     EXPECT_EQ(&res->get(), &mark1);
 
@@ -271,7 +167,7 @@ TEST(ConnectionTrackerTest, ExpirationAndPruning) {
     timeClient.FastForward(std::chrono::seconds(61));
 
     // Lookup should return std::nullopt and prune the entry
-    EXPECT_FALSE(tracker->Lookup(p1, ConnectionDirection::kOutput).has_value());
+    EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1).has_value());
 
     auto errStop = co_await tracker->Stop();
     EXPECT_FALSE(errStop);
@@ -300,25 +196,25 @@ TEST(ConnectionTrackerTest, SelectorAndValidator) {
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
 
-    auto p1 = CreateIPv6Packet(boost::asio::ip::make_address_v6("fd00::1"), boost::asio::ip::make_address_v6("fd00::2"),
-                               1234, 80, 6);
+    auto p1 = CreatePacket(test::captured::Ip6TcpSyn);
 
     // Lookup with selector
-    auto res = tracker->Lookup(p1, ConnectionDirection::kOutput);
+    auto res = tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1);
     EXPECT_TRUE(res.has_value());
     EXPECT_EQ(&res->get(), &mark1);
 
     // Subsequent lookup should find it directly
-    EXPECT_TRUE(tracker->Lookup(p1, ConnectionDirection::kOutput).has_value());
-    EXPECT_EQ(&tracker->Lookup(p1, ConnectionDirection::kOutput)->get(), &mark1);
+    EXPECT_TRUE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1).has_value());
+    EXPECT_EQ(&tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1)->get(), &mark1);
 
     // Lookup with validator that returns false
     selector.Result = std::nullopt;
-    res = tracker->Lookup(p1, ConnectionDirection::kOutput, [](ConnectionMark&) { return false; });
+    res =
+        tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1, std::nullopt, [](ConnectionMark&) { return false; });
     EXPECT_FALSE(res.has_value());
 
     // Should be erased now
-    EXPECT_FALSE(tracker->Lookup(p1, ConnectionDirection::kOutput).has_value());
+    EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1).has_value());
 
     auto errStop = co_await tracker->Stop();
     EXPECT_FALSE(errStop);
@@ -352,14 +248,9 @@ TEST(ConnectionTrackerTest, TcpStateTransitions) {
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
 
-    auto clientIp = boost::asio::ip::make_address_v6("fd00::1");
-    auto serverIp = boost::asio::ip::make_address_v6("fd00::2");
-
     // 1. SYN packet (state starts at SynSent, default timeout = 60s)
-    auto pSyn = CreateIPv6Packet(clientIp, serverIp, 1234, 80, 6, 0x02); // SYN
-    tracker->Update(pSyn, mark1, ConnectionDirection::kOutput);
-
-    auto res = tracker->Lookup(pSyn, ConnectionDirection::kOutput);
+    auto pSyn = CreatePacket(test::captured::Ip6TcpSyn);
+    auto res = tracker->LookupAndUpdate<ConnectionDirection::kOutput>(pSyn, mark1);
     EXPECT_TRUE(res.has_value());
     EXPECT_EQ(&res->get(), &mark1);
 
@@ -367,25 +258,25 @@ TEST(ConnectionTrackerTest, TcpStateTransitions) {
     timeClient.FastForward(std::chrono::seconds(61));
 
     // Should be expired now
-    EXPECT_FALSE(tracker->Lookup(pSyn, ConnectionDirection::kOutput).has_value());
+    EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(pSyn).has_value());
 
     // 2. Re-establish, then send SYN-ACK to establish (state transitions to Established, default timeout = 1200s)
-    tracker->Update(pSyn, mark1, ConnectionDirection::kOutput);
-    auto pSynAck = CreateIPv6Packet(serverIp, clientIp, 80, 1234, 6, 0x12); // SYN-ACK
-    res = tracker->Lookup(pSynAck, ConnectionDirection::kInput);
+    tracker->LookupAndUpdate<ConnectionDirection::kOutput>(pSyn, mark1);
+    auto pSynAck = CreatePacket(test::captured::Ip6TcpSynAck);
+    res = tracker->LookupAndUpdate<ConnectionDirection::kInput>(pSynAck);
     EXPECT_TRUE(res.has_value());
 
     // Warp monotonic clock forward 61s again. In established state, it shouldn't expire!
     timeClient.FastForward(std::chrono::seconds(61));
-    EXPECT_TRUE(tracker->Lookup(pSyn, ConnectionDirection::kOutput).has_value());
+    EXPECT_TRUE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(pSyn).has_value());
 
     // 3. Send FIN packet (state transitions to FinWait, default timeout = 30s)
-    auto pFin = CreateIPv6Packet(clientIp, serverIp, 1234, 80, 6, 0x01); // FIN
-    tracker->Update(pFin, mark1, ConnectionDirection::kOutput);
+    auto pFin = CreatePacket(test::captured::Ip6TcpFin);
+    tracker->LookupAndUpdate<ConnectionDirection::kOutput>(pFin, mark1);
 
     // Warp monotonic clock forward 31s. It should expire!
     timeClient.FastForward(std::chrono::seconds(31));
-    EXPECT_FALSE(tracker->Lookup(pSyn, ConnectionDirection::kOutput).has_value());
+    EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(pSyn).has_value());
 
     auto errStop = co_await tracker->Stop();
     EXPECT_FALSE(errStop);
@@ -416,37 +307,38 @@ TEST(ConnectionTrackerTest, IcmpDestinationUnreachable) {
 
     // IPv4 association test
     {
-      auto clientIp = boost::asio::ip::make_address_v4("10.0.0.1");
-      auto serverIp = boost::asio::ip::make_address_v4("10.0.0.2");
-      auto originalTcp = CreateIPv4Packet(clientIp, serverIp, 1234, 80, 6, 0x02); // TCP SYN from client
+      // Extract original inner packet from captured ICMPv4 Destination Unreachable
+      std::vector<uint8_t> originalBytes(test::captured::Icmp4DestUnreachable.begin() + 28,
+                                         test::captured::Icmp4DestUnreachable.end());
+      auto originalUdp = CreatePacket(originalBytes);
 
-      // Update tracker with original TCP connection
-      tracker->Update(originalTcp, mark1, ConnectionDirection::kOutput);
+      // Update tracker with original UDP connection
+      tracker->LookupAndUpdate<ConnectionDirection::kOutput>(originalUdp, mark1);
 
-      // Now create an incoming ICMP Destination Unreachable packet from a router to the client
-      auto routerIp = boost::asio::ip::make_address_v4("10.0.0.3");
-      auto icmpPacket = CreateIcmp4DestUnreachable(routerIp, clientIp, originalTcp);
+      // Now use the real ICMPv4 Destination Unreachable packet
+      auto icmpPacket = CreatePacket(test::captured::Icmp4DestUnreachable);
 
-      // Lookup of the ICMP packet (direction: Input) should resolve the original TCP connection mark!
-      auto res = tracker->Lookup(icmpPacket, ConnectionDirection::kInput);
+      // Lookup of the ICMP packet (direction: Input) should resolve the original UDP connection mark!
+      auto res = tracker->LookupAndUpdate<ConnectionDirection::kInput>(icmpPacket);
       EXPECT_TRUE(res.has_value());
       EXPECT_EQ(&res->get(), &mark1);
     }
 
     // IPv6 association test
     {
-      auto clientIp = boost::asio::ip::make_address_v6("fd00::1");
-      auto serverIp = boost::asio::ip::make_address_v6("fd00::2");
-      auto originalUdp = CreateIPv6Packet(clientIp, serverIp, 5678, 53, 17); // UDP from client
+      // Extract original inner packet from captured ICMPv6 Destination Unreachable
+      std::vector<uint8_t> originalBytes(test::captured::Icmp6DestUnreachable.begin() + 48,
+                                         test::captured::Icmp6DestUnreachable.end());
+      auto originalUdp = CreatePacket(originalBytes);
 
-      tracker->Update(originalUdp, mark1, ConnectionDirection::kOutput);
+      // Update tracker with original UDP connection
+      tracker->LookupAndUpdate<ConnectionDirection::kOutput>(originalUdp, mark1);
 
-      // Incoming ICMPv6 Destination Unreachable packet
-      auto routerIp = boost::asio::ip::make_address_v6("fd00::3");
-      auto icmpPacket = CreateIcmp6DestUnreachable(routerIp, clientIp, originalUdp);
+      // Now use the real ICMPv6 Destination Unreachable packet
+      auto icmpPacket = CreatePacket(test::captured::Icmp6DestUnreachable);
 
       // Lookup of the ICMPv6 packet should resolve the original UDP connection mark!
-      auto res = tracker->Lookup(icmpPacket, ConnectionDirection::kInput);
+      auto res = tracker->LookupAndUpdate<ConnectionDirection::kInput>(icmpPacket);
       EXPECT_TRUE(res.has_value());
       EXPECT_EQ(&res->get(), &mark1);
     }
@@ -477,4 +369,3 @@ int main(int argc, char* argv[]) {
   std::cout << "[Parent] Orchestrator completed. Child status: " << status << std::endl;
   return status;
 }
-

@@ -82,12 +82,25 @@ Packet CreateTestIPv6Packet(const boost::asio::ip::address_v6& src, const boost:
   return p;
 }
 
-std::vector<uint8_t> CreateTcpUdpPayload(uint16_t srcPort, uint16_t dstPort) {
-  std::vector<uint8_t> payload(4, 0);
+std::vector<uint8_t> CreateTcpPayload(uint16_t srcPort, uint16_t dstPort) {
+  std::vector<uint8_t> payload(20, 0);
   payload[0] = (srcPort >> 8) & 0xFF;
   payload[1] = srcPort & 0xFF;
   payload[2] = (dstPort >> 8) & 0xFF;
   payload[3] = dstPort & 0xFF;
+  payload[12] = 0x50; // Data offset = 5 (20 bytes)
+  return payload;
+}
+
+std::vector<uint8_t> CreateUdpPayload(uint16_t srcPort, uint16_t dstPort) {
+  uint16_t totalLen = 8;
+  std::vector<uint8_t> payload(totalLen, 0);
+  payload[0] = (srcPort >> 8) & 0xFF;
+  payload[1] = srcPort & 0xFF;
+  payload[2] = (dstPort >> 8) & 0xFF;
+  payload[3] = dstPort & 0xFF;
+  payload[4] = (totalLen >> 8) & 0xFF;
+  payload[5] = totalLen & 0xFF;
   return payload;
 }
 
@@ -268,7 +281,7 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
     {
       auto srcIp = boost::asio::ip::make_address_v4("10.0.0.1");
       auto dstIp = boost::asio::ip::make_address_v4("192.168.1.1");
-      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpUdpPayload(1234, 80));
+      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpPayload(1234, 80));
       mockTun->PushRead(std::move(p));
       co_await Omni::Fiber::Yield();
 
@@ -287,7 +300,7 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
     {
       auto srcIp = boost::asio::ip::make_address_v6("fd00::1");
       auto dstIp = boost::asio::ip::make_address_v6("fd00::2");
-      auto p = CreateTestIPv6Packet(srcIp, dstIp, 17, CreateTcpUdpPayload(5555, 6666));
+      auto p = CreateTestIPv6Packet(srcIp, dstIp, 17, CreateUdpPayload(5555, 6666));
       mockTun->PushRead(std::move(p));
       co_await Omni::Fiber::Yield();
 
@@ -417,7 +430,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     {
       auto srcIp = boost::asio::ip::make_address_v4("10.0.0.1");
       auto dstIp = boost::asio::ip::make_address_v4("10.0.0.2");
-      auto p = CreateTestIPv4Packet(srcIp, dstIp, 17, CreateTcpUdpPayload(5000, 6000));
+      auto p = CreateTestIPv4Packet(srcIp, dstIp, 17, CreateUdpPayload(5000, 6000));
       auto originalSize = p.DataSize();
       // Write from client to server (meaning it's an input packet to server conntrack)
       auto errWrite = co_await clientChannel->Write(p, cancelObj);
@@ -432,7 +445,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     {
       auto srcIp = boost::asio::ip::make_address_v4("10.0.0.2"); // Reversed
       auto dstIp = boost::asio::ip::make_address_v4("10.0.0.1"); // Reversed
-      auto p = CreateTestIPv4Packet(srcIp, dstIp, 17, CreateTcpUdpPayload(6000, 5000));
+      auto p = CreateTestIPv4Packet(srcIp, dstIp, 17, CreateUdpPayload(6000, 5000));
       auto originalSize = p.DataSize();
 
       EXPECT_EQ(selectorCalls, 0);
@@ -451,7 +464,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     {
       auto srcIp = boost::asio::ip::make_address_v4("10.0.0.3");
       auto dstIp = boost::asio::ip::make_address_v4("10.0.0.4");
-      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpUdpPayload(1111, 2222));
+      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpPayload(1111, 2222));
       auto originalSize = p.DataSize();
 
       EXPECT_EQ(selectorCalls, 0);
@@ -465,7 +478,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
       EXPECT_EQ(selectorCalls, 1); // Callback invoked!
 
       // Send again, should NOT call selector
-      auto p2 = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpUdpPayload(1111, 2222));
+      auto p2 = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpPayload(1111, 2222));
       mockTun->PushRead(std::move(p2));
 
       auto errRead2 = co_await clientChannel->Read(rxClient, cancelObj);
@@ -481,7 +494,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
       // Send packet for same connection
       auto srcIp = boost::asio::ip::make_address_v4("10.0.0.3");
       auto dstIp = boost::asio::ip::make_address_v4("10.0.0.4");
-      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpUdpPayload(1111, 2222));
+      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpPayload(1111, 2222));
 
       mockTun->PushRead(std::move(p));
 
@@ -561,7 +574,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
     auto srcIp = boost::asio::ip::make_address_v4("10.0.0.1");
     auto dstIp = boost::asio::ip::make_address_v4("10.0.0.2");
     {
-      auto p = CreateTestIPv4Packet(srcIp, dstIp, 17, CreateTcpUdpPayload(5000, 6000));
+      auto p = CreateTestIPv4Packet(srcIp, dstIp, 17, CreateUdpPayload(5000, 6000));
       auto errWrite = co_await clientChannel->Write(p, cancelObj);
       EXPECT_FALSE(errWrite);
 
@@ -574,7 +587,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
 
     // 3. Send an outgoing packet matching the established connection key
     {
-      auto p = CreateTestIPv4Packet(dstIp, srcIp, 17, CreateTcpUdpPayload(6000, 5000));
+      auto p = CreateTestIPv4Packet(dstIp, srcIp, 17, CreateUdpPayload(6000, 5000));
       mockTun->PushRead(std::move(p));
 
       // Wait a brief moment to ensure no crash occurs and packet is dropped
@@ -626,7 +639,7 @@ TEST(VpnClientMultiChannelTest, MigrateTun) {
     {
       auto srcIp = boost::asio::ip::make_address_v4("10.0.0.1");
       auto dstIp = boost::asio::ip::make_address_v4("192.168.1.1");
-      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpUdpPayload(1234, 80));
+      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpPayload(1234, 80));
       mockTun1->PushRead(std::move(p));
       co_await Omni::Fiber::Yield();
 
@@ -646,7 +659,7 @@ TEST(VpnClientMultiChannelTest, MigrateTun) {
     {
       auto srcIp = boost::asio::ip::make_address_v4("10.0.0.1");
       auto dstIp = boost::asio::ip::make_address_v4("192.168.1.1");
-      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpUdpPayload(1234, 80));
+      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpPayload(1234, 80));
       mockTun1->PushRead(std::move(p));
       co_await Omni::Fiber::Yield();
 
@@ -658,7 +671,7 @@ TEST(VpnClientMultiChannelTest, MigrateTun) {
     {
       auto srcIp = boost::asio::ip::make_address_v4("10.0.0.2");
       auto dstIp = boost::asio::ip::make_address_v4("192.168.1.2");
-      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpUdpPayload(1234, 80));
+      auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpPayload(1234, 80));
       mockTun2->PushRead(std::move(p));
       co_await Omni::Fiber::Yield();
 

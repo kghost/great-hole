@@ -54,4 +54,7 @@ Documentation in this project is split into two categories based on target audie
 - **src/core**:
   - [src/core/README.md](../../src/core/README.md) - Public APIs and abstractions for the core network modules including Endpoints, Pipelines, Filters, and PacketBuilder.
   - [src/core/DESIGN.md](../../src/core/DESIGN.md) - Internal architectures, dynamic multiplexing protocol, state machines, and implementation details.
+- **src/application**:
+  - [src/application/README.md](../../src/application/README.md) - Public APIs and integration guidelines for connection tracking, VPN server, and multi-channel VPN client.
+  - [src/application/DESIGN.md](../../src/application/DESIGN.md) - Internal architecture of the application module, detailing ConnectionTracker tables, timeouts, and ICMP matching.
 
