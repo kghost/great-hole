@@ -59,7 +59,7 @@ endif()
 
 
 find_package(PkgConfig REQUIRED)
-if(!ANDROID AND !WIN32)
+if(NOT ANDROID AND NOT WIN32)
 pkg_check_modules(LUA REQUIRED IMPORTED_TARGET lua-5.4)
 endif()
 pkg_check_modules(CARES REQUIRED IMPORTED_TARGET libcares)

@@ -65,7 +65,7 @@ std::shared_ptr<EndpointInput> GetCin(boost::asio::any_io_executor executor) {
 #if _WIN32
     auto o = std::make_shared<Input>(executor, ::GetStdHandle(STD_INPUT_HANDLE));
 #else
-    auto o = std::make_shared<Input>(executor, _fileno(stdin));
+    auto o = std::make_shared<Input>(executor, fileno(stdin));
 #endif
     _In = o;
     return o;
@@ -80,7 +80,7 @@ std::shared_ptr<EndpointOutput> GetCout(boost::asio::any_io_executor executor) {
 #if _WIN32
     auto o = std::make_shared<Output>(executor, ::GetStdHandle(STD_OUTPUT_HANDLE));
 #else
-    auto o = std::make_shared<Output>(executor, _fileno(stdout));
+    auto o = std::make_shared<Output>(executor, fileno(stdout));
 #endif
     _Out = o;
     return o;
@@ -95,7 +95,7 @@ std::shared_ptr<EndpointOutput> GetCerr(boost::asio::any_io_executor executor) {
 #if _WIN32
     auto o = std::make_shared<Output>(executor, ::GetStdHandle(STD_ERROR_HANDLE));
 #else
-    auto o = std::make_shared<Output>(executor, _fileno(stderr));
+    auto o = std::make_shared<Output>(executor, fileno(stderr));
 #endif
     _Err = o;
     return o;

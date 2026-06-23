@@ -64,12 +64,12 @@ TEST(VpnServerTest, ConstructorStoresFiltersAndAppliesThem) {
     auto udpMuxErr = co_await udpDynMux->Start();
     EXPECT_FALSE(udpMuxErr);
 
-    auto vpnErr = co_await vpnServer->Start();
-    EXPECT_FALSE(vpnErr);
+    auto vpnStartErr = co_await vpnServer->Start();
+    EXPECT_FALSE(vpnStartErr);
 
     co_await vpnServer->Stop();
-    auto vpnErr = co_await vpnServer->WaitService();
-    EXPECT_FALSE(vpnErr);
+    auto vpnStopErr = co_await vpnServer->WaitService();
+    EXPECT_FALSE(vpnStopErr);
 
     co_await udpDynMux->Stop();
     co_await udpDynMux->WaitService();

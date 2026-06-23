@@ -29,6 +29,7 @@
 #include "SelectPair.hpp"
 #include "SelectPairList.hpp"
 #include "Utils.hpp"
+#include "Utils/Function.hpp"
 
 namespace gh {
 
@@ -55,7 +56,10 @@ struct SocketTracker {
     std::visit([](auto& descriptor) { descriptor.release(); }, Descriptor);
   }
 
-  SocketTracker(SocketTracker&&) = default;
+  SocketTracker(const SocketTracker&) = delete;
+  SocketTracker& operator=(const SocketTracker&) = delete;
+  SocketTracker(SocketTracker&&) = delete;
+  SocketTracker& operator=(SocketTracker&&) = delete;
 
   static std::variant<boost::asio::ip::tcp::socket, boost::asio::ip::udp::socket>
   ToAsioSocket(boost::asio::any_io_executor executor, ares_socket_t fd) {
@@ -68,7 +72,7 @@ struct SocketTracker {
 
     if (soType == SOCK_STREAM) {
       sockaddr_storage addr;
-      int addrLen = sizeof(addr);
+      std::remove_pointer_t<FunctionTraits<decltype(::getsockname)>::Arg<2>> addrLen = sizeof(addr);
       if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &addrLen) < 0) {
         throw std::runtime_error("getsockname failed: " + std::to_string(errno));
       }
@@ -81,7 +85,7 @@ struct SocketTracker {
       }
     } else if (soType == SOCK_DGRAM) {
       sockaddr_storage addr;
-      int addrLen = sizeof(addr);
+      std::remove_pointer_t<FunctionTraits<decltype(::getsockname)>::Arg<2>> addrLen = sizeof(addr);
       if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &addrLen) < 0) {
         throw std::runtime_error("getsockname failed: " + std::to_string(errno));
       }
@@ -122,7 +126,8 @@ Omni::Fiber::Coroutine<ErrorCode> RunChannel(boost::asio::any_io_executor execut
     }
 
     if (it == trackers.end()) {
-      auto [newIt, inserted] = trackers.emplace(fd, SocketTracker(executor, fd));
+      auto [newIt, inserted] =
+          trackers.emplace(std::piecewise_construct, std::forward_as_tuple(fd), std::forward_as_tuple(executor, fd));
       it = newIt;
     }
 
