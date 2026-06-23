@@ -2,4 +2,5 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
 
 & "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64
 
-cmake --preset debug-msvc-ninja
+cmake --workflow --preset debug-msvc
+cmake --workflow --preset debug-msvc-ninja

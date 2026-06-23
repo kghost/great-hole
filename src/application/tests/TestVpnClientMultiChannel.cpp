@@ -431,9 +431,11 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
 
     // Wait for OnChannelEstablished to be invoked on connTrack
     // Server should accept client channel
-    boost::asio::steady_timer waitTimer(io.get_executor());
-    waitTimer.expires_after(std::chrono::milliseconds(50));
-    co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    do {
+      boost::asio::steady_timer waitTimer(io.get_executor());
+      waitTimer.expires_after(std::chrono::milliseconds(10));
+      co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    } while (clientChannel->GetChannelState() != UdpDynMux::Channel::State::kRunning);
 
     Cancel cancelObj;
 
@@ -576,9 +578,11 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
     EXPECT_NE(clientChannel, nullptr);
 
     // Wait for OnChannelEstablished
-    boost::asio::steady_timer waitTimer(io.get_executor());
-    waitTimer.expires_after(std::chrono::milliseconds(50));
-    co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    do {
+      boost::asio::steady_timer waitTimer(io.get_executor());
+      waitTimer.expires_after(std::chrono::milliseconds(10));
+      co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    } while (clientChannel->GetChannelState() != UdpDynMux::Channel::State::kRunning);
 
     Cancel cancelObj;
 
@@ -602,9 +606,12 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
       auto p = CreateTestIPv4Packet(dstIp, srcIp, 17, CreateUdpPayload(6000, 5000));
       mockTun->PushRead(std::move(p));
 
-      // Wait a brief moment to ensure no crash occurs and packet is dropped
-      waitTimer.expires_after(std::chrono::milliseconds(50));
-      co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+      do {
+        // Wait a brief moment to ensure no crash occurs and packet is dropped
+        boost::asio::steady_timer waitTimer(io.get_executor());
+        waitTimer.expires_after(std::chrono::milliseconds(10));
+        co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+      } while (selectorCalls < 1);
 
       EXPECT_EQ(selectorCalls, 1);
     }
@@ -753,9 +760,11 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
     EXPECT_NE(clientChannel, nullptr);
 
     // Wait for OnChannelEstablished
-    boost::asio::steady_timer waitTimer(io.get_executor());
-    waitTimer.expires_after(std::chrono::milliseconds(50));
-    co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    do {
+      boost::asio::steady_timer waitTimer(io.get_executor());
+      waitTimer.expires_after(std::chrono::milliseconds(10));
+      co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    } while (clientChannel->GetChannelState() != UdpDynMux::Channel::State::kRunning);
 
     // Now stats should be available and RttMs should be initialized/retrieved
     auto stats = connTrack->GetStats(session);

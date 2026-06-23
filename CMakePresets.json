@@ -86,6 +86,7 @@
     {
       "name": "build-debug-msvc",
       "configurePreset": "debug-msvc",
+      "configuration": "Debug",
       "jobs": 8
     },
     {
@@ -121,6 +122,7 @@
     {
       "name": "debug-msvc",
       "configurePreset": "debug-msvc",
+      "configuration": "Debug",
       "environment": {
         "ASAN_OPTIONS": "detect_container_overflow=0"
       },
