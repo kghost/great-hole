@@ -3,7 +3,7 @@ add_subdirectory(resolvers)
 add_subdirectory(core)
 add_subdirectory(application)
 
-if(ANDROID OR GREAT_HOLE_BUILD_ANDROID)
+if(ANDROID)
   add_subdirectory(android)
 else()
   add_subdirectory(lua)

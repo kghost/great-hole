@@ -5,7 +5,6 @@ project(great-hole VERSION 0.1.0 LANGUAGES CXX C)
 option(GREAT_HOLE_RELATIVE_PATHS "Use relative paths" OFF)
 option(BUILD_WITH_LIBCXX "Build with libc++" OFF)
 option(BUILD_TESTING "Build unit tests" ON)
-option(GREAT_HOLE_BUILD_ANDROID "Build Android JNI library" OFF)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,7 +15,7 @@ if(BUILD_WITH_LIBCXX)
   add_link_options(-stdlib=libc++)
 endif()
 
-if(GREAT_HOLE_BUILD_ANDROID)
+if(ANDROID)
   if(NOT DEFINED ANDROID_NDK)
     message(FATAL_ERROR "ANDROID_NDK is not defined")
   endif()
@@ -43,7 +42,7 @@ endif()
 # Dependencies
 find_package(Boost REQUIRED COMPONENTS log program_options)
 
-if(ANDROID OR GREAT_HOLE_BUILD_ANDROID)
+if(ANDROID)
   # Find CARES manually
   find_path(CARES_INCLUDE_DIR NAMES ares.h)
   find_library(CARES_LIBRARY NAMES cares)
