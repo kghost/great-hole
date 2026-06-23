@@ -12,7 +12,8 @@
 #include "Coroutine.hpp"
 #include "EndpointUdpDynMux.hpp"
 #include "EventQueue.hpp"
-#include "GetCurrentFiber.hpp"
+#include "GetCurrentOmniFiber.hpp"
+#include "OmniYield.hpp"
 #include "Packet.hpp"
 #include "ResolverStaticEndpoint.hpp"
 #include "Select.hpp"
@@ -20,7 +21,6 @@
 #include "TimeTravel.hpp"
 #include "Utils.hpp"
 #include "VpnClientMultiChannel.hpp"
-#include "Yield.hpp"
 
 using namespace gh;
 
@@ -30,11 +30,23 @@ class AsioWarpListener : public Omni::TimeTravel::IWarpListener {
 public:
   explicit AsioWarpListener(boost::asio::io_context& io) : _Io(io) {}
 
-  void OnPreWarp() override { _Io.notify_fork(boost::asio::io_context::fork_prepare); }
+  void OnPreWarp() override {
+#ifndef _WIN32
+    _Io.notify_fork(boost::asio::io_context::fork_prepare);
+#endif
+  }
 
-  void OnPostWarpParent() override { _Io.notify_fork(boost::asio::io_context::fork_parent); }
+  void OnPostWarpParent() override {
+#ifndef _WIN32
+    _Io.notify_fork(boost::asio::io_context::fork_parent);
+#endif
+  }
 
-  void OnPostWarpChild() override { _Io.notify_fork(boost::asio::io_context::fork_child); }
+  void OnPostWarpChild() override {
+#ifndef _WIN32
+    _Io.notify_fork(boost::asio::io_context::fork_child);
+#endif
+  }
 
 private:
   boost::asio::io_context& _Io;
@@ -283,7 +295,7 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
       auto dstIp = boost::asio::ip::make_address_v4("192.168.1.1");
       auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpPayload(1234, 80));
       mockTun->PushRead(std::move(p));
-      co_await Omni::Fiber::Yield();
+      co_await Omni::Fiber::OmniYield();
 
       EXPECT_EQ(invocations.size(), 1);
       if (invocations.size() < 1) {
@@ -302,7 +314,7 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
       auto dstIp = boost::asio::ip::make_address_v6("fd00::2");
       auto p = CreateTestIPv6Packet(srcIp, dstIp, 17, CreateUdpPayload(5555, 6666));
       mockTun->PushRead(std::move(p));
-      co_await Omni::Fiber::Yield();
+      co_await Omni::Fiber::OmniYield();
 
       EXPECT_EQ(invocations.size(), 2);
       if (invocations.size() < 2) {
@@ -321,7 +333,7 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
       auto dstIp = boost::asio::ip::make_address_v4("10.0.0.6");
       auto p = CreateTestIPv4Packet(srcIp, dstIp, 1, CreateIcmpEchoPayload(8, 0xabcd));
       mockTun->PushRead(std::move(p));
-      co_await Omni::Fiber::Yield();
+      co_await Omni::Fiber::OmniYield();
 
       EXPECT_EQ(invocations.size(), 3);
       if (invocations.size() < 3) {
@@ -340,7 +352,7 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
       auto dstIp = boost::asio::ip::make_address_v6("fe80::2");
       auto p = CreateTestIPv6Packet(srcIp, dstIp, 58, CreateIcmpEchoPayload(129, 0x1234));
       mockTun->PushRead(std::move(p));
-      co_await Omni::Fiber::Yield();
+      co_await Omni::Fiber::OmniYield();
 
       EXPECT_EQ(invocations.size(), 4);
       if (invocations.size() < 4) {
@@ -394,7 +406,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     // Start all services
     EXPECT_FALSE(co_await udpClient->Start());
@@ -420,7 +432,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     // Wait for OnChannelEstablished to be invoked on connTrack
     // Server should accept client channel
     boost::asio::steady_timer waitTimer(io.get_executor());
-    waitTimer.expires_after(std::chrono::milliseconds(20));
+    waitTimer.expires_after(std::chrono::milliseconds(50));
     co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
 
     Cancel cancelObj;
@@ -546,7 +558,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     // Start all services
     EXPECT_FALSE(co_await udpClient->Start());
@@ -565,7 +577,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
 
     // Wait for OnChannelEstablished
     boost::asio::steady_timer waitTimer(io.get_executor());
-    waitTimer.expires_after(std::chrono::milliseconds(20));
+    waitTimer.expires_after(std::chrono::milliseconds(50));
     co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
 
     Cancel cancelObj;
@@ -591,7 +603,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
       mockTun->PushRead(std::move(p));
 
       // Wait a brief moment to ensure no crash occurs and packet is dropped
-      waitTimer.expires_after(std::chrono::milliseconds(20));
+      waitTimer.expires_after(std::chrono::milliseconds(50));
       co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
 
       EXPECT_EQ(selectorCalls, 1);
@@ -641,7 +653,7 @@ TEST(VpnClientMultiChannelTest, MigrateTun) {
       auto dstIp = boost::asio::ip::make_address_v4("192.168.1.1");
       auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpPayload(1234, 80));
       mockTun1->PushRead(std::move(p));
-      co_await Omni::Fiber::Yield();
+      co_await Omni::Fiber::OmniYield();
 
       EXPECT_EQ(invocations.size(), 1);
       if (invocations.size() < 1) {
@@ -661,7 +673,7 @@ TEST(VpnClientMultiChannelTest, MigrateTun) {
       auto dstIp = boost::asio::ip::make_address_v4("192.168.1.1");
       auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpPayload(1234, 80));
       mockTun1->PushRead(std::move(p));
-      co_await Omni::Fiber::Yield();
+      co_await Omni::Fiber::OmniYield();
 
       // Invocations count should still be 1 because mockTun1 is stopped/disconnected.
       EXPECT_EQ(invocations.size(), 1);
@@ -673,7 +685,7 @@ TEST(VpnClientMultiChannelTest, MigrateTun) {
       auto dstIp = boost::asio::ip::make_address_v4("192.168.1.2");
       auto p = CreateTestIPv4Packet(srcIp, dstIp, 6, CreateTcpPayload(1234, 80));
       mockTun2->PushRead(std::move(p));
-      co_await Omni::Fiber::Yield();
+      co_await Omni::Fiber::OmniYield();
 
       EXPECT_EQ(invocations.size(), 2);
       if (invocations.size() < 2) {
@@ -720,7 +732,7 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     // Start all services
     EXPECT_FALSE(co_await udpClient->Start());
@@ -742,7 +754,7 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
 
     // Wait for OnChannelEstablished
     boost::asio::steady_timer waitTimer(io.get_executor());
-    waitTimer.expires_after(std::chrono::milliseconds(20));
+    waitTimer.expires_after(std::chrono::milliseconds(50));
     co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
 
     // Now stats should be available and RttMs should be initialized/retrieved

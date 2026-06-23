@@ -10,7 +10,7 @@
 #include "Endpoint.hpp"
 #include "ErrorCode.hpp"
 #include "Filter.hpp"
-#include "GetCurrentFiber.hpp"
+#include "GetCurrentOmniFiber.hpp"
 
 namespace gh {
 
@@ -20,7 +20,7 @@ Pipeline::Pipeline(std::shared_ptr<Endpoint> ep1, const std::vector<std::shared_
 
 Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start() {
   auto me = std::static_pointer_cast<Pipeline>(shared_from_this());
-  auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
+  auto& fiber = co_await Omni::Fiber::GetCurrentOmniFiber();
 
   _Fiber1 = fiber.Spawn(GetNameWithDirection(Direction::Forward), [this, me]() -> Omni::Fiber::Coroutine<void> {
     co_await RunDirection(_Ep1, _Ep2, Direction::Forward);
@@ -111,9 +111,9 @@ Omni::Fiber::Coroutine<void> Pipeline::RunDirection(std::shared_ptr<Endpoint> in
   co_return;
 }
 
-Omni::Fiber::Coroutine<ErrorCode> Pipeline::Stop() {
+Omni::Fiber::Coroutine<void> Pipeline::Stop() {
   _Stop.Trigger();
-  auto& current = co_await Omni::Fiber::GetCurrentFiber();
+  auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
   if (_Fiber1) {
     co_await current.Join(_Fiber1);
     _Fiber1.reset();
@@ -122,7 +122,7 @@ Omni::Fiber::Coroutine<ErrorCode> Pipeline::Stop() {
     co_await current.Join(_Fiber2);
     _Fiber2.reset();
   }
-  co_return ErrorCode{};
+  co_return;
 }
 
 bool Pipeline::IsCritical(const ErrorCode& ec) {

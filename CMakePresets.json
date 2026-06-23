@@ -8,8 +8,8 @@
   "configurePresets": [
     {
       "name": "debug",
-      "displayName": "Host Debug",
-      "description": "Ordinary debug build for the host",
+      "displayName": "Debug",
+      "description": "Debug",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -19,9 +19,31 @@
       }
     },
     {
+      "name": "debug-msvc",
+      "displayName": "Debug (MSVC)",
+      "description": "Debug (MSVC)",
+      "binaryDir": "${sourceDir}/build-msvc",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+      },
+      "environment": {
+        "ASAN_OPTIONS": "detect_container_overflow=0"
+      }
+    },
+    {
+      "name": "debug-msvc-ninja",
+      "displayName": "Debug (MSVC Ninja)",
+      "description": "Debug (MSVC Ninja)",
+      "inherits": "debug-msvc",
+      "binaryDir": "${sourceDir}/build",
+      "generator": "Ninja"
+    },
+    {
       "name": "debug-gcc-snapshot",
-      "displayName": "Host Debug (gcc-snapshot)",
-      "description": "Ordinary debug build for the host (gcc-snapshot)",
+      "displayName": "Debug (gcc-snapshot)",
+      "description": "Debug (gcc-snapshot)",
       "binaryDir": "${sourceDir}/build-gcc-snapshot",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -62,6 +84,16 @@
       "jobs": 16
     },
     {
+      "name": "build-debug-msvc",
+      "configurePreset": "debug-msvc",
+      "jobs": 8
+    },
+    {
+      "name": "build-debug-msvc-ninja",
+      "configurePreset": "debug-msvc-ninja",
+      "jobs": 8
+    },
+    {
       "name": "build-debug-gcc-snapshot",
       "configurePreset": "debug-gcc-snapshot",
       "jobs": 8
@@ -81,6 +113,28 @@
     {
       "name": "debug",
       "configurePreset": "debug",
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "debug-msvc",
+      "configurePreset": "debug-msvc",
+      "environment": {
+        "ASAN_OPTIONS": "detect_container_overflow=0"
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "debug-msvc-ninja",
+      "configurePreset": "debug-msvc-ninja",
+      "environment": {
+        "ASAN_OPTIONS": "detect_container_overflow=0"
+      },
       "execution": {
         "noTestsAction": "error",
         "stopOnFailure": false
@@ -110,6 +164,40 @@
         {
           "type": "test",
           "name": "debug"
+        }
+      ]
+    },
+    {
+      "name": "debug-msvc",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "debug-msvc"
+        },
+        {
+          "type": "build",
+          "name": "build-debug-msvc"
+        },
+        {
+          "type": "test",
+          "name": "debug-msvc"
+        }
+      ]
+    },
+    {
+      "name": "debug-msvc-ninja",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "debug-msvc-ninja"
+        },
+        {
+          "type": "build",
+          "name": "build-debug-msvc-ninja"
+        },
+        {
+          "type": "test",
+          "name": "debug-msvc-ninja"
         }
       ]
     },

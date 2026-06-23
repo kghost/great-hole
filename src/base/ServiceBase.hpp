@@ -18,7 +18,7 @@ public:
   virtual ~ServiceBase() = default;
 
   Omni::Fiber::Coroutine<ErrorCode> Start() override;
-  Omni::Fiber::Coroutine<ErrorCode> Stop() override;
+  Omni::Fiber::Coroutine<void> Stop() override;
 
   virtual std::string GetName() const = 0;
 
@@ -27,7 +27,7 @@ public:
 
   // This must be call in the same fiber where Start() is called. After calling this function, the state will return to
   // kNone, and the service can be restarted.
-  Omni::Fiber::Coroutine<void> WaitService();
+  Omni::Fiber::Coroutine<ErrorCode> WaitService();
 
 protected:
   struct Context {
@@ -35,6 +35,7 @@ protected:
     Omni::Fiber::Event<ErrorCode> _StopError;
     std::shared_ptr<Omni::Fiber::Fiber> _Fiber;
   };
+
   State _State = State::kNone;
   std::optional<Context> _Service;
 

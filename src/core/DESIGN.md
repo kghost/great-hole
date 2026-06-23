@@ -58,3 +58,9 @@ graph LR
 `EndpointUdpDynMux` implements dynamic channel multiplexing on a single UDP port.
 - State machines are managed via asynchronous keepalives, version negotiation, and re-keying/address migration.
 - For detailed bitwise layouts, refer to [EndpointUdpDynMuxProtocol.md](file:///home/kghost/workspace/great-hole/src/core/EndpointUdpDynMuxProtocol.md).
+
+### Renegotiation & State Transitions
+- **`INVALID_CHANNEL` Reset**: If a running channel receives an `INVALID_CHANNEL` message from its peer, it resets its state to `State::kNegotiating` and clears its remote channel ID.
+- **Write Verification**: When writing data packets to a channel, the channel verifies that its internal state is `State::kRunning`. Otherwise, it returns `kInvalidPacketSession`.
+- **Negotiation Race Prevention**: During renegotiation (e.g., when a endpoint restarts and binds to the same port), the initiator sends `INITIATE` and waits for a response. The responder receives the message, sends its own `INITIATE` back, and transitions to `State::kRunning`. However, because sending is asynchronous, the initiator might reach `State::kRunning` first while the responder is still finishing its send coroutine and hasn't yet entered `State::kRunning`. Any data packet sent by the initiator at this exact instant will be received by the responder while it is still in `State::kNegotiating`, causing the packet to be rejected as `INVALID_CHANNEL`.
+  - *Fix for Tests*: Unit tests verifying renegotiation must wait until **both** endpoints have fully transitioned to `State::kRunning` before attempting to transmit data.

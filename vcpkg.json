@@ -1,0 +1,8 @@
+{
+  "dependencies": [
+    "boost",
+    "c-ares",
+    "detours",
+    "gtest"
+  ]
+}

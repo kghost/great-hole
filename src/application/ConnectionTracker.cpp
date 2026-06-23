@@ -1,6 +1,5 @@
 #include "ConnectionTracker.hpp"
 
-#include <arpa/inet.h>
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -63,22 +62,14 @@ ConnectionTracker::LookupAndUpdate(const Packet& packet, std::optional<std::refe
   auto now = std::chrono::steady_clock::now();
   return ParseConnectionKey<Direction>(
       packet.Data(), false, [&](auto&& key, auto keyExtra) -> std::optional<std::reference_wrapper<ConnectionMark>> {
-        using T = std::decay_t<decltype(key)>;
-        auto& table = [&]() -> auto& {
-          if constexpr (std::is_same_v<T, Ip4TcpKey>) {
-            return _Ip4TcpTable;
-          } else if constexpr (std::is_same_v<T, Ip6TcpKey>) {
-            return _Ip6TcpTable;
-          } else if constexpr (std::is_same_v<T, Ip4UdpKey>) {
-            return _Ip4UdpTable;
-          } else if constexpr (std::is_same_v<T, Ip6UdpKey>) {
-            return _Ip6UdpTable;
-          } else if constexpr (std::is_same_v<T, IcmpKey>) {
-            return _IcmpTable;
-          } else if constexpr (std::is_same_v<T, Icmp6Key>) {
-            return _Icmp6Table;
-          }
-        }();
+        auto& table = (Overload{
+            [this](const Ip4TcpKey& key) -> auto& { return _Ip4TcpTable; },
+            [this](const Ip6TcpKey& key) -> auto& { return _Ip6TcpTable; },
+            [this](const Ip4UdpKey& key) -> auto& { return _Ip4UdpTable; },
+            [this](const Ip6UdpKey& key) -> auto& { return _Ip6UdpTable; },
+            [this](const IcmpKey& key) -> auto& { return _IcmpTable; },
+            [this](const Icmp6Key& key) -> auto& { return _Icmp6Table; },
+        })(key);
 
         auto it = table.find(key);
         if (it != table.end()) {

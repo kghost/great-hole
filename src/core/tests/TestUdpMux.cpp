@@ -10,7 +10,7 @@
 #include "Coroutine.hpp"
 #include "EndpointUdpMux.hpp"
 #include "Fiber.hpp"
-#include "GetCurrentFiber.hpp"
+#include "GetCurrentOmniFiber.hpp"
 #include "Manager.hpp"
 #include "Packet.hpp"
 #include "ResolverHelper.hpp"
@@ -36,7 +36,7 @@ TEST(UdpMuxTest, IgnoresStrayPackets) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     auto err = co_await server->Start();
     EXPECT_FALSE(err);
@@ -82,8 +82,7 @@ TEST(UdpMuxTest, IgnoresStrayPackets) {
     co_await current.Join(readFiber);
     EXPECT_TRUE(packetReceived);
 
-    auto stopErr = co_await server->Stop();
-    EXPECT_FALSE(stopErr);
+    co_await server->Stop();
 
     co_await current.WaitAll();
     testPassed = true;
@@ -103,7 +102,7 @@ TEST(UdpMuxTest, ReadCancellation) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     auto err = co_await server->Start();
     EXPECT_FALSE(err);
@@ -140,8 +139,7 @@ TEST(UdpMuxTest, ReadCancellation) {
     EXPECT_TRUE(readCompleted);
     EXPECT_EQ(readErrResult, ErrorCode(AppErrorCategory::kOperationAborted, kAppError));
 
-    auto stopErr = co_await server->Stop();
-    EXPECT_FALSE(stopErr);
+    co_await server->Stop();
 
     co_await current.WaitAll();
     testPassed = true;
@@ -161,7 +159,7 @@ TEST(UdpMuxTest, WriteCancellation) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     auto err = co_await server->Start();
     EXPECT_FALSE(err);
@@ -187,8 +185,7 @@ TEST(UdpMuxTest, WriteCancellation) {
     auto writeErr = co_await channel->Write(sendPacket, cancelObj);
     EXPECT_EQ(writeErr, ErrorCode(AppErrorCategory::kOperationAborted, kAppError));
 
-    auto stopErr = co_await server->Stop();
-    EXPECT_FALSE(stopErr);
+    co_await server->Stop();
 
     co_await current.WaitAll();
     testPassed = true;
@@ -209,7 +206,7 @@ TEST(UdpMuxTest, DirectServerToServerMux) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     auto errA = co_await serverA->Start();
     EXPECT_FALSE(errA);
@@ -324,10 +321,8 @@ TEST(UdpMuxTest, DirectServerToServerMux) {
     EXPECT_TRUE(readACompleted);
     EXPECT_TRUE(writeBCompleted);
 
-    auto stopErrA = co_await serverA->Stop();
-    EXPECT_FALSE(stopErrA);
-    auto stopErrB = co_await serverB->Stop();
-    EXPECT_FALSE(stopErrB);
+    co_await serverA->Stop();
+    co_await serverB->Stop();
 
     co_await current.WaitAll();
     testPassed = true;

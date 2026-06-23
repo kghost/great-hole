@@ -22,11 +22,23 @@ class AsioWarpListener : public Omni::TimeTravel::IWarpListener {
 public:
   explicit AsioWarpListener(boost::asio::io_context& io) : _Io(io) {}
 
-  void OnPreWarp() override { _Io.notify_fork(boost::asio::io_context::fork_prepare); }
+  void OnPreWarp() override {
+#ifndef _WIN32
+    _Io.notify_fork(boost::asio::io_context::fork_prepare);
+#endif
+  }
 
-  void OnPostWarpParent() override { _Io.notify_fork(boost::asio::io_context::fork_parent); }
+  void OnPostWarpParent() override {
+#ifndef _WIN32
+    _Io.notify_fork(boost::asio::io_context::fork_parent);
+#endif
+  }
 
-  void OnPostWarpChild() override { _Io.notify_fork(boost::asio::io_context::fork_child); }
+  void OnPostWarpChild() override {
+#ifndef _WIN32
+    _Io.notify_fork(boost::asio::io_context::fork_child);
+#endif
+  }
 
 private:
   boost::asio::io_context& _Io;
@@ -125,9 +137,9 @@ TEST(ConnectionTrackerTest, BasicOperations) {
     tracker->Clear();
     EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p2).has_value());
 
-    auto errStop = co_await tracker->Stop();
+    co_await tracker->Stop();
+    auto errStop = co_await tracker->WaitService();
     EXPECT_FALSE(errStop);
-    co_await tracker->WaitService();
 
     testPassed = true;
     co_return;
@@ -169,9 +181,9 @@ TEST(ConnectionTrackerTest, ExpirationAndPruning) {
     // Lookup should return std::nullopt and prune the entry
     EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1).has_value());
 
-    auto errStop = co_await tracker->Stop();
+    co_await tracker->Stop();
+    auto errStop = co_await tracker->WaitService();
     EXPECT_FALSE(errStop);
-    co_await tracker->WaitService();
 
     testPassed = true;
     co_return;
@@ -216,9 +228,9 @@ TEST(ConnectionTrackerTest, SelectorAndValidator) {
     // Should be erased now
     EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1).has_value());
 
-    auto errStop = co_await tracker->Stop();
+    co_await tracker->Stop();
+    auto errStop = co_await tracker->WaitService();
     EXPECT_FALSE(errStop);
-    co_await tracker->WaitService();
 
     testPassed = true;
     co_return;
@@ -278,9 +290,9 @@ TEST(ConnectionTrackerTest, TcpStateTransitions) {
     timeClient.FastForward(std::chrono::seconds(31));
     EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(pSyn).has_value());
 
-    auto errStop = co_await tracker->Stop();
+    co_await tracker->Stop();
+    auto errStop = co_await tracker->WaitService();
     EXPECT_FALSE(errStop);
-    co_await tracker->WaitService();
 
     testPassed = true;
     co_return;
@@ -343,9 +355,9 @@ TEST(ConnectionTrackerTest, IcmpDestinationUnreachable) {
       EXPECT_EQ(&res->get(), &mark1);
     }
 
-    auto errStop = co_await tracker->Stop();
+    co_await tracker->Stop();
+    auto errStop = co_await tracker->WaitService();
     EXPECT_FALSE(errStop);
-    co_await tracker->WaitService();
 
     testPassed = true;
     co_return;

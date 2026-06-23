@@ -15,7 +15,7 @@
 #include "Cancel.hpp"
 #include "Coroutine.hpp"
 #include "ErrorCode.hpp"
-#include "GetCurrentFiber.hpp"
+#include "GetCurrentOmniFiber.hpp"
 #include "RemoteCall.hpp"
 #include "ResolverStaticEndpoint.hpp"
 #include "Select.hpp"
@@ -52,7 +52,7 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::DoStart() {
 }
 
 Omni::Fiber::Coroutine<void> Udp::DoWork() {
-  _ReadLoopFiber = (co_await Omni::Fiber::GetCurrentFiber())
+  _ReadLoopFiber = (co_await Omni::Fiber::GetCurrentOmniFiber())
                        .Spawn("Udp ReadLoop:" + boost::lexical_cast<std::string>(LocalEndpoint()) + "@" +
                                   std::to_string(reinterpret_cast<uintptr_t>(this)),
                               [this]() -> Omni::Fiber::Coroutine<void> {
@@ -81,7 +81,7 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::DoGracefulStop() {
     co_await channel->WaitService();
   }
   if (_ReadLoopFiber) {
-    co_await (co_await Omni::Fiber::GetCurrentFiber()).Join(_ReadLoopFiber);
+    co_await (co_await Omni::Fiber::GetCurrentOmniFiber()).Join(_ReadLoopFiber);
     _ReadLoopFiber.reset();
   }
   _Socket.close();

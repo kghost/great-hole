@@ -9,6 +9,8 @@
 
 /.local/
 /.cache/
+/.vs/
+/vcpkg_installed/
 /openwrt-build/
 /build/
 /build-*/

@@ -14,6 +14,7 @@ You must **never** run manual configuration or build commands directly (such as 
 ### Standard Build Workflow
 
 Run the following command to configure, build, and run tests (if applicable) in a single workflow:
+
 ```bash
 cmake --workflow --preset <workflow_preset_name>
 ```
@@ -25,7 +26,8 @@ When focusing on a specific problem or debugging, you are allowed to execute ind
 ```bash
 ctest --preset <test_preset_name> -R <test_name_regex>
 ```
-*(Example: `ctest --preset debug -R Pipeline`)*
+
+_(Example: `ctest --preset debug -R Pipeline`)_
 
 ---
 
@@ -34,6 +36,7 @@ ctest --preset <test_preset_name> -R <test_name_regex>
 The following workflow presets are configured in `CMakePresets.json`:
 
 ### Host Debug (`debug`)
+
 - **Description:** Configures (using `debug` configure preset), builds (using `build-debug` build preset), and tests (using `debug` test preset) on the host environment using Clang.
 - **Workflow Command:**
   ```bash
@@ -41,6 +44,7 @@ The following workflow presets are configured in `CMakePresets.json`:
   ```
 
 ### Host Debug (gcc-snapshot) (`debug-gcc-snapshot`)
+
 - **Description:** Configures (using `debug-gcc-snapshot` configure preset), builds (using `build-debug-gcc-snapshot` build preset), and tests (using `debug-gcc-snapshot` test preset) using GCC Snapshot.
 - **Workflow Command:**
   ```bash
@@ -48,6 +52,7 @@ The following workflow presets are configured in `CMakePresets.json`:
   ```
 
 ### Android arm64-v8a (`android-arm64-v8a`)
+
 - **Description:** Configures (using `android-arm64-v8a` configure preset) and builds (using `build-android-arm64-v8a` build preset) the Android arm64-v8a JNI shared library.
 - **Workflow Command:**
   ```bash
@@ -55,10 +60,19 @@ The following workflow presets are configured in `CMakePresets.json`:
   ```
 
 ### Android x86_64 (`android-x86_64`)
+
 - **Description:** Configures (using `android-x86_64` configure preset) and builds (using `build-android-x86_64` build preset) the Android x86_64 JNI shared library.
 - **Workflow Command:**
   ```bash
   cmake --workflow --preset android-x86_64
+  ```
+
+### Host Debug (msvc) (`build-debug-msvc`)
+
+- **Description:** Configures (using `debug` configure preset), builds (using `build-debug-msvc` build preset), and tests (using `debug` test preset) on the host environment using Clang.
+- **Workflow Command:**
+  ```bash
+  cmake --workflow --preset debug-msvc
   ```
 
 ---

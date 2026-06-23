@@ -1,7 +1,7 @@
 #include "ResolverCombinedEndpoint.hpp"
 
 #include "Event.hpp"
-#include "GetCurrentFiber.hpp"
+#include "GetCurrentOmniFiber.hpp"
 #include "Select.hpp"
 #include "SelectPair.hpp"
 
@@ -20,7 +20,7 @@ std::string ResolverCombinedEndpoint::GetName() const {
 Omni::Fiber::Coroutine<ErrorCode> ResolverCombinedEndpoint::DoStart() { co_return ErrorCode{}; }
 
 Omni::Fiber::Coroutine<void> ResolverCombinedEndpoint::DoWork() {
-  auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
+  auto& fiber = co_await Omni::Fiber::GetCurrentOmniFiber();
 
   // 1. Resolve IP
   auto eventPtrIp = std::make_shared<Omni::Fiber::Event<std::expected<boost::asio::ip::address_v6, ErrorCode>>>();

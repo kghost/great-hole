@@ -51,6 +51,7 @@ Documentation in this project is split into two categories based on target audie
   - [libs/omni-timetravel/DESIGN.md](../../libs/omni-timetravel/DESIGN.md) - Internal design specs (time namespaces, robust IPC protocol, Stop-Warp-Continue model).
 - **src/base**:
   - [src/base/README.md](../../src/base/README.md) - ServiceBase subclassing interface and thread-safety details.
+  - [src/base/DESIGN.md](../../src/base/DESIGN.md) - Internal design details and ServiceContextPtr race protection.
 - **src/core**:
   - [src/core/README.md](../../src/core/README.md) - Public APIs and abstractions for the core network modules including Endpoints, Pipelines, Filters, and PacketBuilder.
   - [src/core/DESIGN.md](../../src/core/DESIGN.md) - Internal architectures, dynamic multiplexing protocol, state machines, and implementation details.

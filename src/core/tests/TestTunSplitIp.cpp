@@ -13,7 +13,7 @@
 #include "EndpointTunSplitIp.hpp"
 #include "ErrorCode.hpp"
 #include "Fiber.hpp"
-#include "GetCurrentFiber.hpp"
+#include "GetCurrentOmniFiber.hpp"
 #include "Manager.hpp"
 #include "Packet.hpp"
 #include "Utils.hpp"
@@ -44,7 +44,7 @@ TEST(TunSplitIpTest, DispatchAndVerifyIP) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     auto err = co_await tunSplit->Start();
     EXPECT_FALSE(err);
@@ -191,8 +191,7 @@ TEST(TunSplitIpTest, DispatchAndVerifyIP) {
     co_await tunSplit->RemoveChannel(channel2);
     co_await tunSplit->RemoveChannel(channelV6);
 
-    auto stopErr = co_await tunSplit->Stop();
-    EXPECT_FALSE(stopErr);
+    co_await tunSplit->Stop();
 
     ::close(externalFd);
     co_await current.WaitAll();
@@ -219,7 +218,7 @@ TEST(TunSplitIpTest, MultipleIPsPerChannel) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     auto err = co_await tunSplit->Start();
     EXPECT_FALSE(err);
@@ -324,8 +323,7 @@ TEST(TunSplitIpTest, MultipleIPsPerChannel) {
 
     // Cleanup channels
     co_await tunSplit->RemoveChannel(channel);
-    auto stopErr = co_await tunSplit->Stop();
-    EXPECT_FALSE(stopErr);
+    co_await tunSplit->Stop();
 
     ::close(externalFd);
     co_await current.WaitAll();

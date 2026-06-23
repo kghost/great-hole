@@ -11,7 +11,7 @@
 #include "EndpointTunSplitIp.hpp"
 #include "EndpointUdpDynMux.hpp"
 #include "Filter.hpp"
-#include "GetCurrentFiber.hpp"
+#include "GetCurrentOmniFiber.hpp"
 #include "Pipeline.hpp"
 #include "ResolverStaticEndpoint.hpp"
 #include "Utils.hpp"
@@ -67,17 +67,16 @@ TEST(VpnServerTest, ConstructorStoresFiltersAndAppliesThem) {
     auto vpnErr = co_await vpnServer->Start();
     EXPECT_FALSE(vpnErr);
 
-    auto vpnStopErr = co_await vpnServer->Stop();
-    EXPECT_FALSE(vpnStopErr);
-
-    co_await vpnServer->WaitService();
+    co_await vpnServer->Stop();
+    auto vpnErr = co_await vpnServer->WaitService();
+    EXPECT_FALSE(vpnErr);
 
     co_await udpDynMux->Stop();
     co_await udpDynMux->WaitService();
 
     co_await tunSplit->Stop();
 
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
     co_await current.WaitAll();
 
     ::close(externalFd);
@@ -156,7 +155,7 @@ TEST(VpnServerTest, EndToEndBidirectionalRouting) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     co_await vpnServer->RegisterPeer(psk, {clientIp, MapToV6(clientIpV4)});
 

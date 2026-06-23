@@ -10,7 +10,7 @@
 #include "Coroutine.hpp"
 #include "EndpointUdp.hpp"
 #include "Fiber.hpp"
-#include "GetCurrentFiber.hpp"
+#include "GetCurrentOmniFiber.hpp"
 #include "Manager.hpp"
 #include "Packet.hpp"
 #include "ResolverHelper.hpp"
@@ -38,7 +38,7 @@ TEST(UdpFiberTest, SuccessfulChannelCreationAndDataTransfer) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     // Start both endpoints
     auto err1 = co_await udp1->Start();
@@ -108,10 +108,8 @@ TEST(UdpFiberTest, SuccessfulChannelCreationAndDataTransfer) {
     EXPECT_TRUE(writeCompleted);
 
     // Stop endpoints gracefully
-    auto stopErr1 = co_await udp1->Stop();
-    EXPECT_FALSE(stopErr1);
-    auto stopErr2 = co_await udp2->Stop();
-    EXPECT_FALSE(stopErr2);
+    co_await udp1->Stop();
+    co_await udp2->Stop();
 
     // Reap all child fibers spawned on the root fiber (i.e. start fibers)
     co_await current.WaitAll();
@@ -133,7 +131,7 @@ TEST(UdpFiberTest, StartFailureOnDuplicateBind) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     auto err1 = co_await udp1->Start();
     EXPECT_FALSE(err1);
@@ -147,8 +145,7 @@ TEST(UdpFiberTest, StartFailureOnDuplicateBind) {
     auto err2 = co_await udp2->Start();
     EXPECT_TRUE(err2); // Duplicate bind should return error
 
-    auto stopErr1 = co_await udp1->Stop();
-    EXPECT_FALSE(stopErr1);
+    co_await udp1->Stop();
 
     co_await current.WaitAll();
 
@@ -171,7 +168,7 @@ TEST(UdpFiberTest, ReadCancellation) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     auto err1 = co_await udp1->Start();
     EXPECT_FALSE(err1);
@@ -215,10 +212,8 @@ TEST(UdpFiberTest, ReadCancellation) {
     EXPECT_TRUE(readCompleted);
     EXPECT_EQ(readErrResult, ErrorCode(AppErrorCategory::kOperationAborted, kAppError));
 
-    auto stopErr1 = co_await udp1->Stop();
-    EXPECT_FALSE(stopErr1);
-    auto stopErr2 = co_await udp2->Stop();
-    EXPECT_FALSE(stopErr2);
+    co_await udp1->Stop();
+    co_await udp2->Stop();
 
     co_await current.WaitAll();
 
@@ -241,7 +236,7 @@ TEST(UdpFiberTest, WriteCancellation) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     auto err1 = co_await udp1->Start();
     EXPECT_FALSE(err1);
@@ -274,10 +269,8 @@ TEST(UdpFiberTest, WriteCancellation) {
     auto writeErr = co_await channel1->Write(sendPacket, cancelObj);
     EXPECT_EQ(writeErr, ErrorCode(AppErrorCategory::kOperationAborted, kAppError));
 
-    auto stopErr1 = co_await udp1->Stop();
-    EXPECT_FALSE(stopErr1);
-    auto stopErr2 = co_await udp2->Stop();
-    EXPECT_FALSE(stopErr2);
+    co_await udp1->Stop();
+    co_await udp2->Stop();
 
     co_await current.WaitAll();
 
@@ -300,7 +293,7 @@ TEST(UdpFiberTest, MultiplePacketsPingPong) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     auto err1 = co_await udp1->Start();
     EXPECT_FALSE(err1);
@@ -388,10 +381,8 @@ TEST(UdpFiberTest, MultiplePacketsPingPong) {
     EXPECT_TRUE(serverPassed);
     EXPECT_TRUE(clientPassed);
 
-    auto stopErr1 = co_await udp1->Stop();
-    EXPECT_FALSE(stopErr1);
-    auto stopErr2 = co_await udp2->Stop();
-    EXPECT_FALSE(stopErr2);
+    co_await udp1->Stop();
+    co_await udp2->Stop();
 
     co_await current.WaitAll();
 
@@ -414,7 +405,7 @@ TEST(UdpFiberTest, CreateChannelFromResolverEndpoint) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentFiber();
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     // Start both endpoints
     auto err1 = co_await udp1->Start();
@@ -501,10 +492,8 @@ TEST(UdpFiberTest, CreateChannelFromResolverEndpoint) {
     EXPECT_TRUE(readCompleted);
     EXPECT_TRUE(writeCompleted);
 
-    auto stopErr1 = co_await udp1->Stop();
-    EXPECT_FALSE(stopErr1);
-    auto stopErr2 = co_await udp2->Stop();
-    EXPECT_FALSE(stopErr2);
+    co_await udp1->Stop();
+    co_await udp2->Stop();
 
     co_await current.WaitAll();
 

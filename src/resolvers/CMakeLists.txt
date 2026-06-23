@@ -36,7 +36,7 @@ foreach(suffix "" "-asan")
   endif()
 
   if(suffix STREQUAL "-asan")
-    target_compile_options(${target} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+    target_compile_options(${target} PRIVATE -fsanitize=address)
     target_link_options(${target} PRIVATE -fsanitize=address)
   endif()
 endforeach()

@@ -10,7 +10,7 @@
 #include "Asio.hpp"
 #include "Cancel.hpp"
 #include "Coroutine.hpp"
-#include "GetCurrentFiber.hpp"
+#include "GetCurrentOmniFiber.hpp"
 #include "LuaEngine.hpp"
 #include "StackTrace.hpp"
 
@@ -64,13 +64,13 @@ int main(int ac, char** av) {
     Cancel stopApplication;
     Cancel stopSignals;
 
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
     auto fiberLua = current.Spawn("LuaEngine", [&io, &stopApplication, &start]() -> Omni::Fiber::Coroutine<void> {
       {
         LuaEngine engine(io.get_executor(), stopApplication);
         co_await engine.DoFile(start);
       }
-      auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
+      auto& fiber = co_await Omni::Fiber::GetCurrentOmniFiber();
       co_await fiber.WaitAll();
     });
 

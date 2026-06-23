@@ -1,8 +1,9 @@
 #include "ResolverServicePort.hpp"
 
-#include <arpa/inet.h>
 #include <cstdint>
+#if __has_include(<netdb.h>)
 #include <netdb.h>
+#endif
 
 #include <boost/asio.hpp>
 

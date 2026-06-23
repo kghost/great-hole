@@ -5,6 +5,6 @@ add_subdirectory(application)
 
 if(ANDROID)
   add_subdirectory(android)
-else()
+elseif(NOT ANDROID AND NOT WIN32)
   add_subdirectory(lua)
 endif()

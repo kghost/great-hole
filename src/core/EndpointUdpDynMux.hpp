@@ -131,6 +131,7 @@ public:
   uint16_t GetLocalRxId() const { return _LocalRxId; }
   uint16_t GetRemoteRxId() const { return _RemoteRxId; }
   std::chrono::milliseconds GetRoundTripTime() const { return _RoundTripTime; }
+  State GetChannelState() const { return _State; }
 
   Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override;
   Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel& c) override;

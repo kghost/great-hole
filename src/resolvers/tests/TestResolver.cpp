@@ -7,7 +7,7 @@
 #include "Asio.hpp"
 #include "Coroutine.hpp"
 #include "ErrorCode.hpp"
-#include "GetCurrentFiber.hpp"
+#include "GetCurrentOmniFiber.hpp"
 #include "Manager.hpp"
 #include "ResolverCombinedEndpoint.hpp"
 #include "ResolverDnsService.hpp"
@@ -52,7 +52,7 @@ TEST(ResolverTest, StaticIpResolverSuccess) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
     Cancel c;
     auto r1 = std::make_shared<ResolverStaticIp>(MapToV6(boost::asio::ip::make_address("127.0.0.1")));
     auto res1 = co_await r1->Resolve(c);
@@ -86,7 +86,7 @@ TEST(ResolverTest, StaticPortResolverSuccess) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
     Cancel c;
     auto r1 = std::make_shared<ResolverNumberPort>(8080);
     auto res1 = co_await r1->Resolve(c);
@@ -127,7 +127,7 @@ TEST(ResolverTest, StaticPortResolverFailure) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
     Cancel c;
     auto r1 = std::make_shared<ResolverServicePort>("abc");
     auto res1 = co_await r1->Resolve(c);
@@ -154,7 +154,7 @@ TEST(ResolverTest, StaticDnsResolverSuccess) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
     Cancel c;
     auto r = std::make_shared<ResolverIpDns>(io.get_executor(), "localhost");
     auto res = co_await r->Resolve(c);
@@ -180,7 +180,7 @@ TEST(ResolverTest, ResolverEndpointSuccess) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
     Cancel c;
     auto ipResolver = std::make_shared<ResolverStaticIp>(MapToV6(boost::asio::ip::make_address("127.0.0.1")));
     auto portResolver = std::make_shared<ResolverNumberPort>(9090);
@@ -210,7 +210,7 @@ TEST(ResolverTest, DnsServiceResolverNonExistent) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
     auto mockedResolveFor = MockResolveeFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
 
     Cancel c;
@@ -238,7 +238,7 @@ TEST(ResolverTest, ResolverCancellation) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 
     // ResolverIpDns cancellation
     auto dnsResolver = std::make_shared<ResolverIpDns>(io.get_executor(), "nonexistent.example.invalid");
@@ -295,7 +295,7 @@ TEST(ResolverTest, ResolverHelperTest) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto& current = co_await Omni::Fiber::GetCurrentFiber();
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
     auto mockedResolveFor = MockResolveeFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
     Cancel c;
 

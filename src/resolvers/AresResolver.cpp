@@ -1,17 +1,25 @@
 #include "AresResolver.hpp"
 
+#include <boost/asio/ip/tcp.hpp>
 #include <chrono>
 #include <cstring>
-#include <expected>
 #include <functional>
+#include <type_traits>
 #include <unordered_map>
+#include <variant>
+
+#if __has_include(<sys/socket.h>)
+#include <netinet/in.h>
+#include <sys/socket.h>
+#endif
+
+#if __has_include(<winsock2.h>)
+#include <winsock2.h>
+#endif
 
 #include <ares.h>
-#include <arpa/inet.h>
-#include <arpa/nameser.h>
-#include <netdb.h>
-
-#include <boost/asio/posix/stream_descriptor.hpp>
+#include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/ip/udp.hpp>
 #include <boost/log/trivial.hpp>
 
 #include "Asio.hpp"
@@ -41,12 +49,55 @@ template <typename Lambda, typename... Args> void LambdaBridge(void* data, Args.
 }
 
 struct SocketTracker {
-  explicit SocketTracker(boost::asio::any_io_executor executor, ares_socket_t fd) : Descriptor(executor, fd) {}
-  ~SocketTracker() { Descriptor.release(); }
+  explicit SocketTracker(boost::asio::any_io_executor executor, ares_socket_t fd)
+      : Descriptor(ToAsioSocket(executor, fd)) {}
+  ~SocketTracker() {
+    std::visit([](auto& descriptor) { descriptor.release(); }, Descriptor);
+  }
 
   SocketTracker(SocketTracker&&) = default;
 
-  boost::asio::posix::stream_descriptor Descriptor;
+  static std::variant<boost::asio::ip::tcp::socket, boost::asio::ip::udp::socket>
+  ToAsioSocket(boost::asio::any_io_executor executor, ares_socket_t fd) {
+    int soType = 0;
+    socklen_t soTypeLen = sizeof(soType);
+
+    if (::getsockopt(fd, SOL_SOCKET, SO_TYPE, reinterpret_cast<char*>(&soType), &soTypeLen) < 0) {
+      throw std::runtime_error("getsockopt failed: " + std::to_string(errno));
+    }
+
+    if (soType == SOCK_STREAM) {
+      sockaddr_storage addr;
+      int addrLen = sizeof(addr);
+      if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &addrLen) < 0) {
+        throw std::runtime_error("getsockname failed: " + std::to_string(errno));
+      }
+      if (addr.ss_family == AF_INET) {
+        return {boost::asio::ip::tcp::socket(executor, boost::asio::ip::tcp::v4(), fd)};
+      } else if (addr.ss_family == AF_INET6) {
+        return {boost::asio::ip::tcp::socket(executor, boost::asio::ip::tcp::v6(), fd)};
+      } else {
+        throw std::runtime_error("Unknown address family: " + std::to_string(addr.ss_family));
+      }
+    } else if (soType == SOCK_DGRAM) {
+      sockaddr_storage addr;
+      int addrLen = sizeof(addr);
+      if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &addrLen) < 0) {
+        throw std::runtime_error("getsockname failed: " + std::to_string(errno));
+      }
+      if (addr.ss_family == AF_INET) {
+        return {boost::asio::ip::udp::socket(executor, boost::asio::ip::udp::v4(), fd)};
+      } else if (addr.ss_family == AF_INET6) {
+        return {boost::asio::ip::udp::socket(executor, boost::asio::ip::udp::v6(), fd)};
+      } else {
+        throw std::runtime_error("Unknown address family: " + std::to_string(addr.ss_family));
+      }
+    } else {
+      throw std::runtime_error("Unknown socket type: " + std::to_string(soType));
+    }
+  }
+
+  std::variant<boost::asio::ip::tcp::socket, boost::asio::ip::udp::socket> Descriptor;
   bool ReadableInterest = false;
   bool WritableInterest = false;
 };
@@ -114,28 +165,36 @@ Omni::Fiber::Coroutine<ErrorCode> RunChannel(boost::asio::any_io_executor execut
 
     for (auto& [fd, tracker] : trackers) {
       if (tracker.ReadableInterest) {
-        list.Add(
-            tracker.Descriptor.async_wait(boost::asio::posix::stream_descriptor::wait_read, Omni::Fiber::AsioUseFiber),
-            [channel, fd](auto const& tuple) {
-              auto [ec] = tuple;
-              if (!ec) {
-                ares_process_fd(channel, fd, ARES_SOCKET_BAD);
-              } else if (ec != boost::asio::error::operation_aborted) {
-                ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
-              }
-            });
+        list.Add(std::visit(
+                     [](auto& descriptor) {
+                       return descriptor.async_wait(std::decay_t<decltype(descriptor)>::wait_read,
+                                                    Omni::Fiber::AsioUseFiber);
+                     },
+                     tracker.Descriptor),
+                 [channel, fd](auto const& tuple) {
+                   auto [ec] = tuple;
+                   if (!ec) {
+                     ares_process_fd(channel, fd, ARES_SOCKET_BAD);
+                   } else if (ec != boost::asio::error::operation_aborted) {
+                     ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
+                   }
+                 });
       }
       if (tracker.WritableInterest) {
-        list.Add(
-            tracker.Descriptor.async_wait(boost::asio::posix::stream_descriptor::wait_write, Omni::Fiber::AsioUseFiber),
-            [channel, fd](auto const& tuple) {
-              auto [ec] = tuple;
-              if (!ec) {
-                ares_process_fd(channel, ARES_SOCKET_BAD, fd);
-              } else if (ec != boost::asio::error::operation_aborted) {
-                ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
-              }
-            });
+        list.Add(std::visit(
+                     [](auto& descriptor) {
+                       return descriptor.async_wait(std::decay_t<decltype(descriptor)>::wait_write,
+                                                    Omni::Fiber::AsioUseFiber);
+                     },
+                     tracker.Descriptor),
+                 [channel, fd](auto const& tuple) {
+                   auto [ec] = tuple;
+                   if (!ec) {
+                     ares_process_fd(channel, ARES_SOCKET_BAD, fd);
+                   } else if (ec != boost::asio::error::operation_aborted) {
+                     ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
+                   }
+                 });
       }
     }
 
@@ -148,7 +207,7 @@ Omni::Fiber::Coroutine<ErrorCode> RunChannel(boost::asio::any_io_executor execut
 
     // Cancel outstanding waits
     for (auto& [fd, tracker] : trackers) {
-      tracker.Descriptor.cancel();
+      std::visit([](auto& descriptor) { descriptor.cancel(); }, tracker.Descriptor);
     }
     timer.cancel();
 

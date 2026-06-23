@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-
+cmake_policy(SET CMP0167 NEW)
 project(great-hole VERSION 0.1.0 LANGUAGES CXX C)
 
 option(GREAT_HOLE_RELATIVE_PATHS "Use relative paths" OFF)
@@ -9,6 +9,7 @@ option(BUILD_TESTING "Build unit tests" ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 if(BUILD_WITH_LIBCXX)
   add_compile_options(-stdlib=libc++)
@@ -35,8 +36,11 @@ if(ANDROID)
   set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH CACHE STRING "Find root path mode include" FORCE)
 endif()
 
-if(POLICY CMP0167)
-  cmake_policy(SET CMP0167 NEW)
+if(WIN32)
+  add_compile_definitions(_WIN32_WINNT=0x0602)
+  add_compile_definitions(WIN32_LEAN_AND_MEAN)
+  add_compile_definitions(BOOST_USE_WINAPI_VERSION=BOOST_WINAPI_VERSION_WIN8)
+  add_compile_definitions(BOOST_ASIO_HAS_WINDOWS_OBJECT_HANDLE)
 endif()
 
 # Dependencies
@@ -51,11 +55,14 @@ if(ANDROID)
     INTERFACE_INCLUDE_DIRECTORIES "${CARES_INCLUDE_DIR}"
     INTERFACE_LINK_LIBRARIES "${CARES_LIBRARY}"
   )
-else()
-  find_package(PkgConfig REQUIRED)
-  pkg_check_modules(LUA REQUIRED IMPORTED_TARGET lua-5.4)
-  pkg_check_modules(CARES REQUIRED IMPORTED_TARGET libcares)
 endif()
+
+
+find_package(PkgConfig REQUIRED)
+if(!ANDROID AND !WIN32)
+pkg_check_modules(LUA REQUIRED IMPORTED_TARGET lua-5.4)
+endif()
+pkg_check_modules(CARES REQUIRED IMPORTED_TARGET libcares)
 
 if(BUILD_TESTING)
   enable_testing()
@@ -78,7 +85,6 @@ if(GREAT_HOLE_RELATIVE_PATHS)
   add_compile_options("-ffile-compilation-dir=.")
   add_compile_options("-ffile-prefix-map=${CMAKE_SOURCE_DIR}/=./")
 endif()
-
 
 set(OMNIFIBER_INTERNAL ON CACHE BOOL "" FORCE)
 

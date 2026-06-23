@@ -8,9 +8,15 @@
 
 namespace gh {
 
+#if _WIN32
+using FileHandleType = boost::asio::windows::stream_handle;
+#else
+using FileHandleType = boost::asio::posix::stream_descriptor;
+#endif
+
 class Input : public EndpointInput {
 public:
-  explicit Input(boost::asio::any_io_executor executor, decltype(STDERR_FILENO) f) : _S(executor, f) {}
+  explicit Input(boost::asio::any_io_executor executor, FileHandleType::native_handle_type f) : _S(executor, f) {}
 
   Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override {
     auto [err, bytes_transferred] =
@@ -23,12 +29,12 @@ public:
   }
 
 private:
-  boost::asio::posix::stream_descriptor _S;
+  FileHandleType _S;
 };
 
 class Output : public EndpointOutput {
 public:
-  explicit Output(boost::asio::any_io_executor executor, decltype(STDERR_FILENO) f) : _S(executor, f) {}
+  explicit Output(boost::asio::any_io_executor executor, FileHandleType::native_handle_type f) : _S(executor, f) {}
 
   Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel& c) override {
     std::size_t sent = 0;
@@ -44,7 +50,7 @@ public:
   }
 
 private:
-  boost::asio::posix::stream_descriptor _S;
+  FileHandleType _S;
 };
 
 static std::weak_ptr<EndpointInput> _In;
@@ -56,7 +62,11 @@ std::shared_ptr<EndpointInput> GetCin(boost::asio::any_io_executor executor) {
   if (p) {
     return p;
   } else {
-    auto o = std::make_shared<Input>(executor, STDIN_FILENO);
+#if _WIN32
+    auto o = std::make_shared<Input>(executor, ::GetStdHandle(STD_INPUT_HANDLE));
+#else
+    auto o = std::make_shared<Input>(executor, _fileno(stdin));
+#endif
     _In = o;
     return o;
   }
@@ -67,7 +77,11 @@ std::shared_ptr<EndpointOutput> GetCout(boost::asio::any_io_executor executor) {
   if (p) {
     return p;
   } else {
-    auto o = std::make_shared<Output>(executor, STDOUT_FILENO);
+#if _WIN32
+    auto o = std::make_shared<Output>(executor, ::GetStdHandle(STD_OUTPUT_HANDLE));
+#else
+    auto o = std::make_shared<Output>(executor, _fileno(stdout));
+#endif
     _Out = o;
     return o;
   }
@@ -78,7 +92,11 @@ std::shared_ptr<EndpointOutput> GetCerr(boost::asio::any_io_executor executor) {
   if (p) {
     return p;
   } else {
-    auto o = std::make_shared<Output>(executor, STDERR_FILENO);
+#if _WIN32
+    auto o = std::make_shared<Output>(executor, ::GetStdHandle(STD_ERROR_HANDLE));
+#else
+    auto o = std::make_shared<Output>(executor, _fileno(stderr));
+#endif
     _Err = o;
     return o;
   }

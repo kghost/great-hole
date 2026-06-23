@@ -126,6 +126,7 @@ public:
       case TcpState::kClosed:
         return FinTimeout;
       }
+      return FinTimeout;
     }
 
     static TcpState InitialState(uint8_t flags) {

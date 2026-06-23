@@ -2,7 +2,7 @@
 
 #include <format>
 
-#include "GetCurrentFiber.hpp"
+#include "GetCurrentOmniFiber.hpp"
 
 namespace gh {
 
@@ -11,7 +11,7 @@ Omni::Fiber::Coroutine<ErrorCode> ServiceBase::Start() {
   _State = State::kPreStart;
   _Service.emplace();
   Omni::Fiber::Event<ErrorCode> errStart;
-  auto& fiber = co_await Omni::Fiber::GetCurrentFiber();
+  auto& fiber = co_await Omni::Fiber::GetCurrentOmniFiber();
   _Service.value()._Fiber = fiber.Spawn(std::format("Service:{:s}@{:p}", GetName(), static_cast<const void*>(this)),
                                         [this, &errStart]() -> Omni::Fiber::Coroutine<void> {
                                           auto me = shared_from_this(); // Hold me to prevent this from releasing.
@@ -49,20 +49,21 @@ Omni::Fiber::Coroutine<ErrorCode> ServiceBase::Start() {
 
 Omni::Fiber::Coroutine<void> ServiceBase::DoWork() { co_return co_await _Service.value()._Stop.GetFiberCancelEvent(); }
 
-Omni::Fiber::Coroutine<ErrorCode> ServiceBase::Stop() {
+Omni::Fiber::Coroutine<void> ServiceBase::Stop() {
   if (!_Service.has_value()) {
-    co_return ErrorCode{};
+    co_return;
   }
   _Service.value()._Stop.Trigger();
-  co_return co_await _Service.value()._StopError;
+  co_return;
 }
 
-Omni::Fiber::Coroutine<void> ServiceBase::WaitService() {
+Omni::Fiber::Coroutine<ErrorCode> ServiceBase::WaitService() {
   assert(_State != State::kNone);
-  co_await (co_await Omni::Fiber::GetCurrentFiber()).Join(_Service.value()._Fiber);
+  co_await (co_await Omni::Fiber::GetCurrentOmniFiber()).Join(_Service.value()._Fiber);
+  auto err = co_await _Service.value()._StopError;
   _Service.reset();
   _State = State::kNone;
-  co_return;
+  co_return err;
 }
 
 } // namespace gh

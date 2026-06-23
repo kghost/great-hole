@@ -23,7 +23,7 @@
 #include "Coroutine.hpp"
 #include "EndpointUdpDynMuxProtocol.hpp"
 #include "ErrorCode.hpp"
-#include "GetCurrentFiber.hpp"
+#include "GetCurrentOmniFiber.hpp"
 #include "PacketBuilder.hpp"
 #include "Select.hpp"
 #include "SelectPair.hpp"
@@ -421,7 +421,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoStart() {
 }
 
 Omni::Fiber::Coroutine<void> UdpDynMux::DoWork() {
-  auto& currentFiber = co_await Omni::Fiber::GetCurrentFiber();
+  auto& currentFiber = co_await Omni::Fiber::GetCurrentOmniFiber();
   _ReadLoopFiber = currentFiber.Spawn(GetName() + " ReadLoop", [this]() -> Omni::Fiber::Coroutine<void> {
     co_await ReadLoop();
     co_return;
@@ -449,7 +449,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoGracefulStop() {
   }
   _RxIdToChannel.clear();
   if (_ReadLoopFiber) {
-    co_await (co_await Omni::Fiber::GetCurrentFiber()).Join(_ReadLoopFiber);
+    co_await (co_await Omni::Fiber::GetCurrentOmniFiber()).Join(_ReadLoopFiber);
     _ReadLoopFiber.reset();
   }
   _Socket.close();

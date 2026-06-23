@@ -22,7 +22,7 @@
 
 #include "Cancel.hpp"
 #include "ErrorCode.hpp"
-#include "GetCurrentFiber.hpp"
+#include "GetCurrentOmniFiber.hpp"
 #include "Packet.hpp"
 #include "Select.hpp"
 #include "SelectPair.hpp"
@@ -69,7 +69,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::DoStart() {
 
 Omni::Fiber::Coroutine<void> EndpointTunSplitIp::DoWork() {
   _ReadLoopFiber =
-      (co_await Omni::Fiber::GetCurrentFiber())
+      (co_await Omni::Fiber::GetCurrentOmniFiber())
           .Spawn("EndpointTunSplitIp ReadLoop:" + _TunName + "@" + std::to_string(reinterpret_cast<uintptr_t>(this)),
                  [this]() -> Omni::Fiber::Coroutine<void> {
                    co_await ReadLoop();
@@ -97,7 +97,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::DoGracefulStop() {
     co_await channel->WaitService();
   }
   if (_ReadLoopFiber) {
-    co_await (co_await Omni::Fiber::GetCurrentFiber()).Join(_ReadLoopFiber);
+    co_await (co_await Omni::Fiber::GetCurrentOmniFiber()).Join(_ReadLoopFiber);
     _ReadLoopFiber.reset();
   }
   _TunFileDescriptor.close();

@@ -7,11 +7,18 @@ foreach(suffix "" "-asan")
     set(target "great-hole-application")
   endif()
 
-  add_library(${target} STATIC
-    VpnServer.cpp
+  set(app_sources
     VpnClientMultiChannel.cpp
     ConnectionTracker.cpp
   )
+
+  if(NOT WIN32)
+    list(APPEND app_sources
+      VpnServer.cpp
+    )
+  endif()
+
+  add_library(${target} STATIC ${app_sources})
 
   target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -22,7 +29,7 @@ foreach(suffix "" "-asan")
   )
 
   if(suffix STREQUAL "-asan")
-    target_compile_options(${target} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+    target_compile_options(${target} PRIVATE -fsanitize=address)
     target_link_options(${target} PRIVATE -fsanitize=address)
   endif()
 endforeach()

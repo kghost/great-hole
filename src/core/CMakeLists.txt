@@ -9,18 +9,25 @@ foreach(suffix "" "-asan")
     set(omniresolver "omni-resolver")
   endif()
 
-  add_library(${target_core} STATIC
+  set(core_sources
     BackoffTimer.cpp
     Pipeline.cpp
     Endpoint.cpp
     Filter.cpp
     UtilConsole.cpp
-    EndpointTun.cpp
-    EndpointTunSplitIp.cpp
     EndpointUdp.cpp
     EndpointUdpMux.cpp
     EndpointUdpDynMux.cpp
   )
+
+  if(NOT WIN32)
+    list(APPEND core_sources
+      EndpointTun.cpp
+      EndpointTunSplitIp.cpp
+    )
+  endif()
+
+  add_library(${target_core} STATIC ${core_sources})
 
   target_include_directories(${target_core} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -38,7 +45,7 @@ foreach(suffix "" "-asan")
   endif()
 
   if(suffix STREQUAL "-asan")
-    target_compile_options(${target_core} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
+    target_compile_options(${target_core} PRIVATE -fsanitize=address)
     target_link_options(${target_core} PRIVATE -fsanitize=address)
   endif()
 endforeach()
