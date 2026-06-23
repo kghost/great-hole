@@ -25,7 +25,6 @@ foreach(suffix "" "-asan")
   target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
   target_link_libraries(${target} PUBLIC
-    Threads::Threads
     Boost::log
     ${omnibase}
     ${omnifiber}

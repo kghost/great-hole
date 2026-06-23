@@ -25,8 +25,6 @@ foreach(suffix "" "-asan")
   target_include_directories(${target_core} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
   target_link_libraries(${target_core} PUBLIC
-    Threads::Threads
-    ZLIB::ZLIB
     Boost::log
     Boost::program_options
     Boost::filesystem

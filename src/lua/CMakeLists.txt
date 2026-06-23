@@ -40,8 +40,6 @@ foreach(suffix "" "-asan")
   )
 
   target_link_libraries(${target_exe} PRIVATE
-    Threads::Threads
-    ZLIB::ZLIB
     Boost::log
     Boost::program_options
     Boost::filesystem

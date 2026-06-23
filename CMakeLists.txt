@@ -11,8 +11,6 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(CMAKE_THREAD_LIBS_INIT "-lpthread")
-
 if(BUILD_WITH_LIBCXX)
   add_compile_options(-stdlib=libc++)
   add_link_options(-stdlib=libc++)
@@ -43,8 +41,6 @@ if(POLICY CMP0167)
 endif()
 
 # Dependencies
-find_package(Threads REQUIRED)
-find_package(ZLIB REQUIRED)
 find_package(Boost REQUIRED COMPONENTS log program_options)
 
 if(ANDROID OR GREAT_HOLE_BUILD_ANDROID)
@@ -88,5 +84,7 @@ endif()
 set(OMNIFIBER_INTERNAL ON CACHE BOOL "" FORCE)
 
 add_subdirectory(libs/omni-fiber)
+if(BUILD_TESTING)
 add_subdirectory(libs/omni-timetravel)
+endif()
 add_subdirectory(src)
