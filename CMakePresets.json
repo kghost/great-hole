@@ -13,7 +13,6 @@
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "BUILD_TESTING": "ON",
         "CMAKE_C_COMPILER": "clang",
         "CMAKE_CXX_COMPILER": "clang++"
       }
@@ -25,7 +24,6 @@
       "binaryDir": "${sourceDir}/build-msvc",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "BUILD_TESTING": "ON",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
       },
       "environment": {
@@ -41,13 +39,23 @@
       "generator": "Ninja"
     },
     {
+      "name": "debug-gcc-14",
+      "displayName": "Debug (gcc-14)",
+      "description": "Debug (gcc-14)",
+      "binaryDir": "${sourceDir}/build-gcc-14",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "/usr/bin/gcc-14",
+        "CMAKE_CXX_COMPILER": "/usr/bin/g++-14"
+      }
+    },
+    {
       "name": "debug-gcc-snapshot",
       "displayName": "Debug (gcc-snapshot)",
       "description": "Debug (gcc-snapshot)",
       "binaryDir": "${sourceDir}/build-gcc-snapshot",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "BUILD_TESTING": "ON",
         "CMAKE_C_COMPILER": "/usr/lib/gcc-snapshot/bin/gcc",
         "CMAKE_CXX_COMPILER": "/usr/lib/gcc-snapshot/bin/g++"
       }
@@ -95,6 +103,11 @@
       "jobs": 8
     },
     {
+      "name": "build-debug-gcc-14",
+      "configurePreset": "debug-gcc-14",
+      "jobs": 8
+    },
+    {
       "name": "build-debug-gcc-snapshot",
       "configurePreset": "debug-gcc-snapshot",
       "jobs": 8
@@ -137,6 +150,14 @@
       "environment": {
         "ASAN_OPTIONS": "detect_container_overflow=0"
       },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "debug-gcc-14",
+      "configurePreset": "debug-gcc-14",
       "execution": {
         "noTestsAction": "error",
         "stopOnFailure": false
@@ -200,6 +221,23 @@
         {
           "type": "test",
           "name": "debug-msvc-ninja"
+        }
+      ]
+    },
+    {
+      "name": "debug-gcc-14",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "debug-gcc-14"
+        },
+        {
+          "type": "build",
+          "name": "build-debug-gcc-14"
+        },
+        {
+          "type": "test",
+          "name": "debug-gcc-14"
         }
       ]
     },
