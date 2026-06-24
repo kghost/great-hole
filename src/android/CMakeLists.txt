@@ -15,6 +15,10 @@ target_include_directories(androidhole_dataplane PRIVATE
   ${CMAKE_SOURCE_DIR}/libs/omni-fiber
 )
 
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  target_link_options(androidhole_dataplane PRIVATE "-Wl,--strip-all")
+endif()
+
 target_link_libraries(androidhole_dataplane PRIVATE
   great-hole-application
   great-hole-core
