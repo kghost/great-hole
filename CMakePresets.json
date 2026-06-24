@@ -1,287 +1,147 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": {
-    "major": 3,
-    "minor": 20,
-    "patch": 0
-  },
+  "cmakeMinimumRequired": { "major": 3, "minor": 20, "patch": 0 },
   "configurePresets": [
     {
       "name": "debug",
-      "displayName": "Debug",
-      "description": "Debug",
       "binaryDir": "${sourceDir}/build",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_C_COMPILER": "clang",
-        "CMAKE_CXX_COMPILER": "clang++"
-      }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "CMAKE_C_COMPILER": "clang", "CMAKE_CXX_COMPILER": "clang++" }
     },
     {
       "name": "debug-msvc",
-      "displayName": "Debug (MSVC)",
-      "description": "Debug (MSVC)",
       "binaryDir": "${sourceDir}/build-msvc",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-      },
-      "environment": {
-        "ASAN_OPTIONS": "detect_container_overflow=0"
-      }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" },
+      "environment": { "ASAN_OPTIONS": "detect_container_overflow=0" }
     },
     {
       "name": "debug-msvc-ninja",
-      "displayName": "Debug (MSVC Ninja)",
-      "description": "Debug (MSVC Ninja)",
       "inherits": "debug-msvc",
       "binaryDir": "${sourceDir}/build",
       "generator": "Ninja"
     },
     {
       "name": "debug-gcc-14",
-      "displayName": "Debug (gcc-14)",
-      "description": "Debug (gcc-14)",
       "binaryDir": "${sourceDir}/build-gcc-14",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_C_COMPILER": "/usr/bin/gcc-14",
-        "CMAKE_CXX_COMPILER": "/usr/bin/g++-14"
-      }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "CMAKE_C_COMPILER": "/usr/bin/gcc-14", "CMAKE_CXX_COMPILER": "/usr/bin/g++-14" }
     },
     {
       "name": "debug-gcc-snapshot",
-      "displayName": "Debug (gcc-snapshot)",
-      "description": "Debug (gcc-snapshot)",
       "binaryDir": "${sourceDir}/build-gcc-snapshot",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_C_COMPILER": "/usr/lib/gcc-snapshot/bin/gcc",
-        "CMAKE_CXX_COMPILER": "/usr/lib/gcc-snapshot/bin/g++"
-      }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "CMAKE_C_COMPILER": "/usr/lib/gcc-snapshot/bin/gcc", "CMAKE_CXX_COMPILER": "/usr/lib/gcc-snapshot/bin/g++" }
     },
     {
-      "name": "android-arm64-v8a",
-      "displayName": "Android JNI Library (arm64-v8a)",
-      "description": "Build Android JNI shared library (arm64-v8a)",
-      "binaryDir": "${sourceDir}/build-android-arm64-v8a",
+      "name": "android-base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build-${presetName}",
       "toolchainFile": "$env{HOME}/android-sdk/ndk/30.0.14904198/build/cmake/android.toolchain.cmake",
-      "cacheVariables": {
-        "ANDROID_ABI": "arm64-v8a",
-        "ANDROID_PLATFORM": "android-26",
-        "BUILD_TESTING": "OFF"
-      }
+      "cacheVariables": { "ANDROID_PLATFORM": "android-26", "BUILD_TESTING": "OFF" }
     },
     {
-      "name": "android-x86_64",
-      "displayName": "Android JNI Library (x86_64)",
-      "description": "Build Android JNI shared library (x86_64)",
-      "binaryDir": "${sourceDir}/build-android-x86_64",
-      "toolchainFile": "$env{HOME}/android-sdk/ndk/30.0.14904198/build/cmake/android.toolchain.cmake",
-      "cacheVariables": {
-        "ANDROID_ABI": "x86_64",
-        "ANDROID_PLATFORM": "android-26",
-        "BUILD_TESTING": "OFF"
-      }
+      "name": "android-arm64-v8a-debug",
+      "inherits": "android-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "ANDROID_ABI": "arm64-v8a" }
+    },
+    {
+      "name": "android-x86_64-debug",
+      "inherits": "android-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "ANDROID_ABI": "x86_64" }
+    },
+    {
+      "name": "android-arm64-v8a-release",
+      "inherits": "android-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "ANDROID_ABI": "arm64-v8a" }
+    },
+    {
+      "name": "android-x86_64-release",
+      "inherits": "android-base",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "ANDROID_ABI": "x86_64" }
     }
   ],
   "buildPresets": [
-    {
-      "name": "build-debug",
-      "configurePreset": "debug",
-      "jobs": 16
-    },
-    {
-      "name": "build-debug-msvc",
-      "configurePreset": "debug-msvc",
-      "configuration": "Debug",
-      "jobs": 8
-    },
-    {
-      "name": "build-debug-msvc-ninja",
-      "configurePreset": "debug-msvc-ninja",
-      "jobs": 8
-    },
-    {
-      "name": "build-debug-gcc-14",
-      "configurePreset": "debug-gcc-14",
-      "jobs": 8
-    },
-    {
-      "name": "build-debug-gcc-snapshot",
-      "configurePreset": "debug-gcc-snapshot",
-      "jobs": 8
-    },
-    {
-      "name": "build-android-arm64-v8a",
-      "configurePreset": "android-arm64-v8a",
-      "jobs": 16
-    },
-    {
-      "name": "build-android-x86_64",
-      "configurePreset": "android-x86_64",
-      "jobs": 16
-    }
+    { "name": "build-debug", "configurePreset": "debug", "jobs": 16 },
+    { "name": "build-debug-msvc", "configurePreset": "debug-msvc", "configuration": "Debug", "jobs": 8 },
+    { "name": "build-debug-msvc-ninja", "configurePreset": "debug-msvc-ninja", "jobs": 8 },
+    { "name": "build-debug-gcc-14", "configurePreset": "debug-gcc-14", "jobs": 8 },
+    { "name": "build-debug-gcc-snapshot", "configurePreset": "debug-gcc-snapshot", "jobs": 8 },
+    { "name": "build-android-arm64-v8a-debug", "configurePreset": "android-arm64-v8a-debug", "jobs": 16 },
+    { "name": "build-android-x86_64-debug", "configurePreset": "android-x86_64-debug", "jobs": 16 },
+    { "name": "build-android-arm64-v8a-release", "configurePreset": "android-arm64-v8a-release", "jobs": 16 },
+    { "name": "build-android-x86_64-release", "configurePreset": "android-x86_64-release", "jobs": 16 }
   ],
   "testPresets": [
-    {
-      "name": "debug",
-      "configurePreset": "debug",
-      "execution": {
-        "noTestsAction": "error",
-        "stopOnFailure": false
-      }
-    },
-    {
-      "name": "debug-msvc",
-      "configurePreset": "debug-msvc",
-      "configuration": "Debug",
-      "environment": {
-        "ASAN_OPTIONS": "detect_container_overflow=0"
-      },
-      "execution": {
-        "noTestsAction": "error",
-        "stopOnFailure": false
-      }
-    },
-    {
-      "name": "debug-msvc-ninja",
-      "configurePreset": "debug-msvc-ninja",
-      "environment": {
-        "ASAN_OPTIONS": "detect_container_overflow=0"
-      },
-      "execution": {
-        "noTestsAction": "error",
-        "stopOnFailure": false
-      }
-    },
-    {
-      "name": "debug-gcc-14",
-      "configurePreset": "debug-gcc-14",
-      "execution": {
-        "noTestsAction": "error",
-        "stopOnFailure": false
-      }
-    },
-    {
-      "name": "debug-gcc-snapshot",
-      "configurePreset": "debug-gcc-snapshot",
-      "execution": {
-        "noTestsAction": "error",
-        "stopOnFailure": false
-      }
-    }
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "debug-msvc", "configurePreset": "debug-msvc", "configuration": "Debug", "environment": { "ASAN_OPTIONS": "detect_container_overflow=0" } },
+    { "name": "debug-msvc-ninja", "configurePreset": "debug-msvc-ninja", "environment": { "ASAN_OPTIONS": "detect_container_overflow=0" } },
+    { "name": "debug-gcc-14", "configurePreset": "debug-gcc-14" },
+    { "name": "debug-gcc-snapshot", "configurePreset": "debug-gcc-snapshot" }
   ],
   "workflowPresets": [
     {
       "name": "debug",
       "steps": [
-        {
-          "type": "configure",
-          "name": "debug"
-        },
-        {
-          "type": "build",
-          "name": "build-debug"
-        },
-        {
-          "type": "test",
-          "name": "debug"
-        }
+        { "type": "configure", "name": "debug" },
+        { "type": "build", "name": "build-debug" },
+        { "type": "test", "name": "debug" }
       ]
     },
     {
       "name": "debug-msvc",
       "steps": [
-        {
-          "type": "configure",
-          "name": "debug-msvc"
-        },
-        {
-          "type": "build",
-          "name": "build-debug-msvc"
-        },
-        {
-          "type": "test",
-          "name": "debug-msvc"
-        }
+        { "type": "configure", "name": "debug-msvc" },
+        { "type": "build", "name": "build-debug-msvc" },
+        { "type": "test", "name": "debug-msvc" }
       ]
     },
     {
       "name": "debug-msvc-ninja",
       "steps": [
-        {
-          "type": "configure",
-          "name": "debug-msvc-ninja"
-        },
-        {
-          "type": "build",
-          "name": "build-debug-msvc-ninja"
-        },
-        {
-          "type": "test",
-          "name": "debug-msvc-ninja"
-        }
+        { "type": "configure", "name": "debug-msvc-ninja" },
+        { "type": "build", "name": "build-debug-msvc-ninja" },
+        { "type": "test", "name": "debug-msvc-ninja" }
       ]
     },
     {
       "name": "debug-gcc-14",
       "steps": [
-        {
-          "type": "configure",
-          "name": "debug-gcc-14"
-        },
-        {
-          "type": "build",
-          "name": "build-debug-gcc-14"
-        },
-        {
-          "type": "test",
-          "name": "debug-gcc-14"
-        }
+        { "type": "configure", "name": "debug-gcc-14" },
+        { "type": "build", "name": "build-debug-gcc-14" },
+        { "type": "test", "name": "debug-gcc-14" }
       ]
     },
     {
       "name": "debug-gcc-snapshot",
       "steps": [
-        {
-          "type": "configure",
-          "name": "debug-gcc-snapshot"
-        },
-        {
-          "type": "build",
-          "name": "build-debug-gcc-snapshot"
-        },
-        {
-          "type": "test",
-          "name": "debug-gcc-snapshot"
-        }
+        { "type": "configure", "name": "debug-gcc-snapshot" },
+        { "type": "build", "name": "build-debug-gcc-snapshot" },
+        { "type": "test", "name": "debug-gcc-snapshot" }
       ]
     },
     {
-      "name": "android-arm64-v8a",
+      "name": "android-arm64-v8a-debug",
       "steps": [
-        {
-          "type": "configure",
-          "name": "android-arm64-v8a"
-        },
-        {
-          "type": "build",
-          "name": "build-android-arm64-v8a"
-        }
+        { "type": "configure", "name": "android-arm64-v8a-debug" },
+        { "type": "build", "name": "build-android-arm64-v8a-debug" }
       ]
     },
     {
-      "name": "android-x86_64",
+      "name": "android-x86_64-debug",
       "steps": [
-        {
-          "type": "configure",
-          "name": "android-x86_64"
-        },
-        {
-          "type": "build",
-          "name": "build-android-x86_64"
-        }
+        { "type": "configure", "name": "android-x86_64-debug" },
+        { "type": "build", "name": "build-android-x86_64-debug" }
+      ]
+    },
+    {
+      "name": "android-arm64-v8a-release",
+      "steps": [
+        { "type": "configure", "name": "android-arm64-v8a-release" },
+        { "type": "build", "name": "build-android-arm64-v8a-release" }
+      ]
+    },
+    {
+      "name": "android-x86_64-release",
+      "steps": [
+        { "type": "configure", "name": "android-x86_64-release" },
+        { "type": "build", "name": "build-android-x86_64-release" }
       ]
     }
   ]

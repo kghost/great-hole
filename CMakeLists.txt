@@ -20,17 +20,20 @@ if(ANDROID)
   if(NOT DEFINED ANDROID_NDK)
     message(FATAL_ERROR "ANDROID_NDK is not defined")
   endif()
+
   if(NOT DEFINED ANDROID_ABI)
     message(FATAL_ERROR "ANDROID_ABI is not defined")
   endif()
+
   if(NOT DEFINED ANDROID_PLATFORM)
     message(FATAL_ERROR "ANDROID_PLATFORM is not defined")
   endif()
 
   set(CMAKE_TOOLCHAIN_FILE "${ANDROID_NDK}/build/cmake/android.toolchain.cmake" CACHE FILEPATH "Android toolchain" FORCE)
+
   # Search paths for dependencies (c-ares, Boost) built by build_deps.sh
-  set(CMAKE_PREFIX_PATH "${CMAKE_SOURCE_DIR}/build-android-${ANDROID_ABI}/dependencies/install" CACHE PATH "Prefix path for dependencies" FORCE)
-  set(CMAKE_FIND_ROOT_PATH "${CMAKE_SOURCE_DIR}/build-android-${ANDROID_ABI}/dependencies/install" CACHE PATH "Find root path for dependencies" FORCE)
+  set(CMAKE_PREFIX_PATH "${CMAKE_BINARY_DIR}/dependencies/install" CACHE PATH "Prefix path for dependencies" FORCE)
+  set(CMAKE_FIND_ROOT_PATH "${CMAKE_BINARY_DIR}/dependencies/install" CACHE PATH "Find root path for dependencies" FORCE)
   set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH CACHE STRING "Find root path mode package" FORCE)
   set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY BOTH CACHE STRING "Find root path mode library" FORCE)
   set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH CACHE STRING "Find root path mode include" FORCE)
@@ -57,22 +60,26 @@ if(ANDROID)
   )
 endif()
 
-
 find_package(PkgConfig REQUIRED)
+
 if(NOT ANDROID AND NOT WIN32)
-pkg_check_modules(LUA REQUIRED IMPORTED_TARGET lua-5.4)
+  pkg_check_modules(LUA REQUIRED IMPORTED_TARGET lua-5.4)
 endif()
+
 pkg_check_modules(CARES REQUIRED IMPORTED_TARGET libcares)
 
 if(BUILD_TESTING)
   enable_testing()
+
   if(BUILD_WITH_LIBCXX)
     if(NOT TARGET gtest)
       add_subdirectory("/usr/src/googletest" "${CMAKE_BINARY_DIR}/googletest-build" EXCLUDE_FROM_ALL)
     endif()
+
     if(NOT TARGET GTest::gtest)
       add_library(GTest::gtest ALIAS gtest)
     endif()
+
     if(NOT TARGET GTest::gtest_main)
       add_library(GTest::gtest_main ALIAS gtest_main)
     endif()
@@ -89,7 +96,9 @@ endif()
 set(OMNIFIBER_INTERNAL ON CACHE BOOL "" FORCE)
 
 add_subdirectory(libs/omni-fiber)
+
 if(BUILD_TESTING)
-add_subdirectory(libs/omni-timetravel)
+  add_subdirectory(libs/omni-timetravel)
 endif()
+
 add_subdirectory(src)

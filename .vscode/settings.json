@@ -3,5 +3,6 @@
         "./build/tests/udp_mux_test": true,
         "./build/tests/udp_dyn_mux_test": true
     },
-    "cmake.useCMakePresets": "always"
+    "cmake.useCMakePresets": "always",
+    "json.format.keepLines": true
 }
