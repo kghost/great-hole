@@ -39,7 +39,7 @@ fi
 for ABI in arm64-v8a x86_64; do
     for BUILD_TYPE in debug release; do
         PREFIX="$PWD/build-android-$ABI-$BUILD_TYPE/dependencies/install"
-        BUILD_DIR="$PWD/build-android-$ABI-$BUILD_TYPE/build"
+        BUILD_DIR="$PWD/build-android-$ABI-$BUILD_TYPE/dependencies/build"
 
         mkdir -p "$PREFIX"
         mkdir -p "$BUILD_DIR"

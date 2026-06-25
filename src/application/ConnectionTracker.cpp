@@ -38,7 +38,7 @@ Omni::Fiber::Coroutine<void> ConnectionTracker::DoWork() {
     auto now = std::chrono::steady_clock::now();
 
     if (timerFired && !timerFired.value()) {
-      auto condition = [this, now](const auto& item) { return now - item.Entry.LastActive > item.Entry.GetTimeout(); };
+      auto condition = [now](const auto& item) { return now - item.Entry.LastActive > item.Entry.GetTimeout(); };
       std::erase_if(_Ip4TcpTable, condition);
       std::erase_if(_Ip6TcpTable, condition);
       std::erase_if(_Ip4UdpTable, condition);
@@ -55,13 +55,13 @@ Omni::Fiber::Coroutine<ErrorCode> ConnectionTracker::DoGracefulStop() {
   co_return ErrorCode{};
 }
 
-template <ConnectionDirection Direction>
-std::optional<std::reference_wrapper<ConnectionMark>>
-ConnectionTracker::LookupAndUpdate(const Packet& packet, std::optional<std::reference_wrapper<ConnectionMark>> mark,
-                                   ValidatorType validator) {
+template <typename Direction>
+typename Direction::ConnectionTrackerOutput ConnectionTracker::LookupAndUpdate(const Packet& packet,
+                                                                               Direction::ConnectionTrackerInput input,
+                                                                               ValidatorType validator) {
   auto now = std::chrono::steady_clock::now();
-  return ParseConnectionKey<Direction>(
-      packet.Data(), false, [&](auto&& key, auto keyExtra) -> std::optional<std::reference_wrapper<ConnectionMark>> {
+  auto res = ParseConnectionKey<Direction, Direction>(
+      packet.Data(), false, [&](auto&& key, auto keyExtra) -> Direction::ConnectionTrackerOutput {
         auto& table = (Overload{
             [this](const Ip4TcpKey& key) -> auto& { return _Ip4TcpTable; },
             [this](const Ip6TcpKey& key) -> auto& { return _Ip6TcpTable; },
@@ -71,55 +71,72 @@ ConnectionTracker::LookupAndUpdate(const Packet& packet, std::optional<std::refe
             [this](const Icmp6Key& key) -> auto& { return _Icmp6Table; },
         })(key);
 
-        auto it = table.find(key);
-        if (it != table.end()) {
-          if (now - it->Entry.LastActive <= it->Entry.GetTimeout()) {
-            auto& currentMark = it->Entry.Mark;
-            if (validator && !validator(currentMark)) {
-              table.erase(it);
-            } else {
-              it->Entry.LastActive = now;
-              it->Entry.UpdateState(keyExtra);
-              return currentMark;
-            }
+        RouteResult route = ([&]() {
+          if constexpr (std::is_same_v<Direction, ConnectionDirectionOutput>) {
+            return RouteResult{ToBeSelected{}};
           } else {
-            table.erase(it);
+            return RouteResult{input};
           }
-        }
+        })();
 
-        std::optional<std::reference_wrapper<ConnectionMark>> targetMark = std::nullopt;
-        if (mark.has_value()) {
-          if (!validator || validator(mark.value().get())) {
-            targetMark = mark;
-          }
-        } else {
-          auto selected = _Selector(key);
-          if (selected.has_value()) {
-            if (!validator || validator(selected.value().get())) {
-              targetMark = selected;
+        using EntryType = typename std::decay_t<decltype(table)>::value_type;
+        auto [it, inserted] = table.insert({key, decltype(EntryType::Entry){route, now, keyExtra}});
+        auto& entry = it->Entry;
+        if (!inserted) {
+          if (now - entry.LastActive > entry.GetTimeout()) {
+            entry = decltype(EntryType::Entry){route, now, keyExtra};
+          } else {
+            if constexpr (std::is_same_v<Direction, ConnectionDirectionInput>) {
+              entry.Result = route;
+            } else {
+              if (std::holds_alternative<std::reference_wrapper<ConnectionMark>>(entry.Result)) {
+                if (validator && !validator(std::get<std::reference_wrapper<ConnectionMark>>(entry.Result).get())) {
+                  entry.Result = route;
+                }
+              }
             }
+            entry.LastActive = now;
+            entry.UpdateState(keyExtra);
           }
         }
 
-        if (targetMark.has_value()) {
-          using EntryType = typename std::decay_t<decltype(table)>::value_type;
-          table.emplace(EntryType{key, decltype(EntryType::Entry){targetMark.value().get(), now, keyExtra}});
-          return targetMark;
+        if constexpr (std::is_same_v<Direction, ConnectionDirectionOutput>) {
+          if (std::holds_alternative<ToBeSelected>(entry.Result)) {
+            entry.Result = _Selector(key);
+          }
         }
-        return std::nullopt;
+
+        if constexpr (std::is_same_v<Direction, ConnectionDirectionOutput>) {
+          return entry.Result;
+        } else {
+          return Nothing{};
+        }
       });
+
+  if constexpr (std::is_same_v<Direction, ConnectionDirectionOutput>) {
+    return res.value_or(Discard{});
+  } else {
+    return Nothing{};
+  }
 }
 
-template std::optional<std::reference_wrapper<ConnectionMark>>
-ConnectionTracker::LookupAndUpdate<ConnectionDirection::kOutput>(
-    const Packet& packet, std::optional<std::reference_wrapper<ConnectionMark>> mark, ValidatorType validator);
+template typename ConnectionTracker::ConnectionDirectionOutput::ConnectionTrackerOutput
+ConnectionTracker::LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(
+    const Packet& packet, ConnectionTracker::ConnectionDirectionOutput::ConnectionTrackerInput input,
+    ValidatorType validator);
 
-template std::optional<std::reference_wrapper<ConnectionMark>>
-ConnectionTracker::LookupAndUpdate<ConnectionDirection::kInput>(
-    const Packet& packet, std::optional<std::reference_wrapper<ConnectionMark>> mark, ValidatorType validator);
+template typename ConnectionTracker::ConnectionDirectionInput::ConnectionTrackerOutput
+ConnectionTracker::LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(
+    const Packet& packet, ConnectionTracker::ConnectionDirectionInput::ConnectionTrackerInput input,
+    ValidatorType validator);
 
 void ConnectionTracker::RemoveMark(const ConnectionMark& mark) {
-  auto predicate = [&mark](const auto& item) { return &item.Entry.Mark == &mark; };
+  auto predicate = [&mark](const auto& item) {
+    if (std::holds_alternative<std::reference_wrapper<ConnectionMark>>(item.Entry.Result)) {
+      return &std::get<std::reference_wrapper<ConnectionMark>>(item.Entry.Result).get() == &mark;
+    }
+    return false;
+  };
   std::erase_if(_Ip4TcpTable, predicate);
   std::erase_if(_Ip6TcpTable, predicate);
   std::erase_if(_Ip4UdpTable, predicate);
@@ -137,125 +154,121 @@ void ConnectionTracker::Clear() {
   _Icmp6Table.clear();
 }
 
-template <ConnectionDirection direction, typename F>
-std::optional<std::reference_wrapper<ConnectionMark>> ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> p,
-                                                                                            bool truncated, F&& f) {
+template <typename KeyDirection, typename ActionDirection, typename F>
+std::expected<typename ActionDirection::ConnectionTrackerOutput, ConnectionTracker::UnsupportedPacket>
+ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> p, bool truncated, F&& f) {
   const IPHeader* iph = reinterpret_cast<const IPHeader*>(p.data());
   return iph->As(
       p, truncated,
-      Overload{
-          [&](std::span<const uint8_t> ip4span, const IPv4Header* ip4) {
-            auto srcAddr = boost::asio::ip::make_address_v4(ip4->GetSrcIp());
-            auto dstAddr = boost::asio::ip::make_address_v4(ip4->GetDestIp());
-            return ip4->Next(
-                ip4span, truncated,
-                Overload{
-                    [&](std::span<const uint8_t> tcpspan, const TCPHeader* tcp) {
-                      auto srcPort = tcp->GetSrcPort();
-                      auto dstPort = tcp->GetDestPort();
-                      if (direction == ConnectionDirection::kOutput) {
-                        return f(Ip4TcpKey{srcAddr, dstAddr, srcPort, dstPort}, tcp->Flags);
-                      } else {
-                        return f(Ip4TcpKey{dstAddr, srcAddr, dstPort, srcPort}, tcp->Flags);
-                      }
-                    },
-                    [&](std::span<const uint8_t> udpspan, const UDPHeader* udp) {
-                      auto srcPort = udp->GetSrcPort();
-                      auto dstPort = udp->GetDestPort();
-                      if (direction == ConnectionDirection::kOutput) {
-                        return f(Ip4UdpKey{srcAddr, dstAddr, srcPort, dstPort}, 0);
-                      } else {
-                        return f(Ip4UdpKey{dstAddr, srcAddr, dstPort, srcPort}, 0);
-                      }
-                    },
-                    [&](std::span<const uint8_t> icmpspan,
-                        const ICMPv4Header* icmp) -> std::optional<std::reference_wrapper<ConnectionMark>> {
-                      if (icmp->GetType() == IcmpType::EchoRequest || icmp->GetType() == IcmpType::EchoReply) {
-                        uint16_t id = icmp->GetEchoId();
-                        if (direction == ConnectionDirection::kOutput) {
-                          return f(IcmpKey{srcAddr, dstAddr, id}, 0);
-                        } else {
-                          return f(IcmpKey{dstAddr, srcAddr, id}, 0);
-                        }
-                      } else if (icmp->GetType() == IcmpType::DestinationUnreachable) {
-                        if constexpr (direction == ConnectionDirection::kOutput) {
-                          return ParseConnectionKey<ConnectionDirection::kInput>(
-                              icmpspan.template subspan<sizeof(ICMPv4Header)>(), true, std::forward<F>(f));
-                        } else {
-                          return ParseConnectionKey<ConnectionDirection::kOutput>(
-                              icmpspan.template subspan<sizeof(ICMPv4Header)>(), true, std::forward<F>(f));
-                        }
-                      }
-                      return std::nullopt;
-                    },
-                    [&](std::span<const uint8_t> span,
-                        std::string err) -> std::optional<std::reference_wrapper<ConnectionMark>> {
-                      BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {} -> {} {}", srcAddr.to_string(),
-                                                             dstAddr.to_string(), err);
-                      return std::nullopt;
-                    },
-                });
-          },
-          [&](std::span<const uint8_t> ip6span, const IPv6Header* ip6) {
-            auto srcAddr = boost::asio::ip::make_address_v6(std::to_array(ip6->SrcIp));
-            auto dstAddr = boost::asio::ip::make_address_v6(std::to_array(ip6->DestIp));
-            return ip6->Next(
-                ip6span, truncated,
-                Overload{
-                    [&](this auto& me, std::span<const uint8_t> hopByHopSpan,
-                        const IPv6HopByHopHeader* hopByHop) -> std::optional<std::reference_wrapper<ConnectionMark>> {
-                      return hopByHop->Next(hopByHopSpan, truncated, me);
-                    },
-                    [&](std::span<const uint8_t> tcpspan, const TCPHeader* tcp) {
-                      auto srcPort = tcp->GetSrcPort();
-                      auto dstPort = tcp->GetDestPort();
-                      if (direction == ConnectionDirection::kOutput) {
-                        return f(Ip6TcpKey{srcAddr, dstAddr, srcPort, dstPort}, tcp->Flags);
-                      } else {
-                        return f(Ip6TcpKey{dstAddr, srcAddr, dstPort, srcPort}, tcp->Flags);
-                      }
-                    },
-                    [&](std::span<const uint8_t> udpspan, const UDPHeader* udp) {
-                      auto srcPort = udp->GetSrcPort();
-                      auto dstPort = udp->GetDestPort();
-                      if (direction == ConnectionDirection::kOutput) {
-                        return f(Ip6UdpKey{srcAddr, dstAddr, srcPort, dstPort}, 0);
-                      } else {
-                        return f(Ip6UdpKey{dstAddr, srcAddr, dstPort, srcPort}, 0);
-                      }
-                    },
-                    [&](std::span<const uint8_t> icmp6span,
-                        const ICMPv6Header* icmp6) -> std::optional<std::reference_wrapper<ConnectionMark>> {
-                      if (icmp6->GetType() == Icmp6Type::EchoRequest || icmp6->GetType() == Icmp6Type::EchoReply) {
-                        uint16_t id = icmp6->GetEchoId();
-                        if (direction == ConnectionDirection::kOutput) {
-                          return f(Icmp6Key{srcAddr, dstAddr, id}, 0);
-                        } else {
-                          return f(Icmp6Key{dstAddr, srcAddr, id}, 0);
-                        }
-                      } else if (icmp6->GetType() == Icmp6Type::DestinationUnreachable) {
-                        if constexpr (direction == ConnectionDirection::kOutput) {
-                          return ParseConnectionKey<ConnectionDirection::kInput>(
-                              icmp6span.template subspan<sizeof(ICMPv6Header)>(), true, std::forward<F>(f));
-                        } else {
-                          return ParseConnectionKey<ConnectionDirection::kOutput>(
-                              icmp6span.template subspan<sizeof(ICMPv6Header)>(), true, std::forward<F>(f));
-                        }
-                      }
-                      return std::nullopt;
-                    },
-                    [&](std::span<const uint8_t> span,
-                        std::string err) -> std::optional<std::reference_wrapper<ConnectionMark>> {
-                      BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {} -> {} {}", srcAddr.to_string(),
-                                                             dstAddr.to_string(), err);
-                      return std::nullopt;
-                    },
-                });
-          },
-          [&](std::span<const uint8_t> span, std::string err) -> std::optional<std::reference_wrapper<ConnectionMark>> {
-            BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {}", err);
-            return std::nullopt;
-          }});
+      Overload{[&](std::span<const uint8_t> ip4span, const IPv4Header* ip4)
+                   -> std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket> {
+                 auto srcAddr = boost::asio::ip::make_address_v4(ip4->GetSrcIp());
+                 auto dstAddr = boost::asio::ip::make_address_v4(ip4->GetDestIp());
+                 return ip4->Next(
+                     ip4span, truncated,
+                     Overload{
+                         [&](std::span<const uint8_t> tcpspan, const TCPHeader* tcp)
+                             -> std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket> {
+                           auto srcPort = tcp->GetSrcPort();
+                           auto dstPort = tcp->GetDestPort();
+                           if constexpr (std::is_same_v<KeyDirection, ConnectionDirectionOutput>) {
+                             return f(Ip4TcpKey{srcAddr, dstAddr, srcPort, dstPort}, tcp->Flags);
+                           } else {
+                             return f(Ip4TcpKey{dstAddr, srcAddr, dstPort, srcPort}, tcp->Flags);
+                           }
+                         },
+                         [&](std::span<const uint8_t> udpspan, const UDPHeader* udp)
+                             -> std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket> {
+                           auto srcPort = udp->GetSrcPort();
+                           auto dstPort = udp->GetDestPort();
+                           if constexpr (std::is_same_v<KeyDirection, ConnectionDirectionOutput>) {
+                             return f(Ip4UdpKey{srcAddr, dstAddr, srcPort, dstPort}, 0);
+                           } else {
+                             return f(Ip4UdpKey{dstAddr, srcAddr, dstPort, srcPort}, 0);
+                           }
+                         },
+                         [&](std::span<const uint8_t> icmpspan, const ICMPv4Header* icmp)
+                             -> std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket> {
+                           if (icmp->GetType() == IcmpType::EchoRequest || icmp->GetType() == IcmpType::EchoReply) {
+                             uint16_t id = icmp->GetEchoId();
+                             if constexpr (std::is_same_v<KeyDirection, ConnectionDirectionOutput>) {
+                               return f(IcmpKey{srcAddr, dstAddr, id}, 0);
+                             } else {
+                               return f(IcmpKey{dstAddr, srcAddr, id}, 0);
+                             }
+                           } else if (icmp->GetType() == IcmpType::DestinationUnreachable) {
+                             return ParseConnectionKey<typename KeyDirection::OppositeDirection, ActionDirection>(
+                                 icmpspan.template subspan<sizeof(ICMPv4Header)>(), true, std::forward<F>(f));
+                           }
+                           return std::unexpected(UnsupportedPacket{});
+                         },
+                         [&](std::span<const uint8_t> span, std::string err)
+                             -> std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket> {
+                           BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {} -> {} {}", srcAddr.to_string(),
+                                                                  dstAddr.to_string(), err);
+                           return std::unexpected(UnsupportedPacket{});
+                         },
+                     });
+               },
+               [&](std::span<const uint8_t> ip6span, const IPv6Header* ip6)
+                   -> std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket> {
+                 auto srcAddr = boost::asio::ip::make_address_v6(std::to_array(ip6->SrcIp));
+                 auto dstAddr = boost::asio::ip::make_address_v6(std::to_array(ip6->DestIp));
+                 return ip6->Next(
+                     ip6span, truncated,
+                     Overload{
+                         [&](this auto& me, std::span<const uint8_t> hopByHopSpan, const IPv6HopByHopHeader* hopByHop)
+                             -> std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket> {
+                           return hopByHop->Next(hopByHopSpan, truncated, me);
+                         },
+                         [&](std::span<const uint8_t> tcpspan, const TCPHeader* tcp)
+                             -> std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket> {
+                           auto srcPort = tcp->GetSrcPort();
+                           auto dstPort = tcp->GetDestPort();
+                           if constexpr (std::is_same_v<KeyDirection, ConnectionDirectionOutput>) {
+                             return f(Ip6TcpKey{srcAddr, dstAddr, srcPort, dstPort}, tcp->Flags);
+                           } else {
+                             return f(Ip6TcpKey{dstAddr, srcAddr, dstPort, srcPort}, tcp->Flags);
+                           }
+                         },
+                         [&](std::span<const uint8_t> udpspan, const UDPHeader* udp)
+                             -> std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket> {
+                           auto srcPort = udp->GetSrcPort();
+                           auto dstPort = udp->GetDestPort();
+                           if constexpr (std::is_same_v<KeyDirection, ConnectionDirectionOutput>) {
+                             return f(Ip6UdpKey{srcAddr, dstAddr, srcPort, dstPort}, 0);
+                           } else {
+                             return f(Ip6UdpKey{dstAddr, srcAddr, dstPort, srcPort}, 0);
+                           }
+                         },
+                         [&](std::span<const uint8_t> icmp6span, const ICMPv6Header* icmp6)
+                             -> std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket> {
+                           if (icmp6->GetType() == Icmp6Type::EchoRequest || icmp6->GetType() == Icmp6Type::EchoReply) {
+                             uint16_t id = icmp6->GetEchoId();
+                             if constexpr (std::is_same_v<KeyDirection, ConnectionDirectionOutput>) {
+                               return f(Icmp6Key{srcAddr, dstAddr, id}, 0);
+                             } else {
+                               return f(Icmp6Key{dstAddr, srcAddr, id}, 0);
+                             }
+                           } else if (icmp6->GetType() == Icmp6Type::DestinationUnreachable) {
+                             return ParseConnectionKey<typename KeyDirection::OppositeDirection, ActionDirection>(
+                                 icmp6span.template subspan<sizeof(ICMPv6Header)>(), true, std::forward<F>(f));
+                           }
+                           return std::unexpected(UnsupportedPacket{});
+                         },
+                         [&](std::span<const uint8_t> span, std::string err)
+                             -> std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket> {
+                           BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {} -> {} {}", srcAddr.to_string(),
+                                                                  dstAddr.to_string(), err);
+                           return std::unexpected(UnsupportedPacket{});
+                         },
+                     });
+               },
+               [&](std::span<const uint8_t> span, std::string err)
+                   -> std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket> {
+                 BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {}", err);
+                 return std::unexpected(UnsupportedPacket{});
+               }});
 }
 
 } // namespace gh

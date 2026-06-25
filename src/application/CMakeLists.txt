@@ -10,6 +10,7 @@ foreach(suffix "" "-asan")
   set(app_sources
     VpnClientMultiChannel.cpp
     ConnectionTracker.cpp
+    TunnelDataPlane.cpp
   )
 
   if(NOT WIN32)

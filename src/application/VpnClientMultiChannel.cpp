@@ -21,6 +21,7 @@
 #include "Select.hpp"
 #include "SelectPair.hpp"
 #include "ServiceBase.hpp"
+#include "Utils/Overload.hpp"
 
 namespace gh {
 
@@ -84,8 +85,8 @@ public:
     Session& PacketSession;
   };
 
-  explicit TunSideEndpoint(VpnClientMultiChannel& parent)
-      : _Parent(parent), _ConnectionTracker(std::make_shared<ConnectionTracker>(parent._Executor, parent._Selector)) {}
+  explicit TunSideEndpoint(VpnClientMultiChannel& parent, std::shared_ptr<ConnectionTracker> tracker)
+      : _Parent(parent), _ConnectionTracker(tracker) {}
   ~TunSideEndpoint() override = default;
 
   std::string GetName() const override { return "VpnClientMultiChannel:TunSide"; }
@@ -106,8 +107,8 @@ public:
         Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&p, this](auto&& entry) -> ErrorCode {
           if (entry.has_value()) {
             p = std::move(entry.value().Pkt);
-            // Perform connection tracking for incoming traffic
-            _ConnectionTracker->LookupAndUpdate<ConnectionDirection::kInput>(p, entry.value().PacketSession);
+            _ConnectionTracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(
+                p, entry.value().PacketSession, nullptr);
             return ErrorCode{};
           } else {
             return ErrorCode{AppErrorCategory::kEndOfStream, kAppError};
@@ -128,20 +129,36 @@ public:
       co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
     }
 
-    auto mark = _ConnectionTracker->LookupAndUpdate<ConnectionDirection::kOutput>(
-        p, std::nullopt, [this](ConnectionMark& mark) -> bool { return dynamic_cast<Session&>(mark).Running; });
+    ConnectionTracker::RouteResult route =
+        _ConnectionTracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(
+            p, ConnectionTracker::Nothing{},
+            [](ConnectionMark& mark) -> bool { return dynamic_cast<Session&>(mark).Running; });
 
-    if (!mark.has_value()) {
-      BOOST_LOG_TRIVIAL(debug) << _Parent.GetName() << ": No channel found or selected, dropping packet";
-      co_return ErrorCode{};
-    }
-
-    auto& session = dynamic_cast<Session&>(mark.value().get());
-    if (session.ChannelSide) {
-      co_await session.ChannelSide->PushOutgoing(std::move(p));
-    } else {
-      BOOST_LOG_TRIVIAL(debug) << _Parent.GetName() << ": ChannelSide is null, dropping packet";
-    }
+    co_await std::visit(Overload{[&](ConnectionTracker::ToBeSelected) -> Omni::Fiber::Coroutine<void> {
+                                   assert(false && "should not reach here");
+                                   co_return;
+                                 },
+                                 [&](ConnectionTracker::Bypass) -> Omni::Fiber::Coroutine<void> {
+                                   if (_Parent._Tun) {
+                                     co_await _Parent._Tun->Write(p, c);
+                                   }
+                                   co_return;
+                                 },
+                                 [&](ConnectionTracker::Discard) -> Omni::Fiber::Coroutine<void> {
+                                   BOOST_LOG_TRIVIAL(debug) << _Parent.GetName() << ": Packet marked Discard, dropping";
+                                   co_return;
+                                 },
+                                 [&](std::reference_wrapper<ConnectionMark> mark) -> Omni::Fiber::Coroutine<void> {
+                                   auto& session = dynamic_cast<Session&>(mark.get());
+                                   if (session.ChannelSide) {
+                                     co_await session.ChannelSide->PushOutgoing(std::move(p));
+                                   } else {
+                                     BOOST_LOG_TRIVIAL(debug)
+                                         << _Parent.GetName() << ": ChannelSide is null, dropping packet";
+                                   }
+                                   co_return;
+                                 }},
+                        route);
 
     co_return ErrorCode{};
   }
@@ -175,12 +192,11 @@ VpnClientMultiChannel::NoopSessionStateListener VpnClientMultiChannel::_NoopSess
 
 VpnClientMultiChannel::VpnClientMultiChannel(boost::asio::any_io_executor executor, std::shared_ptr<Endpoint> tun,
                                              std::shared_ptr<UdpDynMux> udpDynMux,
-                                             ConnectionTracker::Selector& selector,
+                                             std::shared_ptr<ConnectionTracker> tracker,
                                              std::vector<std::shared_ptr<Filter>> filters,
                                              SessionStateListener& listener)
-    : _Executor(executor), _Tun(tun), _UdpDynMux(udpDynMux), _Selector(selector), _Filters(filters),
-      _StateListener(listener) {
-  _TunSide = std::make_shared<TunSideEndpoint>(*this);
+    : _Executor(executor), _Tun(tun), _UdpDynMux(udpDynMux), _Filters(filters), _StateListener(listener) {
+  _TunSide = std::make_shared<TunSideEndpoint>(*this, tracker);
   _UdpDynMux->SetChannelNotification(*this);
 }
 

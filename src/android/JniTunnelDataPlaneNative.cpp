@@ -1,3 +1,4 @@
+#include "ConnectionTracker.hpp"
 #include "info_kghost_android_hole_vpn_dataplane_JniTunnelDataPlaneNative.h"
 
 #include <android/log.h>
@@ -104,36 +105,29 @@ public:
   explicit JniSelector(JniSession& session) : _Session(session) {}
   ~JniSelector() override = default;
 
-  std::optional<std::reference_wrapper<ConnectionMark>>
-  operator()(const ConnectionTracker::Ip4TcpKey& key) const override;
-  std::optional<std::reference_wrapper<ConnectionMark>>
-  operator()(const ConnectionTracker::Ip6TcpKey& key) const override;
-  std::optional<std::reference_wrapper<ConnectionMark>>
-  operator()(const ConnectionTracker::Ip4UdpKey& key) const override;
-  std::optional<std::reference_wrapper<ConnectionMark>>
-  operator()(const ConnectionTracker::Ip6UdpKey& key) const override;
-  std::optional<std::reference_wrapper<ConnectionMark>>
-  operator()(const ConnectionTracker::IcmpKey& key) const override;
-  std::optional<std::reference_wrapper<ConnectionMark>>
-  operator()(const ConnectionTracker::Icmp6Key& key) const override;
+  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip4TcpKey& key) const override;
+  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip6TcpKey& key) const override;
+  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip4UdpKey& key) const override;
+  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip6UdpKey& key) const override;
+  ConnectionTracker::RouteResult operator()(const ConnectionTracker::IcmpKey& key) const override;
+  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Icmp6Key& key) const override;
 
 private:
-  std::optional<std::reference_wrapper<ConnectionMark>>
-  FindTunnel(int protocol, const boost::asio::ip::address& localAddr, uint16_t localPort,
-             const boost::asio::ip::address& remoteAddr, uint16_t remotePort) const;
+  ConnectionTracker::RouteResult FindTunnel(int protocol, const boost::asio::ip::address& localAddr, uint16_t localPort,
+                                            const boost::asio::ip::address& remoteAddr, uint16_t remotePort) const;
 
   JniSession& _Session;
 };
 
 // JniSelector Implementation
 
-std::optional<std::reference_wrapper<ConnectionMark>>
-JniSelector::FindTunnel(int protocol, const boost::asio::ip::address& localAddr, uint16_t localPort,
-                        const boost::asio::ip::address& remoteAddr, uint16_t remotePort) const {
+ConnectionTracker::RouteResult JniSelector::FindTunnel(int protocol, const boost::asio::ip::address& localAddr,
+                                                       uint16_t localPort, const boost::asio::ip::address& remoteAddr,
+                                                       uint16_t remotePort) const {
 
   JNIEnv* env = JniSession::GetEnv();
   if (!env || !_Session.GetCallbacks()) {
-    return std::nullopt;
+    return ConnectionTracker::Discard{};
   }
 
   jbyteArray localBytes = env->NewByteArray(16);
@@ -142,7 +136,7 @@ JniSelector::FindTunnel(int protocol, const boost::asio::ip::address& localAddr,
     if (env->ExceptionCheck()) {
       env->ExceptionClear();
     }
-    return std::nullopt;
+    return ConnectionTracker::Discard{};
   }
   auto v6Local = MapToV6(localAddr).to_bytes();
   env->SetByteArrayRegion(localBytes, 0, 16, reinterpret_cast<const jbyte*>(v6Local.data()));
@@ -154,7 +148,7 @@ JniSelector::FindTunnel(int protocol, const boost::asio::ip::address& localAddr,
       env->ExceptionClear();
     }
     env->DeleteLocalRef(localBytes);
-    return std::nullopt;
+    return ConnectionTracker::Discard{};
   }
   auto v6Remote = MapToV6(remoteAddr).to_bytes();
   env->SetByteArrayRegion(remoteBytes, 0, 16, reinterpret_cast<const jbyte*>(v6Remote.data()));
@@ -174,34 +168,31 @@ JniSelector::FindTunnel(int protocol, const boost::asio::ip::address& localAddr,
   if (endpointHandle != 0) {
     auto dp = _Session.GetDataPlane();
     if (dp) {
-      return dp->FindSessionByHandle(reinterpret_cast<VpnClientMultiChannel::Session*>(endpointHandle));
+      auto session = dp->FindSessionByHandle(reinterpret_cast<VpnClientMultiChannel::Session*>(endpointHandle));
+      if (session.has_value()) {
+        return session.value();
+      }
     }
   }
-  return std::nullopt;
+  return ConnectionTracker::Discard{};
 }
 
-std::optional<std::reference_wrapper<ConnectionMark>>
-JniSelector::operator()(const ConnectionTracker::Ip4TcpKey& key) const {
+ConnectionTracker::RouteResult JniSelector::operator()(const ConnectionTracker::Ip4TcpKey& key) const {
   return FindTunnel(6, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
 }
-std::optional<std::reference_wrapper<ConnectionMark>>
-JniSelector::operator()(const ConnectionTracker::Ip6TcpKey& key) const {
+ConnectionTracker::RouteResult JniSelector::operator()(const ConnectionTracker::Ip6TcpKey& key) const {
   return FindTunnel(6, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
 }
-std::optional<std::reference_wrapper<ConnectionMark>>
-JniSelector::operator()(const ConnectionTracker::Ip4UdpKey& key) const {
+ConnectionTracker::RouteResult JniSelector::operator()(const ConnectionTracker::Ip4UdpKey& key) const {
   return FindTunnel(17, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
 }
-std::optional<std::reference_wrapper<ConnectionMark>>
-JniSelector::operator()(const ConnectionTracker::Ip6UdpKey& key) const {
+ConnectionTracker::RouteResult JniSelector::operator()(const ConnectionTracker::Ip6UdpKey& key) const {
   return FindTunnel(17, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
 }
-std::optional<std::reference_wrapper<ConnectionMark>>
-JniSelector::operator()(const ConnectionTracker::IcmpKey& key) const {
+ConnectionTracker::RouteResult JniSelector::operator()(const ConnectionTracker::IcmpKey& key) const {
   return FindTunnel(1, key.LocalAddress, key.Id, key.RemoteAddress, 0);
 }
-std::optional<std::reference_wrapper<ConnectionMark>>
-JniSelector::operator()(const ConnectionTracker::Icmp6Key& key) const {
+ConnectionTracker::RouteResult JniSelector::operator()(const ConnectionTracker::Icmp6Key& key) const {
   return FindTunnel(58, key.LocalAddress, key.Id, key.RemoteAddress, 0);
 }
 

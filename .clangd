@@ -7,4 +7,4 @@ CompileFlags:
 If:
   PathMatch: src/android/.*
 CompileFlags:
-  CompilationDatabase: "build-android/"
+  CompilationDatabase: "build-android-x86_64-debug/"

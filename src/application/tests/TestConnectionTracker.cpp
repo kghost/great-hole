@@ -55,29 +55,24 @@ private:
 
 class MockSelector : public ConnectionTracker::Selector {
 public:
-  explicit MockSelector(std::optional<std::reference_wrapper<ConnectionMark>> result) : Result(result) {}
+  explicit MockSelector(ConnectionTracker::RouteResult result) : Result(result) {}
 
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip4TcpKey&) const override {
-    return Result;
-  }
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip6TcpKey&) const override {
-    return Result;
-  }
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip4UdpKey&) const override {
-    return Result;
-  }
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Ip6UdpKey&) const override {
-    return Result;
-  }
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::IcmpKey&) const override {
-    return Result;
-  }
-  std::optional<std::reference_wrapper<ConnectionMark>> operator()(const ConnectionTracker::Icmp6Key&) const override {
-    return Result;
-  }
+  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip4TcpKey&) const override { return Result; }
+  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip6TcpKey&) const override { return Result; }
+  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip4UdpKey&) const override { return Result; }
+  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip6UdpKey&) const override { return Result; }
+  ConnectionTracker::RouteResult operator()(const ConnectionTracker::IcmpKey&) const override { return Result; }
+  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Icmp6Key&) const override { return Result; }
 
-  mutable std::optional<std::reference_wrapper<ConnectionMark>> Result;
+  mutable ConnectionTracker::RouteResult Result;
 };
+
+static ConnectionMark* GetMark(const ConnectionTracker::RouteResult& route) {
+  if (std::holds_alternative<std::reference_wrapper<ConnectionMark>>(route)) {
+    return &std::get<std::reference_wrapper<ConnectionMark>>(route).get();
+  }
+  return nullptr;
+}
 
 Packet CreatePacket(const std::vector<uint8_t>& bytes) {
   Packet p(bytes.size(), 0);
@@ -92,13 +87,17 @@ TEST(ConnectionTrackerTest, BasicOperations) {
   Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
+  Omni::TimeTravel::Client timeClient;
+  AsioWarpListener listener(io);
+  timeClient.RegisterListener(listener);
+
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     MockConnectionMark mark1("mark1");
     MockConnectionMark mark2("mark2");
 
-    MockSelector selector(std::nullopt);
+    MockSelector selector(ConnectionTracker::Discard{});
     auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
@@ -111,31 +110,54 @@ TEST(ConnectionTrackerTest, BasicOperations) {
     auto p2 = CreatePacket(test::captured::Ip4TcpSyn);
 
     // Initially empty
-    EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1).has_value());
+    EXPECT_TRUE(std::holds_alternative<ConnectionTracker::Discard>(
+        tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p1, ConnectionTracker::Nothing{},
+                                                                               nullptr)));
 
     // Update/Insert p1
-    auto res1 = tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1, mark1);
-    EXPECT_TRUE(res1.has_value());
-    EXPECT_EQ(&res1->get(), &mark1);
+    selector.Result = mark1;
+    auto res1 = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p1, ConnectionTracker::Nothing{},
+                                                                                       nullptr);
+    EXPECT_TRUE(std::holds_alternative<ConnectionTracker::Discard>(res1));
 
-    auto res1_reply = tracker->LookupAndUpdate<ConnectionDirection::kInput>(p1_reply);
-    EXPECT_TRUE(res1_reply.has_value());
-    EXPECT_EQ(&res1_reply->get(), &mark1);
+    timeClient.FastForward(std::chrono::seconds(61));
+
+    auto res1m = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(
+        p1, ConnectionTracker::Nothing{}, nullptr);
+    EXPECT_TRUE(std::holds_alternative<std::reference_wrapper<ConnectionMark>>(res1m));
+    EXPECT_EQ(GetMark(res1m), &mark1);
+
+    tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(p1_reply, mark1, nullptr);
+    auto res1_reply = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(
+        p1, ConnectionTracker::Nothing{}, nullptr);
+    EXPECT_TRUE(std::holds_alternative<std::reference_wrapper<ConnectionMark>>(res1_reply));
+    EXPECT_EQ(GetMark(res1_reply), &mark1);
 
     // Update/Insert p2
-    auto res2 = tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p2, mark2);
-    EXPECT_TRUE(res2.has_value());
-    EXPECT_EQ(&res2->get(), &mark2);
+    selector.Result = mark2;
+    auto res2 = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p2, ConnectionTracker::Nothing{},
+                                                                                       nullptr);
+    EXPECT_TRUE(std::holds_alternative<std::reference_wrapper<ConnectionMark>>(res2));
+    EXPECT_EQ(GetMark(res2), &mark2);
 
     // Remove mark1
+    selector.Result = ConnectionTracker::Discard{};
     tracker->RemoveMark(mark1);
-    EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1).has_value());
-    EXPECT_TRUE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p2).has_value());
-    EXPECT_EQ(&tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p2)->get(), &mark2);
+    EXPECT_TRUE(std::holds_alternative<ConnectionTracker::Discard>(
+        tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p1, ConnectionTracker::Nothing{},
+                                                                               nullptr)));
+    EXPECT_TRUE(std::holds_alternative<std::reference_wrapper<ConnectionMark>>(
+        tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p2, ConnectionTracker::Nothing{},
+                                                                               nullptr)));
+    EXPECT_EQ(GetMark(tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(
+                  p2, ConnectionTracker::Nothing{}, nullptr)),
+              &mark2);
 
     // Clear
     tracker->Clear();
-    EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p2).has_value());
+    EXPECT_TRUE(std::holds_alternative<ConnectionTracker::Discard>(
+        tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p2, ConnectionTracker::Nothing{},
+                                                                               nullptr)));
 
     co_await tracker->Stop();
     auto errStop = co_await tracker->WaitService();
@@ -163,7 +185,7 @@ TEST(ConnectionTrackerTest, ExpirationAndPruning) {
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     MockConnectionMark mark1("mark1");
-    MockSelector selector(std::nullopt);
+    MockSelector selector(ConnectionTracker::Discard{});
     auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
 
     auto errStart = co_await tracker->Start();
@@ -171,15 +193,20 @@ TEST(ConnectionTrackerTest, ExpirationAndPruning) {
 
     auto p1 = CreatePacket(test::captured::Ip6TcpSyn);
 
-    auto res = tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1, mark1);
-    EXPECT_TRUE(res.has_value());
-    EXPECT_EQ(&res->get(), &mark1);
+    selector.Result = mark1;
+    auto res = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p1, ConnectionTracker::Nothing{},
+                                                                                      nullptr);
+    EXPECT_TRUE(std::holds_alternative<std::reference_wrapper<ConnectionMark>>(res));
+    EXPECT_EQ(GetMark(res), &mark1);
 
     // Warp monotonic clock forward for SYN timeout (61s)
     timeClient.FastForward(std::chrono::seconds(61));
 
-    // Lookup should return std::nullopt and prune the entry
-    EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1).has_value());
+    // Lookup should return Discard and prune the entry
+    selector.Result = ConnectionTracker::Discard{};
+    EXPECT_TRUE(std::holds_alternative<ConnectionTracker::Discard>(
+        tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p1, ConnectionTracker::Nothing{},
+                                                                               nullptr)));
 
     co_await tracker->Stop();
     auto errStop = co_await tracker->WaitService();
@@ -211,22 +238,29 @@ TEST(ConnectionTrackerTest, SelectorAndValidator) {
     auto p1 = CreatePacket(test::captured::Ip6TcpSyn);
 
     // Lookup with selector
-    auto res = tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1);
-    EXPECT_TRUE(res.has_value());
-    EXPECT_EQ(&res->get(), &mark1);
+    auto res = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p1, ConnectionTracker::Nothing{},
+                                                                                      nullptr);
+    EXPECT_TRUE(std::holds_alternative<std::reference_wrapper<ConnectionMark>>(res));
+    EXPECT_EQ(GetMark(res), &mark1);
 
     // Subsequent lookup should find it directly
-    EXPECT_TRUE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1).has_value());
-    EXPECT_EQ(&tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1)->get(), &mark1);
+    EXPECT_TRUE(std::holds_alternative<std::reference_wrapper<ConnectionMark>>(
+        tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p1, ConnectionTracker::Nothing{},
+                                                                               nullptr)));
+    EXPECT_EQ(GetMark(tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(
+                  p1, ConnectionTracker::Nothing{}, nullptr)),
+              &mark1);
 
     // Lookup with validator that returns false
-    selector.Result = std::nullopt;
-    res =
-        tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1, std::nullopt, [](ConnectionMark&) { return false; });
-    EXPECT_FALSE(res.has_value());
+    selector.Result = ConnectionTracker::Discard{};
+    res = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p1, ConnectionTracker::Nothing{},
+                                                                                 [](ConnectionMark&) { return false; });
+    EXPECT_TRUE(std::holds_alternative<ConnectionTracker::Discard>(res));
 
     // Should be erased now
-    EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(p1).has_value());
+    EXPECT_TRUE(std::holds_alternative<ConnectionTracker::Discard>(
+        tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p1, ConnectionTracker::Nothing{},
+                                                                               nullptr)));
 
     co_await tracker->Stop();
     auto errStop = co_await tracker->WaitService();
@@ -254,7 +288,7 @@ TEST(ConnectionTrackerTest, TcpStateTransitions) {
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     MockConnectionMark mark1("mark1");
-    MockSelector selector(std::nullopt);
+    MockSelector selector(ConnectionTracker::Discard{});
     auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
 
     auto errStart = co_await tracker->Start();
@@ -262,33 +296,47 @@ TEST(ConnectionTrackerTest, TcpStateTransitions) {
 
     // 1. SYN packet (state starts at SynSent, default timeout = 60s)
     auto pSyn = CreatePacket(test::captured::Ip6TcpSyn);
-    auto res = tracker->LookupAndUpdate<ConnectionDirection::kOutput>(pSyn, mark1);
-    EXPECT_TRUE(res.has_value());
-    EXPECT_EQ(&res->get(), &mark1);
+    selector.Result = mark1;
+    auto res = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(
+        pSyn, ConnectionTracker::Nothing{}, nullptr);
+    EXPECT_TRUE(std::holds_alternative<std::reference_wrapper<ConnectionMark>>(res));
+    EXPECT_EQ(GetMark(res), &mark1);
 
     // Warp monotonic clock forward for SYN timeout (61s)
     timeClient.FastForward(std::chrono::seconds(61));
 
     // Should be expired now
-    EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(pSyn).has_value());
+    selector.Result = ConnectionTracker::Discard{};
+    EXPECT_TRUE(std::holds_alternative<ConnectionTracker::Discard>(
+        tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(pSyn, ConnectionTracker::Nothing{},
+                                                                               nullptr)));
 
     // 2. Re-establish, then send SYN-ACK to establish (state transitions to Established, default timeout = 1200s)
-    tracker->LookupAndUpdate<ConnectionDirection::kOutput>(pSyn, mark1);
+    selector.Result = mark1;
+    tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(pSyn, ConnectionTracker::Nothing{}, nullptr);
     auto pSynAck = CreatePacket(test::captured::Ip6TcpSynAck);
-    res = tracker->LookupAndUpdate<ConnectionDirection::kInput>(pSynAck);
-    EXPECT_TRUE(res.has_value());
+    tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(pSynAck, mark1, nullptr);
+    auto checkSynAck = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(
+        pSyn, ConnectionTracker::Nothing{}, nullptr);
+    EXPECT_TRUE(std::holds_alternative<std::reference_wrapper<ConnectionMark>>(checkSynAck));
 
     // Warp monotonic clock forward 61s again. In established state, it shouldn't expire!
     timeClient.FastForward(std::chrono::seconds(61));
-    EXPECT_TRUE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(pSyn).has_value());
+    EXPECT_TRUE(std::holds_alternative<std::reference_wrapper<ConnectionMark>>(
+        tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(pSyn, ConnectionTracker::Nothing{},
+                                                                               nullptr)));
 
     // 3. Send FIN packet (state transitions to FinWait, default timeout = 30s)
     auto pFin = CreatePacket(test::captured::Ip6TcpFin);
-    tracker->LookupAndUpdate<ConnectionDirection::kOutput>(pFin, mark1);
+    selector.Result = mark1;
+    tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(pFin, ConnectionTracker::Nothing{}, nullptr);
 
     // Warp monotonic clock forward 31s. It should expire!
     timeClient.FastForward(std::chrono::seconds(31));
-    EXPECT_FALSE(tracker->LookupAndUpdate<ConnectionDirection::kOutput>(pSyn).has_value());
+    selector.Result = ConnectionTracker::Discard{};
+    EXPECT_TRUE(std::holds_alternative<ConnectionTracker::Discard>(
+        tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(pSyn, ConnectionTracker::Nothing{},
+                                                                               nullptr)));
 
     co_await tracker->Stop();
     auto errStop = co_await tracker->WaitService();
@@ -312,7 +360,7 @@ TEST(ConnectionTrackerTest, IcmpDestinationUnreachable) {
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     MockConnectionMark mark1("mark1");
-    MockSelector selector(std::nullopt);
+    MockSelector selector(ConnectionTracker::Discard{});
     auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
@@ -325,15 +373,19 @@ TEST(ConnectionTrackerTest, IcmpDestinationUnreachable) {
       auto originalUdp = CreatePacket(originalBytes);
 
       // Update tracker with original UDP connection
-      tracker->LookupAndUpdate<ConnectionDirection::kOutput>(originalUdp, mark1);
+      selector.Result = mark1;
+      tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(originalUdp, ConnectionTracker::Nothing{},
+                                                                             nullptr);
 
       // Now use the real ICMPv4 Destination Unreachable packet
       auto icmpPacket = CreatePacket(test::captured::Icmp4DestUnreachable);
 
-      // Lookup of the ICMP packet (direction: Input) should resolve the original UDP connection mark!
-      auto res = tracker->LookupAndUpdate<ConnectionDirection::kInput>(icmpPacket);
-      EXPECT_TRUE(res.has_value());
-      EXPECT_EQ(&res->get(), &mark1);
+      // Lookup of the ICMP packet (direction: Input) should update state, and lookup output should return mark1
+      tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(icmpPacket, mark1, nullptr);
+      auto checkRes = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(
+          originalUdp, ConnectionTracker::Nothing{}, nullptr);
+      EXPECT_TRUE(std::holds_alternative<std::reference_wrapper<ConnectionMark>>(checkRes));
+      EXPECT_EQ(GetMark(checkRes), &mark1);
     }
 
     // IPv6 association test
@@ -344,15 +396,19 @@ TEST(ConnectionTrackerTest, IcmpDestinationUnreachable) {
       auto originalUdp = CreatePacket(originalBytes);
 
       // Update tracker with original UDP connection
-      tracker->LookupAndUpdate<ConnectionDirection::kOutput>(originalUdp, mark1);
+      selector.Result = mark1;
+      tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(originalUdp, ConnectionTracker::Nothing{},
+                                                                             nullptr);
 
       // Now use the real ICMPv6 Destination Unreachable packet
       auto icmpPacket = CreatePacket(test::captured::Icmp6DestUnreachable);
 
-      // Lookup of the ICMPv6 packet should resolve the original UDP connection mark!
-      auto res = tracker->LookupAndUpdate<ConnectionDirection::kInput>(icmpPacket);
-      EXPECT_TRUE(res.has_value());
-      EXPECT_EQ(&res->get(), &mark1);
+      // Lookup of the ICMPv6 packet should update state, and lookup output should return mark1
+      tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(icmpPacket, mark1, nullptr);
+      auto checkRes = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(
+          originalUdp, ConnectionTracker::Nothing{}, nullptr);
+      EXPECT_TRUE(std::holds_alternative<std::reference_wrapper<ConnectionMark>>(checkRes));
+      EXPECT_EQ(GetMark(checkRes), &mark1);
     }
 
     co_await tracker->Stop();

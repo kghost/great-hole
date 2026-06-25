@@ -9,23 +9,25 @@
 
 #include <boost/asio.hpp>
 
+#include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
-#include "EndpointTun.hpp"
+#include "Endpoint.hpp"
 #include "EndpointUdpDynMux.hpp"
+#include "GHApi.hpp"
 #include "VpnClientMultiChannel.hpp"
 
 namespace gh {
 
 enum class TunnelState { Starting = 0, Running = 1, Stopping = 2, Stopped = 3, Failed = 4 };
 
-class DataPlaneCallbacks {
+class GH_API DataPlaneCallbacks {
 public:
   virtual ~DataPlaneCallbacks() = default;
   virtual void OnVpnStateChanged(TunnelState state, const std::string& message) = 0;
   virtual void OnTunnelStateChanged(int64_t endpointHandle, int state, const std::string& error) = 0;
 };
 
-class TunnelDataPlane : public VpnClientMultiChannel::SessionStateListener {
+class GH_API TunnelDataPlane : public VpnClientMultiChannel::SessionStateListener {
 public:
   TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
                   DataPlaneCallbacks& callbacks);
@@ -42,8 +44,12 @@ public:
   TunnelDataPlane(TunnelDataPlane&&) = delete;
   TunnelDataPlane& operator=(TunnelDataPlane&&) = delete;
 
+#if defined(_WIN32)
+  Omni::Fiber::Coroutine<void> Start(int mtu, std::vector<char> encryptionKey);
+#else
   Omni::Fiber::Coroutine<void> Start(int tunFd, int mtu, std::vector<char> encryptionKey);
   Omni::Fiber::Coroutine<void> MigrateTun(int tunFd);
+#endif
   Omni::Fiber::Coroutine<void> Stop();
   Omni::Fiber::Coroutine<VpnClientMultiChannel::Session*> AddEndpoint(const UdpDynMux::PskType& psk,
                                                                       const std::string& host, int port);
@@ -58,7 +64,7 @@ private:
   ConnectionTracker::Selector& _Selector;
   DataPlaneCallbacks& _Callbacks;
 
-  std::shared_ptr<Tun> _Tun;
+  std::shared_ptr<Endpoint> _Tun;
   std::shared_ptr<UdpDynMux> _UdpDynMux;
   std::shared_ptr<VpnClientMultiChannel> _Client;
 

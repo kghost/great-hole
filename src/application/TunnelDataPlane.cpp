@@ -1,19 +1,27 @@
 #include "TunnelDataPlane.hpp"
 
-#include <android/log.h>
 #include <memory>
 #include <string>
+#include <vector>
+
+#if !defined(_WIN32)
 #include <unistd.h>
+#endif
 
 #include <boost/asio.hpp>
 #include <boost/log/trivial.hpp>
 
 #include "Coroutine.hpp"
-#include "EndpointTun.hpp"
 #include "EndpointUdpDynMux.hpp"
 #include "FilterXor.hpp"
 #include "ResolverHelper.hpp"
 #include "VpnClientMultiChannel.hpp"
+
+#if defined(_WIN32)
+#include "TunWinDivert.hpp"
+#else
+#include "EndpointTun.hpp"
+#endif
 
 namespace gh {
 
@@ -23,17 +31,27 @@ TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor, Connecti
 
 TunnelDataPlane::~TunnelDataPlane() { assert(!_Running); }
 
-Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(int tunFd, int mtu, std::vector<char> encryptionKey) {
+Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(
+#if !defined(_WIN32)
+    int tunFd,
+#endif
+    int mtu, std::vector<char> encryptionKey) {
   if (_Running) {
     co_return;
   }
   _Running = true;
   _Callbacks.OnVpnStateChanged(TunnelState::Starting, "VPN starting");
 
+#if defined(_WIN32)
+  _Tun = std::make_shared<TunWinDivert>(_Executor, "WinDivertTun");
+#else
   _Tun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
+#endif
+
+  auto tracker = std::make_shared<ConnectionTracker>(_Executor, _Selector);
   _UdpDynMux = std::make_shared<UdpDynMux>(_Executor);
   auto filter = std::make_shared<FilterXor>(std::move(encryptionKey));
-  _Client = std::make_shared<VpnClientMultiChannel>(_Executor, _Tun, _UdpDynMux, _Selector,
+  _Client = std::make_shared<VpnClientMultiChannel>(_Executor, _Tun, _UdpDynMux, tracker,
                                                     std::vector<std::shared_ptr<Filter>>{filter}, *this);
 
   auto ec = co_await _Tun->Start();
@@ -60,6 +78,7 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(int tunFd, int mtu, std::vec
   _Callbacks.OnVpnStateChanged(TunnelState::Running, "VPN tunnel established");
 }
 
+#if !defined(_WIN32)
 Omni::Fiber::Coroutine<void> TunnelDataPlane::MigrateTun(int tunFd) {
   if (_Running && _Client) {
     auto newTun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
@@ -88,6 +107,7 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::MigrateTun(int tunFd) {
   }
   co_return;
 }
+#endif
 
 Omni::Fiber::Coroutine<void> TunnelDataPlane::Stop() {
   if (!_Running) {

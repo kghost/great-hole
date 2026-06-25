@@ -67,12 +67,20 @@ The following workflow presets are configured in `CMakePresets.json`:
   cmake --workflow --preset android-x86_64
   ```
 
-### Host Debug (msvc) (`build-debug-msvc`)
+### Host Debug (msvc) (`debug-msvc`)
 
-- **Description:** Configures (using `debug` configure preset), builds (using `build-debug-msvc` build preset), and tests (using `debug` test preset) on the host environment using Clang.
+- **Description:** Configures (using `debug-msvc` configure preset), builds (using `build-debug-msvc` build preset), and tests (using `debug-msvc` test preset) on Windows using Visual Studio.
 - **Workflow Command:**
   ```bash
   cmake --workflow --preset debug-msvc
+  ```
+
+### Host Debug (msvc-ninja) (`debug-msvc-ninja`)
+
+- **Description:** Configures (using `debug-msvc-ninja` configure preset), builds (using `build-debug-msvc-ninja` build preset), and tests (using `debug-msvc-ninja` test preset) on Windows using Ninja.
+- **Workflow Command:**
+  ```bash
+  cmake --workflow --preset debug-msvc-ninja
   ```
 
 ---
@@ -82,3 +90,8 @@ The following workflow presets are configured in `CMakePresets.json`:
 - **Do not modify `CMakePresets.json`** unless explicitly requested by the user or required to add a new build configuration/workflow.
 - **Clean builds:** If you need to clean or rebuild from scratch, delete the corresponding binary directory (e.g., `rm -rf build` for the `debug` preset) and re-run the workflow command.
 - **Build Outputs:** Always ensure your build output directory is ignored by Git (already covered in `.gitignore` for `build` and `build-*/`).
+- **Windows Build Environment:** For Windows builds, following powershell command may be needed to be run first to set the VS build environment:
+  ```powershell
+  Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
+  & "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\Launch-VsDevShell.ps1" -Arch amd64 -HostArch amd64
+  ```

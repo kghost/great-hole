@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
+cmake_policy(SET CMP0135 NEW)
 cmake_policy(SET CMP0167 NEW)
 project(great-hole VERSION 0.1.0 LANGUAGES CXX C)
 

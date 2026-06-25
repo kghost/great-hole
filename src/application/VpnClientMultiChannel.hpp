@@ -14,6 +14,7 @@
 #include "EndpointUdpDynMux.hpp"
 #include "ErrorCode.hpp"
 #include "Filter.hpp"
+#include "GHApi.hpp"
 #include "Pipeline.hpp"
 #include "RemoteCall.hpp"
 #include "ServiceBase.hpp"
@@ -27,7 +28,7 @@ struct VpnTrafficStats : public TrafficStats {
   int64_t RttMs{-1};
 };
 
-class VpnClientMultiChannel : public ServiceBase, public UdpDynMux::ChannelNotification {
+class GH_API VpnClientMultiChannel : public ServiceBase, public UdpDynMux::ChannelNotification {
 public:
   class TunSideEndpoint;
   class ChannelSideEndpoint;
@@ -65,7 +66,7 @@ public:
   static NoopSessionStateListener _NoopSessionStateListener;
 
   VpnClientMultiChannel(boost::asio::any_io_executor executor, std::shared_ptr<Endpoint> tun,
-                        std::shared_ptr<UdpDynMux> udpDynMux, ConnectionTracker::Selector& selector,
+                        std::shared_ptr<UdpDynMux> udpDynMux, std::shared_ptr<ConnectionTracker> tracker,
                         std::vector<std::shared_ptr<Filter>> filters,
                         SessionStateListener& listener = _NoopSessionStateListener);
   ~VpnClientMultiChannel() override;
@@ -96,7 +97,6 @@ private:
   boost::asio::any_io_executor _Executor;
   std::shared_ptr<Endpoint> _Tun;
   std::shared_ptr<UdpDynMux> _UdpDynMux;
-  ConnectionTracker::Selector& _Selector;
   std::vector<std::shared_ptr<Filter>> _Filters;
 
   std::shared_ptr<TunSideEndpoint> _TunSide;

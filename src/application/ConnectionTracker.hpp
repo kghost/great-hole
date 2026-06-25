@@ -3,9 +3,10 @@
 #include <chrono>
 #include <compare>
 #include <cstdint>
+#include <expected>
 #include <functional>
-#include <optional>
 #include <set>
+#include <variant>
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/address_v4.hpp>
@@ -16,8 +17,6 @@
 
 namespace gh {
 
-enum class ConnectionDirection { kOutput, kInput };
-
 class ConnectionMark {
 public:
   virtual ~ConnectionMark() = default;
@@ -26,6 +25,13 @@ public:
 
 class ConnectionTracker : public ServiceBase {
 public:
+  struct UnsupportedPacket {};
+
+  struct ToBeSelected {};
+  struct Bypass {};
+  struct Discard {};
+  using RouteResult = std::variant<ToBeSelected, Bypass, Discard, std::reference_wrapper<ConnectionMark>>;
+
   struct Ip4TcpKey {
     boost::asio::ip::address_v4 LocalAddress;
     boost::asio::ip::address_v4 RemoteAddress;
@@ -84,15 +90,23 @@ public:
     bool operator==(const Icmp6Key&) const = default;
   };
 
+  // Selector determines connection routing:
+  // - Bypass: Packets should bypass VPN (e.g. packets destined for the active VPN servers).
+  // - Discard: Packets should be dropped.
+  // - std::reference_wrapper<ConnectionMark>: Route via the chosen session.
+  //
+  // Explicit Guarantee:
+  // The Selector implementation must guarantee loop prevention by returning 'Bypass'
+  // for all traffic destined for the active VPN server endpoints.
   class Selector {
   public:
     virtual ~Selector() = default;
-    virtual std::optional<std::reference_wrapper<ConnectionMark>> operator()(const Ip4TcpKey&) const = 0;
-    virtual std::optional<std::reference_wrapper<ConnectionMark>> operator()(const Ip6TcpKey&) const = 0;
-    virtual std::optional<std::reference_wrapper<ConnectionMark>> operator()(const Ip4UdpKey&) const = 0;
-    virtual std::optional<std::reference_wrapper<ConnectionMark>> operator()(const Ip6UdpKey&) const = 0;
-    virtual std::optional<std::reference_wrapper<ConnectionMark>> operator()(const IcmpKey&) const = 0;
-    virtual std::optional<std::reference_wrapper<ConnectionMark>> operator()(const Icmp6Key&) const = 0;
+    virtual RouteResult operator()(const Ip4TcpKey&) const = 0;
+    virtual RouteResult operator()(const Ip6TcpKey&) const = 0;
+    virtual RouteResult operator()(const Ip4UdpKey&) const = 0;
+    virtual RouteResult operator()(const Ip6UdpKey&) const = 0;
+    virtual RouteResult operator()(const IcmpKey&) const = 0;
+    virtual RouteResult operator()(const Icmp6Key&) const = 0;
   };
 
   using ValidatorType = std::function<bool(ConnectionMark&)>;
@@ -101,15 +115,15 @@ public:
   ~ConnectionTracker() override = default;
 
   struct ConnectionEntry {
-    ConnectionMark& Mark;
+    RouteResult Result;
     std::chrono::steady_clock::time_point LastActive;
   };
 
   struct TcpEntry : public ConnectionEntry {
     enum class TcpState { kSynSent, kEstablished, kFinWait, kClosed };
 
-    explicit TcpEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive, uint8_t flags)
-        : ConnectionEntry{mark, lastActive}, State(InitialState(flags)) {}
+    explicit TcpEntry(RouteResult result, std::chrono::steady_clock::time_point lastActive, uint8_t flags)
+        : ConnectionEntry{result, lastActive}, State(InitialState(flags)) {}
 
     TcpState State;
     static constexpr std::chrono::seconds SynTimeout = std::chrono::seconds(60);
@@ -158,16 +172,16 @@ public:
   };
 
   struct UdpEntry : public ConnectionEntry {
-    UdpEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive, int)
-        : ConnectionEntry{mark, lastActive} {}
+    UdpEntry(RouteResult result, std::chrono::steady_clock::time_point lastActive, int)
+        : ConnectionEntry{result, lastActive} {}
     static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
     std::chrono::seconds GetTimeout() const { return Timeout; }
     void UpdateState(int) {}
   };
 
   struct IcmpConnEntry : public ConnectionEntry {
-    IcmpConnEntry(ConnectionMark& mark, std::chrono::steady_clock::time_point lastActive, int)
-        : ConnectionEntry{mark, lastActive} {}
+    IcmpConnEntry(RouteResult result, std::chrono::steady_clock::time_point lastActive, int)
+        : ConnectionEntry{result, lastActive} {}
     static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
     std::chrono::seconds GetTimeout() const { return Timeout; }
     void UpdateState(int) {}
@@ -217,10 +231,23 @@ public:
   ConnectionTracker(ConnectionTracker&&) = delete;
   ConnectionTracker& operator=(ConnectionTracker&&) = delete;
 
-  template <ConnectionDirection Direction>
-  std::optional<std::reference_wrapper<ConnectionMark>>
-  LookupAndUpdate(const Packet& packet, std::optional<std::reference_wrapper<ConnectionMark>> mark = std::nullopt,
-                  ValidatorType validator = nullptr);
+  struct Nothing {};
+  struct ConnectionDirectionOutput;
+  struct ConnectionDirectionInput;
+  struct ConnectionDirectionOutput {
+    using OppositeDirection = ConnectionDirectionInput;
+    using ConnectionTrackerInput = Nothing;
+    using ConnectionTrackerOutput = RouteResult;
+  };
+  struct ConnectionDirectionInput {
+    using OppositeDirection = ConnectionDirectionOutput;
+    using ConnectionTrackerInput = ConnectionMark&;
+    using ConnectionTrackerOutput = Nothing;
+  };
+
+  template <typename Direction>
+  typename Direction::ConnectionTrackerOutput
+  LookupAndUpdate(const Packet& packet, Direction::ConnectionTrackerInput input, ValidatorType validator);
 
   void RemoveMark(const ConnectionMark& mark);
 
@@ -234,9 +261,9 @@ protected:
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 
 private:
-  template <ConnectionDirection, typename F>
-  static std::optional<std::reference_wrapper<ConnectionMark>> ParseConnectionKey(std::span<const uint8_t> p,
-                                                                                  bool truncated, F&& f);
+  template <typename KeyDirection, typename ActionDirection, typename F>
+  static std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket>
+  ParseConnectionKey(std::span<const uint8_t> p, bool truncated, F&& f);
 
   boost::asio::any_io_executor _Executor;
   Selector& _Selector;
