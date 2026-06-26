@@ -116,7 +116,7 @@ Udp::CreateChannel(boost::asio::ip::udp::endpoint const& peer) {
 }
 
 Omni::Fiber::Coroutine<void> Udp::RemoveChannel(const boost::asio::ip::udp::endpoint& peer) {
-  co_await _ChannelRpc.Call([this, peer]() -> Omni::Fiber::Coroutine<void> {
+  auto result = co_await _ChannelRpc.Call([this, peer]() -> Omni::Fiber::Coroutine<void> {
     auto it = _Channels.find(peer);
     assert(it != _Channels.end());
 
@@ -125,6 +125,9 @@ Omni::Fiber::Coroutine<void> Udp::RemoveChannel(const boost::asio::ip::udp::endp
     co_await channel->Stop();
     co_await channel->WaitService();
   });
+  if (!result.has_value()) {
+    BOOST_LOG_TRIVIAL(error) << GetName() << " remove channel failed";
+  }
 }
 
 Omni::Fiber::Coroutine<void> Udp::ReadLoop() {

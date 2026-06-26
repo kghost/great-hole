@@ -13,21 +13,20 @@
 #include "Coroutine.hpp"
 #include "Endpoint.hpp"
 #include "EndpointUdpDynMux.hpp"
-#include "GHApi.hpp"
 #include "VpnClientMultiChannel.hpp"
 
 namespace gh {
 
 enum class TunnelState { Starting = 0, Running = 1, Stopping = 2, Stopped = 3, Failed = 4 };
 
-class GH_API DataPlaneCallbacks {
+class DataPlaneCallbacks {
 public:
   virtual ~DataPlaneCallbacks() = default;
   virtual void OnVpnStateChanged(TunnelState state, const std::string& message) = 0;
   virtual void OnTunnelStateChanged(int64_t endpointHandle, int state, const std::string& error) = 0;
 };
 
-class GH_API TunnelDataPlane : public VpnClientMultiChannel::SessionStateListener {
+class TunnelDataPlane : public VpnClientMultiChannel::SessionStateListener {
 public:
   TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
                   DataPlaneCallbacks& callbacks);

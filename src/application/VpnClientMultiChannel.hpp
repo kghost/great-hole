@@ -14,7 +14,6 @@
 #include "EndpointUdpDynMux.hpp"
 #include "ErrorCode.hpp"
 #include "Filter.hpp"
-#include "GHApi.hpp"
 #include "Pipeline.hpp"
 #include "RemoteCall.hpp"
 #include "ServiceBase.hpp"
@@ -28,7 +27,7 @@ struct VpnTrafficStats : public TrafficStats {
   int64_t RttMs{-1};
 };
 
-class GH_API VpnClientMultiChannel : public ServiceBase, public UdpDynMux::ChannelNotification {
+class VpnClientMultiChannel : public ServiceBase, public UdpDynMux::ChannelNotification {
 public:
   class TunSideEndpoint;
   class ChannelSideEndpoint;

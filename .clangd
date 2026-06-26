@@ -1,5 +1,6 @@
 # Default configuration for the whole project
 CompileFlags:
+  Remove: [-fsanitize=address, /fsanitize=address]
   CompilationDatabase: "build/"
 
 ---

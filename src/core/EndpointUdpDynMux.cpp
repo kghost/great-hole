@@ -370,8 +370,8 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
                 },
             };
           },
-          [&](EnumChannel value) {
-            return [this, value] -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
+          [&](EnumChannel _) {
+            return [this] -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
               assert(false && "Should not receive invalid channel value in HandleControlMessage");
               co_return _State;
             };
@@ -489,7 +489,7 @@ UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, std::shared_ptr<Resolver
 }
 
 Omni::Fiber::Coroutine<void> UdpDynMux::RemoveChannel(const UdpDynMux::PskType& psk) {
-  co_await _ChannelRpc.Call([this, psk]() -> Omni::Fiber::Coroutine<void> {
+  auto result = co_await _ChannelRpc.Call([this, psk]() -> Omni::Fiber::Coroutine<void> {
     auto it = _Channels.find(psk);
     if (it != _Channels.end()) {
       auto channel = std::move(it->second);
@@ -499,6 +499,9 @@ Omni::Fiber::Coroutine<void> UdpDynMux::RemoveChannel(const UdpDynMux::PskType& 
       co_await channel->WaitService();
     }
   });
+  if (!result.has_value()) {
+    BOOST_LOG_TRIVIAL(error) << GetName() << " remove channel failed";
+  }
 }
 
 Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
@@ -587,31 +590,41 @@ Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
                 })
                 .Value();
 
-        co_await std::visit(
-            Overload{
-                [&](const UdpDynMux::PskType& psk) -> Omni::Fiber::Coroutine<void> {
-                  auto it = _Channels.find(psk);
-                  if (it != _Channels.end()) {
-                    co_await it->second->_ControlPacket.GetProducer().Put(std::make_tuple(peer, std::move(packet)));
-                  }
-                },
-                [&](uint16_t rxId) -> Omni::Fiber::Coroutine<void> {
-                  for (auto& [psk, channel] : _Channels) {
-                    if (channel->_RemoteRxId == rxId && channel->_Peer == peer) {
-                      co_await channel->_ControlPacket.GetProducer().Put(std::make_tuple(peer, std::move(packet)));
-                    }
-                  }
-                },
-                [&](std::monostate) -> Omni::Fiber::Coroutine<void> { co_return; },
-            },
-            lookup);
+        co_await std::visit(Overload{
+                                [&](const UdpDynMux::PskType& psk) -> Omni::Fiber::Coroutine<void> {
+                                  auto it = _Channels.find(psk);
+                                  if (it != _Channels.end()) {
+                                    auto result = co_await it->second->_ControlPacket.GetProducer().Put(
+                                        std::make_tuple(peer, std::move(packet)));
+                                    if (!result.has_value()) {
+                                      BOOST_LOG_TRIVIAL(error) << GetName() << " control packet pipe failed";
+                                    }
+                                  }
+                                },
+                                [&](uint16_t rxId) -> Omni::Fiber::Coroutine<void> {
+                                  for (auto& [psk, channel] : _Channels) {
+                                    if (channel->_RemoteRxId == rxId && channel->_Peer == peer) {
+                                      auto result = co_await channel->_ControlPacket.GetProducer().Put(
+                                          std::make_tuple(peer, std::move(packet)));
+                                      if (!result.has_value()) {
+                                        BOOST_LOG_TRIVIAL(error) << GetName() << " control packet pipe failed";
+                                      }
+                                    }
+                                  }
+                                },
+                                [&](std::monostate) -> Omni::Fiber::Coroutine<void> { co_return; },
+                            },
+                            lookup);
       }
     } else {
       if (auto it = _RxIdToChannel.find(channelId); it != _RxIdToChannel.end()) {
         auto channel = it->second;
         if (channel->_State == Channel::State::kRunning && channel->_Peer == peer) {
-          packet.PopFront(2);
-          co_await channel->_DataPacket.GetProducer().Put(std::move(packet));
+          packet.PopFront<FieldChannel::Size>();
+          auto result = co_await channel->_DataPacket.GetProducer().Put(std::move(packet));
+          if (!result.has_value()) {
+            BOOST_LOG_TRIVIAL(error) << GetName() << " data packet pipe failed";
+          }
         } else if (channel->_Peer.has_value() && channel->_Peer.value() != peer) {
           co_await SendControlInvalidAddress(peer, channelId);
         } else {

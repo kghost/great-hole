@@ -121,7 +121,7 @@ UdpMux::CreateChannel(uint8_t id, std::shared_ptr<ResolverEndpoint> resolver) {
 }
 
 Omni::Fiber::Coroutine<void> UdpMux::RemoveChannel(uint8_t id) {
-  co_await _ChannelRpc.Call([this, id]() -> Omni::Fiber::Coroutine<void> {
+  auto result = co_await _ChannelRpc.Call([this, id]() -> Omni::Fiber::Coroutine<void> {
     auto it = _Channels.find(id);
     assert(it != _Channels.end());
 
@@ -130,6 +130,9 @@ Omni::Fiber::Coroutine<void> UdpMux::RemoveChannel(uint8_t id) {
     co_await channel->Stop();
     co_await channel->WaitService();
   });
+  if (!result.has_value()) {
+    BOOST_LOG_TRIVIAL(error) << GetName() << " remove channel failed";
+  }
 }
 
 Omni::Fiber::Coroutine<void> UdpMux::ReadLoop() {

@@ -1,17 +1,16 @@
 #pragma once
 
+#include <bit>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <type_traits>
 #include <vector>
-#include <bit>
 
 #ifndef __cpp_lib_byteswap
 namespace std {
-template <typename T>
-constexpr T byteswap(T value) noexcept {
+template <typename T> constexpr T byteswap(T value) noexcept {
   static_assert(std::is_integral_v<T>, "std::byteswap is only for integral types");
   if constexpr (sizeof(T) == 1) {
     return value;
@@ -71,15 +70,15 @@ public:
   template <typename T>
     requires std::is_integral_v<T>
   T PopFront() {
-    T v = *reinterpret_cast<T*>(PopFront(sizeof(T)).data());
+    T v = *reinterpret_cast<T*>(PopFront<sizeof(T)>().data());
     return (std::endian::native == std::endian::little) ? std::byteswap(v) : v;
   }
 
-  std::span<uint8_t> PopFront(std::size_t size) {
-    assert(DataSize() >= size);
-    auto span = std::span<uint8_t>(_Data.data() + _Offset, size);
-    _Offset += size;
-    _Length -= size;
+  template <size_t Size> std::span<uint8_t, Size> PopFront() {
+    assert(DataSize() >= Size);
+    auto span = std::span<uint8_t, Size>(_Data.data() + _Offset, Size);
+    _Offset += Size;
+    _Length -= Size;
     return span;
   }
 
@@ -99,14 +98,14 @@ public:
   template <typename T>
     requires std::is_integral_v<T>
   T PopBack() {
-    T v = *reinterpret_cast<T*>(PopBack(sizeof(T)).data());
+    T v = *reinterpret_cast<T*>(PopBack<sizeof(T)>().data());
     return (std::endian::native == std::endian::little) ? std::byteswap(v) : v;
   }
 
-  std::span<uint8_t> PopBack(std::size_t size) {
-    assert(DataSize() >= size);
-    _Length -= size;
-    return std::span<uint8_t>(_Data.data() + _Offset + _Length, size);
+  template <size_t Size> std::span<uint8_t, Size> PopBack() {
+    assert(DataSize() >= Size);
+    _Length -= Size;
+    return std::span<uint8_t, Size>(_Data.data() + _Offset + _Length);
   }
 
   //  data
