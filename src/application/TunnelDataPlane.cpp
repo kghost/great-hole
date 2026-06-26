@@ -18,7 +18,7 @@
 #include "VpnClientMultiChannel.hpp"
 
 #if defined(_WIN32)
-#include "TunWinDivert.hpp"
+#include "EndpointWinDivert.hpp"
 #else
 #include "EndpointTun.hpp"
 #endif
@@ -43,7 +43,7 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(
   _Callbacks.OnVpnStateChanged(TunnelState::Starting, "VPN starting");
 
 #if defined(_WIN32)
-  _Tun = std::make_shared<TunWinDivert>(_Executor, "WinDivertTun");
+  _Tun = std::make_shared<EndpointWinDivert>(_Executor, "EndpointWinDivert");
 #else
   _Tun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
 #endif

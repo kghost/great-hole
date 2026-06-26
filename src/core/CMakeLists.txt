@@ -1,3 +1,7 @@
+if(WIN32)
+  add_subdirectory(windows)
+endif()
+
 foreach(suffix "" "-asan")
   if(suffix STREQUAL "-asan")
     set(target_core "great-hole-core-asan")
@@ -14,13 +18,17 @@ foreach(suffix "" "-asan")
     Pipeline.cpp
     Endpoint.cpp
     Filter.cpp
-    UtilConsole.cpp
     EndpointUdp.cpp
     EndpointUdpMux.cpp
     EndpointUdpDynMux.cpp
+    UtilConsole.cpp
   )
 
-  if(NOT WIN32)
+  if(WIN32)
+    list(APPEND core_sources
+      windows/EndpointWinDivert.cpp
+    )
+  else()
     list(APPEND core_sources
       EndpointTun.cpp
       EndpointTunSplitIp.cpp
@@ -30,6 +38,9 @@ foreach(suffix "" "-asan")
   add_library(${target_core} STATIC ${core_sources})
 
   target_include_directories(${target_core} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+  if(WIN32)
+    target_include_directories(${target_core} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/windows)
+  endif()
 
   target_link_libraries(${target_core} PUBLIC
     Boost::log
@@ -39,6 +50,10 @@ foreach(suffix "" "-asan")
     ${omnifiber}
     ${omniresolver}
   )
+
+  if(WIN32)
+    target_link_libraries(${target_core} PUBLIC windivert_lib)
+  endif()
 
   if(Boost_PROCESS_FOUND)
     target_link_libraries(${target_core} PUBLIC Boost::process)
