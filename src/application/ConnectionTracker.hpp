@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <compare>
 #include <cstdint>
@@ -114,78 +115,177 @@ public:
   explicit ConnectionTracker(boost::asio::any_io_executor executor, Selector& selector);
   ~ConnectionTracker() override = default;
 
+  ConnectionTracker(const ConnectionTracker&) = delete;
+  ConnectionTracker& operator=(const ConnectionTracker&) = delete;
+  ConnectionTracker(ConnectionTracker&&) = delete;
+  ConnectionTracker& operator=(ConnectionTracker&&) = delete;
+
+  std::string GetName() const override { return "ConnectionTracker"; }
+  void RemoveMark(const ConnectionMark& mark);
+  void Clear();
+
+  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
+  Omni::Fiber::Coroutine<void> DoWork() override;
+  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+
+  struct Nothing {};
+  struct ConnectionDirectionOutput;
+  struct ConnectionDirectionInput;
+  struct ConnectionDirectionOutput {
+    using OppositeDirection = ConnectionDirectionInput;
+    using ConnectionTrackerInput = Nothing;
+    using ConnectionTrackerOutput = RouteResult;
+  };
+  struct ConnectionDirectionInput {
+    using OppositeDirection = ConnectionDirectionOutput;
+    using ConnectionTrackerInput = ConnectionMark&;
+    using ConnectionTrackerOutput = Nothing;
+  };
+
+  template <typename Direction>
+  typename Direction::ConnectionTrackerOutput
+  LookupAndUpdate(const Packet& packet, Direction::ConnectionTrackerInput input, ValidatorType validator);
+
+private:
   struct ConnectionEntry {
     RouteResult Result;
     std::chrono::steady_clock::time_point LastActive;
   };
 
   struct TcpEntry : public ConnectionEntry {
-    enum class TcpState { kSynSent, kEstablished, kFinWait, kClosed };
+    enum TcpFlags : uint8_t {
+      kFin = 0x01,
+      kSyn = 0x02,
+      kRst = 0x04,
+      kPsh = 0x08,
+      kAck = 0x10,
+      kUrg = 0x20,
+    };
 
-    explicit TcpEntry(RouteResult result, std::chrono::steady_clock::time_point lastActive, uint8_t flags)
-        : ConnectionEntry{result, lastActive}, State(InitialState(flags)) {}
+    struct TcpExtraKey {
+      uint8_t Flags = 0;
+      uint32_t SequenceNumber = 0;
+      uint32_t AcknowledgementNumber = 0;
+    };
 
-    TcpState State;
-    static constexpr std::chrono::seconds SynTimeout = std::chrono::seconds(60);
-    static constexpr std::chrono::seconds EstablishedTimeout = std::chrono::seconds(1200);
-    static constexpr std::chrono::seconds FinTimeout = std::chrono::seconds(30);
-    std::chrono::seconds GetTimeout() const {
-      switch (State) {
-      case TcpState::kSynSent:
-        return SynTimeout;
-      case TcpState::kEstablished:
-        return EstablishedTimeout;
-      case TcpState::kFinWait:
-        return FinTimeout;
-      case TcpState::kClosed:
-        return FinTimeout;
-      }
-      return FinTimeout;
-    }
+    struct OneDirectionState {
+      enum class State : uint8_t { kNone, kSynSent, kSynAcked, kFinSent, kFinAcked } State = State::kNone;
+      uint32_t SequenceNumber = 0;
+      uint32_t AcknowledgedNumber = 0;
+      static constexpr std::chrono::seconds SynTimeout = std::chrono::seconds(60);
+      static constexpr std::chrono::seconds EstablishedTimeout = std::chrono::seconds(1200);
+      static constexpr std::chrono::seconds FinTimeout = std::chrono::seconds(30);
+      std::chrono::seconds GetTimeout() const {
+        switch (State) {
+        case State::kNone:
+        case State::kSynSent:
+          return SynTimeout;
 
-    static TcpState InitialState(uint8_t flags) {
-      if (flags & 0x04) { // RST
-        return TcpEntry::TcpState::kClosed;
-      } else if (flags & 0x01) { // FIN
-        return TcpEntry::TcpState::kFinWait;
-      } else if ((flags & 0x02) && !(flags & 0x10)) { // SYN only
-        return TcpEntry::TcpState::kSynSent;
-      } else if (flags & 0x10) { // ACK
-        return TcpEntry::TcpState::kEstablished;
-      }
-      return TcpEntry::TcpState::kClosed;
-    }
+        case State::kSynAcked:
+          return EstablishedTimeout;
 
-    void UpdateState(uint8_t flags) {
-      if (flags & 0x04) { // RST
-        State = TcpEntry::TcpState::kClosed;
-      } else if (flags & 0x01) { // FIN
-        State = TcpEntry::TcpState::kFinWait;
-      } else if ((flags & 0x02) && !(flags & 0x10)) { // SYN only
-        State = TcpEntry::TcpState::kSynSent;
-      } else if (flags & 0x10) { // ACK
-        if (State == TcpEntry::TcpState::kSynSent) {
-          State = TcpEntry::TcpState::kEstablished;
+        case State::kFinSent:
+        case State::kFinAcked:
+        default:
+          return FinTimeout;
         }
+      }
+      bool HandleThisDirectionPacket(TcpExtraKey extra) {
+        switch (State) {
+        case State::kNone:
+          if (extra.Flags & TcpFlags::kSyn) {
+            State = State::kSynSent;
+            SequenceNumber = extra.SequenceNumber;
+            AcknowledgedNumber = extra.SequenceNumber;
+          }
+          break;
+        case State::kSynSent:
+          break;
+        case State::kSynAcked:
+          if (extra.Flags & TcpFlags::kFin) {
+            State = State::kFinSent;
+            SequenceNumber = extra.SequenceNumber;
+          }
+          break;
+        case State::kFinSent:
+        case State::kFinAcked:
+        default:
+          break;
+        }
+        return true;
+      }
+      bool HandleOppositeDirectionPacket(TcpExtraKey extra) {
+        switch (State) {
+        case State::kNone:
+          break;
+        case State::kSynSent:
+          if ((extra.Flags & TcpFlags::kAck) && (extra.AcknowledgementNumber == SequenceNumber + 1)) {
+            State = State::kSynAcked;
+            AcknowledgedNumber = extra.AcknowledgementNumber;
+          }
+          break;
+        case State::kSynAcked:
+          break;
+        case State::kFinSent:
+          if ((extra.Flags & TcpFlags::kAck) && (extra.AcknowledgementNumber == SequenceNumber + 1)) {
+            State = State::kFinAcked;
+            AcknowledgedNumber = extra.AcknowledgementNumber;
+          }
+          break;
+        case State::kFinAcked:
+        default:
+          break;
+        }
+        return true;
+      }
+    } OutputDirection, InputDirection;
+
+    template <typename Direction>
+    explicit TcpEntry(std::in_place_type_t<Direction>, RouteResult result,
+                      std::chrono::steady_clock::time_point lastActive, TcpExtraKey extra)
+        : ConnectionEntry{result, lastActive} {
+      UpdateState<Direction>(extra);
+    }
+
+    std::chrono::seconds GetTimeout() const {
+      return std::min(OutputDirection.GetTimeout(), InputDirection.GetTimeout());
+    }
+
+    template <typename Direction> void UpdateState(TcpExtraKey extra) {
+      if constexpr (std::is_same_v<Direction, ConnectionDirectionOutput>) {
+        OutputDirection.HandleThisDirectionPacket(extra);
+        InputDirection.HandleOppositeDirectionPacket(extra);
+      } else {
+        InputDirection.HandleThisDirectionPacket(extra);
+        OutputDirection.HandleOppositeDirectionPacket(extra);
       }
     }
   };
 
   struct UdpEntry : public ConnectionEntry {
-    UdpEntry(RouteResult result, std::chrono::steady_clock::time_point lastActive, int)
+    template <typename Direction>
+    UdpEntry(std::in_place_type_t<Direction>, RouteResult result, std::chrono::steady_clock::time_point lastActive,
+             Nothing)
         : ConnectionEntry{result, lastActive} {}
     static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
     std::chrono::seconds GetTimeout() const { return Timeout; }
-    void UpdateState(int) {}
+    template <typename Direction> void UpdateState(Nothing) {}
   };
 
   struct IcmpConnEntry : public ConnectionEntry {
-    IcmpConnEntry(RouteResult result, std::chrono::steady_clock::time_point lastActive, int)
+    template <typename Direction>
+    IcmpConnEntry(std::in_place_type_t<Direction>, RouteResult result, std::chrono::steady_clock::time_point lastActive,
+                  Nothing)
         : ConnectionEntry{result, lastActive} {}
     static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
     std::chrono::seconds GetTimeout() const { return Timeout; }
-    void UpdateState(int) {}
+    template <typename Direction> void UpdateState(Nothing) {}
   };
+
+  template <typename Entry>
+  static bool IsExpired(Entry& entry, std::chrono::time_point<std::chrono::steady_clock> now) {
+    return now - entry.LastActive > entry.GetTimeout();
+  }
 
   struct Ip4TcpEntry {
     Ip4TcpKey Key;
@@ -226,44 +326,14 @@ public:
     bool operator()(const KeyType& lhs, const EntryType& rhs) const { return lhs < rhs.Key; }
   };
 
-  ConnectionTracker(const ConnectionTracker&) = delete;
-  ConnectionTracker& operator=(const ConnectionTracker&) = delete;
-  ConnectionTracker(ConnectionTracker&&) = delete;
-  ConnectionTracker& operator=(ConnectionTracker&&) = delete;
-
-  struct Nothing {};
-  struct ConnectionDirectionOutput;
-  struct ConnectionDirectionInput;
-  struct ConnectionDirectionOutput {
-    using OppositeDirection = ConnectionDirectionInput;
-    using ConnectionTrackerInput = Nothing;
-    using ConnectionTrackerOutput = RouteResult;
-  };
-  struct ConnectionDirectionInput {
-    using OppositeDirection = ConnectionDirectionOutput;
-    using ConnectionTrackerInput = ConnectionMark&;
-    using ConnectionTrackerOutput = Nothing;
+  enum class PacketType {
+    kRealPacket,
+    kIcmpInnerPacket,
   };
 
-  template <typename Direction>
-  typename Direction::ConnectionTrackerOutput
-  LookupAndUpdate(const Packet& packet, Direction::ConnectionTrackerInput input, ValidatorType validator);
-
-  void RemoveMark(const ConnectionMark& mark);
-
-  void Clear();
-
-  std::string GetName() const override { return "ConnectionTracker"; }
-
-protected:
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<void> DoWork() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
-
-private:
   template <typename KeyDirection, typename ActionDirection, typename F>
   static std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket>
-  ParseConnectionKey(std::span<const uint8_t> p, bool truncated, F&& f);
+  ParseConnectionKey(std::span<const uint8_t> p, PacketType type, F&& f);
 
   boost::asio::any_io_executor _Executor;
   Selector& _Selector;
