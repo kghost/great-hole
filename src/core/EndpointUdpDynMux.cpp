@@ -184,8 +184,8 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkRunn
 
 Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::DoGracefulStop() {
   co_await _PipielineUsageCounter.WaitAll();
-  co_await _DataPacket.GetProducer().Close();
-  co_await _ControlPacket.GetProducer().Close();
+  _DataPacket.GetConsumer().DiscardAndClose();
+  _ControlPacket.GetConsumer().DiscardAndClose();
   co_return ErrorCode{};
 }
 
@@ -414,7 +414,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoStart() {
   }
 
   if (ec) {
-    co_await _ChannelRpc.Close();
+    _ChannelRpc.DiscardAndClose();
     co_return ec;
   }
   co_return ErrorCode{};
@@ -442,7 +442,7 @@ Omni::Fiber::Coroutine<void> UdpDynMux::DoWork() {
 }
 
 Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoGracefulStop() {
-  co_await _ChannelRpc.Close();
+  _ChannelRpc.DiscardAndClose();
   for (auto& [psk, channel] : std::exchange(_Channels, {})) {
     co_await channel->Stop();
     co_await channel->WaitService();

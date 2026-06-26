@@ -68,7 +68,7 @@ public:
 protected:
   Omni::Fiber::Coroutine<ErrorCode> DoStart() override { co_return ErrorCode{}; }
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override {
-    co_await _Pipe.GetProducer().Close();
+    _Pipe.GetConsumer().DiscardAndClose();
     co_return ErrorCode{};
   }
 
@@ -166,7 +166,7 @@ public:
 protected:
   Omni::Fiber::Coroutine<ErrorCode> DoStart() override { co_return co_await _ConnectionTracker->Start(); }
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override {
-    co_await _Pipe.GetProducer().Close();
+    _Pipe.GetConsumer().DiscardAndClose();
 
     co_await _ConnectionTracker->Stop();
     co_await _ConnectionTracker->WaitService();
@@ -271,7 +271,7 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoGracefulStop() {
   _Sessions.clear();
   co_await _TunSide->Stop();
   co_await _TunSide->WaitService();
-  co_await _ChannelCall.Close();
+  _ChannelCall.DiscardAndClose();
 
   BOOST_LOG_TRIVIAL(info) << GetName() << " stopped";
   co_return ErrorCode{};

@@ -45,7 +45,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMux::DoStart() {
   }
 
   if (ec) {
-    co_await _ChannelRpc.Close();
+    _ChannelRpc.DiscardAndClose();
     co_return ec;
   }
   co_return ErrorCode{};
@@ -75,7 +75,7 @@ Omni::Fiber::Coroutine<void> UdpMux::DoWork() {
 }
 
 Omni::Fiber::Coroutine<ErrorCode> UdpMux::DoGracefulStop() {
-  co_await _ChannelRpc.Close();
+  _ChannelRpc.DiscardAndClose();
   for (auto& [id, channel] : std::exchange(_Channels, {})) {
     co_await channel->Stop();
     co_await channel->WaitService();
@@ -215,7 +215,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpMux::Channel::DoStart() { co_return ErrorCo
 
 Omni::Fiber::Coroutine<ErrorCode> UdpMux::Channel::DoGracefulStop() {
   co_await _PipielineUsageCounter.WaitAll();
-  co_await _Pipe.GetProducer().Close();
+  _Pipe.GetConsumer().DiscardAndClose();
   co_return ErrorCode{};
 }
 

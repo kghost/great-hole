@@ -126,7 +126,7 @@ Omni::Fiber::Coroutine<ErrorCode> VpnServer::DoGracefulStop() {
     co_await _TunSplit->RemoveChannel(session.TunChannel);
   }
   _Sessions.clear();
-  co_await _ChannelCall.Close();
+  _ChannelCall.DiscardAndClose();
 
   BOOST_LOG_TRIVIAL(info) << "VpnServer: run loop exited";
   co_return ErrorCode{};
