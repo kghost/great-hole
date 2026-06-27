@@ -37,6 +37,13 @@ To prevent memory leaks and handle dead connections, entries are timed out and p
   - `FinWait`/`Closed`: 30 seconds.
 - **UDP / ICMP**: 30 seconds.
 
+##### TCP Bidirectional State Resolution
+`TcpEntry` tracks state independently for `OutputDirection` and `InputDirection`:
+- If either direction is closing or closed (`kFinSent`, `kFinAcked`, or `kClosed` via RST), the connection timeout resolves to `FinTimeout` (30s).
+- Otherwise, if either direction is established (`kSynAcked`), the connection timeout resolves to `EstablishedTimeout` (1200s).
+- Otherwise, the connection defaults to `SynTimeout` (60s).
+- Receiving RST (`kRst`) in either direction transitions the state to `kClosed`.
+
 #### Lookup-Time Validation
 When `LookupAndUpdate` is called:
 1. It looks up the key in the appropriate table.

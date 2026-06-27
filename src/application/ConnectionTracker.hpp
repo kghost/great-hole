@@ -1,6 +1,5 @@
 #pragma once
 
-#include <algorithm>
 #include <chrono>
 #include <compare>
 #include <cstdint>
@@ -150,6 +149,7 @@ private:
   struct ConnectionEntry {
     RouteResult Result;
     std::chrono::steady_clock::time_point LastActive;
+    static constexpr std::chrono::seconds ProneInterval = std::chrono::seconds(60);
   };
 
   struct TcpEntry : public ConnectionEntry {
@@ -169,28 +169,24 @@ private:
     };
 
     struct OneDirectionState {
-      enum class State : uint8_t { kNone, kSynSent, kSynAcked, kFinSent, kFinAcked } State = State::kNone;
+      enum class State : uint8_t { kNone, kSynSent, kSynAcked, kFinSent, kFinAcked, kClosed } State = State::kNone;
       uint32_t SequenceNumber = 0;
       uint32_t AcknowledgedNumber = 0;
       static constexpr std::chrono::seconds SynTimeout = std::chrono::seconds(60);
       static constexpr std::chrono::seconds EstablishedTimeout = std::chrono::seconds(1200);
       static constexpr std::chrono::seconds FinTimeout = std::chrono::seconds(30);
-      std::chrono::seconds GetTimeout() const {
-        switch (State) {
-        case State::kNone:
-        case State::kSynSent:
-          return SynTimeout;
 
-        case State::kSynAcked:
-          return EstablishedTimeout;
-
-        case State::kFinSent:
-        case State::kFinAcked:
-        default:
-          return FinTimeout;
-        }
+      bool IsClosing() const {
+        return State == State::kFinSent || State == State::kFinAcked || State == State::kClosed;
       }
+
+      bool IsEstablished() const { return State == State::kSynAcked; }
+
       bool HandleThisDirectionPacket(TcpExtraKey extra) {
+        if (extra.Flags & TcpFlags::kRst) {
+          State = State::kClosed;
+          return true;
+        }
         switch (State) {
         case State::kNone:
           if (extra.Flags & TcpFlags::kSyn) {
@@ -209,12 +205,18 @@ private:
           break;
         case State::kFinSent:
         case State::kFinAcked:
+        case State::kClosed:
         default:
           break;
         }
         return true;
       }
+
       bool HandleOppositeDirectionPacket(TcpExtraKey extra) {
+        if (extra.Flags & TcpFlags::kRst) {
+          State = State::kClosed;
+          return true;
+        }
         switch (State) {
         case State::kNone:
           break;
@@ -233,6 +235,7 @@ private:
           }
           break;
         case State::kFinAcked:
+        case State::kClosed:
         default:
           break;
         }
@@ -248,7 +251,13 @@ private:
     }
 
     std::chrono::seconds GetTimeout() const {
-      return std::min(OutputDirection.GetTimeout(), InputDirection.GetTimeout());
+      if (OutputDirection.IsClosing() || InputDirection.IsClosing()) {
+        return OneDirectionState::FinTimeout;
+      }
+      if (OutputDirection.IsEstablished() || InputDirection.IsEstablished()) {
+        return OneDirectionState::EstablishedTimeout;
+      }
+      return OneDirectionState::SynTimeout;
     }
 
     template <typename Direction> void UpdateState(TcpExtraKey extra) {
@@ -331,9 +340,9 @@ private:
     kIcmpInnerPacket,
   };
 
-  template <typename KeyDirection, typename ActionDirection, typename F>
-  static std::expected<typename ActionDirection::ConnectionTrackerOutput, UnsupportedPacket>
-  ParseConnectionKey(std::span<const uint8_t> p, PacketType type, F&& f);
+  template <typename KeyDirection, typename Result, typename F>
+  static std::expected<Result, UnsupportedPacket> ParseConnectionKey(std::span<const uint8_t> p, PacketType type,
+                                                                     F&& f);
 
   boost::asio::any_io_executor _Executor;
   Selector& _Selector;
