@@ -24,7 +24,7 @@ static void TunSplitIpStart(lua_State* L) {
   auto& tun = *LuaTunSplitIp::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, tun](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([tun](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await tun->Start();
     if (err) {
       throw boost::system::system_error(err, "tun_split_ip start error");
@@ -51,11 +51,11 @@ static void TunSplitIpCreateChannel(lua_State* L) {
   luaL_getmetatable(L, LuaEndpoint::GetTypeTag());
   lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, tun, ips = std::move(ips), channel](this auto self, lua_State* L,
-                                                                      int nres) -> Omni::Fiber::Coroutine<int> {
-    *channel = co_await tun->CreateChannel(ips);
-    co_return 1;
-  });
+  interface.Schedule(
+      [tun, ips = std::move(ips), channel](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+        *channel = co_await tun->CreateChannel(ips);
+        co_return 1;
+      });
 }
 
 static void TunSplitIpRemoveChannel(lua_State* L) {
@@ -68,18 +68,17 @@ static void TunSplitIpRemoveChannel(lua_State* L) {
     throw std::runtime_error("tun_split_ip remove_channel: invalid channel type");
   }
 
-  interface.Schedule(
-      [&interface, tun, tunChannel](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
-        co_await tun->RemoveChannel(tunChannel);
-        co_return 0;
-      });
+  interface.Schedule([tun, tunChannel](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    co_await tun->RemoveChannel(tunChannel);
+    co_return 0;
+  });
 }
 
 static void TunSplitIpStop(lua_State* L) {
   auto& tun = *LuaTunSplitIp::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, tun](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([tun](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     co_await tun->Stop();
     co_return 0;
   });

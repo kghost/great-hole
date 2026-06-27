@@ -11,7 +11,7 @@ static void EndpointStart(lua_State* L) {
   auto& ep = *LuaEndpoint::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, ep](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([ep](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await ep->Start();
     if (err) {
       throw boost::system::system_error(err, "tun start error");
@@ -24,7 +24,7 @@ static void EndpointStop(lua_State* L) {
   auto& ep = *LuaEndpoint::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, ep](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([ep](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     co_await ep->Stop();
     co_return 0;
   });

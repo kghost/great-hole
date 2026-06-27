@@ -39,26 +39,26 @@ static void UdpMuxServerCreateChannel(lua_State* L) {
                                                           FindResolverPort(port, u->GetResolveFor()));
   }
 
-  interface.Schedule([&interface, u, id, resolver = std::move(resolver)](this auto self, lua_State* L,
-                                                                         int nres) -> Omni::Fiber::Coroutine<int> {
-    auto channel = LuaEndpoint::New(L);
-    luaL_getmetatable(L, LuaEndpoint::GetTypeTag());
-    lua_setmetatable(L, -2);
+  interface.Schedule(
+      [u, id, resolver = std::move(resolver)](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+        auto channel = LuaEndpoint::New(L);
+        luaL_getmetatable(L, LuaEndpoint::GetTypeTag());
+        lua_setmetatable(L, -2);
 
-    if (resolver) {
-      *channel = co_await u->CreateChannel(id, resolver);
-    } else {
-      *channel = co_await u->CreateChannel(id);
-    }
-    co_return 1;
-  });
+        if (resolver) {
+          *channel = co_await u->CreateChannel(id, resolver);
+        } else {
+          *channel = co_await u->CreateChannel(id);
+        }
+        co_return 1;
+      });
 }
 
 static void UdpMuxServerStop(lua_State* L) {
   auto& u = *LuaUdpMux::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     co_await u->Stop();
     co_return 0;
   });
@@ -68,7 +68,7 @@ static void UdpMuxServerStart(lua_State* L) {
   auto& u = *LuaUdpMux::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await u->Start();
     if (err) {
       throw boost::system::system_error(err, "udp_mux_server start error");

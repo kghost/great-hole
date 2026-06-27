@@ -89,6 +89,12 @@ if(BUILD_TESTING)
   endif()
 endif()
 
+if(WIN32)
+  add_compile_options(/W3 /Od)
+else()
+  add_compile_options(-Wall)
+endif()
+
 if(GREAT_HOLE_RELATIVE_PATHS)
   add_compile_options("-ffile-compilation-dir=.")
   add_compile_options("-ffile-prefix-map=${CMAKE_SOURCE_DIR}/=./")

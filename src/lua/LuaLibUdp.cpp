@@ -42,8 +42,8 @@ static void UdpCreateChannel(lua_State* L) {
   luaL_getmetatable(L, LuaEndpoint::GetTypeTag());
   lua_setmetatable(L, -2);
 
-  interface.Schedule([&interface, u, resolver = std::move(resolver), channel](this auto self, lua_State* L,
-                                                                              int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([u, resolver = std::move(resolver), channel](this auto self, lua_State* L,
+                                                                  int nres) -> Omni::Fiber::Coroutine<int> {
     *channel = co_await u->CreateChannel(resolver);
     co_return 1;
   });
@@ -53,7 +53,7 @@ static void UdpStop(lua_State* L) {
   auto& u = *LuaUdp::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     co_await u->Stop();
     co_return 0;
   });
@@ -63,7 +63,7 @@ static void UdpStart(lua_State* L) {
   auto& u = *LuaUdp::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await u->Start();
     if (err) {
       throw boost::system::system_error(err, "udp start error");

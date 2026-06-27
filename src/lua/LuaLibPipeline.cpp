@@ -15,7 +15,7 @@ static void PipelineStart(lua_State* L) {
   auto& pipe = *LuaPipeline::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, pipe](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([pipe](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await pipe->Start();
     if (err) {
       throw boost::system::system_error(err, "pipeline start error");
@@ -28,7 +28,7 @@ static void PipelineStop(lua_State* L) {
   auto& pipe = *LuaPipeline::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, pipe](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([pipe](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     co_await pipe->Stop();
     co_return 0;
   });

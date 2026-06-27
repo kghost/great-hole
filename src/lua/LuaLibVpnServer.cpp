@@ -10,7 +10,6 @@
 namespace gh {
 
 static int VpnServerNew(lua_State* L) {
-  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
   auto& tun = *LuaTunSplitIp::Get(L, 1);
   auto& udp = *LuaUdpDynMux::Get(L, 2);
 
@@ -81,7 +80,7 @@ static void VpnServerStart(lua_State* L) {
   auto& srv = *LuaVpnServer::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, srv](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([srv](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await srv->Start();
     if (err) {
       throw boost::system::system_error(err, "vpn_server start error");
@@ -94,7 +93,7 @@ static void VpnServerStop(lua_State* L) {
   auto& srv = *LuaVpnServer::Get(L, 1);
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
-  interface.Schedule([&interface, srv](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+  interface.Schedule([srv](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     co_await srv->Stop();
     co_return 0;
   });
