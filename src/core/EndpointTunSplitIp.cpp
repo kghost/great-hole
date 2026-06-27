@@ -161,7 +161,10 @@ Omni::Fiber::Coroutine<void> EndpointTunSplitIp::ReadLoop() {
         BOOST_LOG_TRIVIAL(error) << "EndpointTunSplitIp(" << this << ") read error: " << err.message();
         for (auto& [ip, channel] : _Channels) {
           if (channel->GetState() == ServiceBase::State::kRunning) {
-            co_await channel->Send(std::unexpected(err));
+            auto result = co_await channel->Send(std::unexpected(err));
+            if (!result.has_value()) {
+              BOOST_LOG_TRIVIAL(error) << channel->GetName() << " send failed.";
+            }
           }
         }
       }
@@ -177,7 +180,10 @@ Omni::Fiber::Coroutine<void> EndpointTunSplitIp::ReadLoop() {
 
     auto it = _Channels.find(*destIpOpt);
     if (it != _Channels.end()) {
-      co_await it->second->Send(std::move(p));
+      auto result = co_await it->second->Send(std::move(p));
+      if (!result.has_value()) {
+        BOOST_LOG_TRIVIAL(error) << it->second->GetName() << " send failed.";
+      }
     } else {
       BOOST_LOG_TRIVIAL(debug) << "EndpointTunSplitIp(" << this
                                << ") dropped packet to unknown dest IP: " << destIpOpt->to_string();

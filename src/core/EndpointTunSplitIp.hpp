@@ -68,16 +68,14 @@ public:
   Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override;
   Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel& c) override;
 
-protected:
   std::string GetName() const override;
   Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 
 public:
-  template <typename... Args> Omni::Fiber::Coroutine<void> Send(Args&&... args) {
-    auto reply = co_await _Pipe.GetProducer().Put(std::forward<Args>(args)...);
-    assert(reply.has_value());
-    co_return;
+  template <typename... Args>
+  Omni::Fiber::Coroutine<std::expected<void, Omni::Fiber::PipeClosed>> Send(Args&&... args) {
+    co_return co_await _Pipe.GetProducer().Put(std::forward<Args>(args)...);
   }
 
   const std::vector<boost::asio::ip::address_v6>& GetIps() const { return _Ips; }

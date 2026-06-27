@@ -144,7 +144,10 @@ Omni::Fiber::Coroutine<void> Udp::ReadLoop() {
         BOOST_LOG_TRIVIAL(error) << "udp(" << this << ") read error: " << err.message();
         for (auto& [endpoint, channel] : _Channels) {
           if (channel->GetState() == ServiceBase::State::kRunning) {
-            co_await channel->Send(std::unexpected(err));
+            auto result = co_await channel->Send(std::unexpected(err));
+            if (!result.has_value()) {
+              BOOST_LOG_TRIVIAL(error) << channel->GetName() << " send failed.";
+            }
           }
         }
       }
@@ -154,7 +157,10 @@ Omni::Fiber::Coroutine<void> Udp::ReadLoop() {
     p._Length = bytes_transferred;
     auto it = _Channels.find(peer);
     if (it != _Channels.end()) {
-      co_await it->second->Send(std::move(p));
+      auto result = co_await it->second->Send(std::move(p));
+      if (!result.has_value()) {
+        BOOST_LOG_TRIVIAL(error) << it->second->GetName() << " send failed.";
+      }
     } else {
       BOOST_LOG_TRIVIAL(info) << "udp(" << this << ") packet from unknown peer: " << peer;
     }

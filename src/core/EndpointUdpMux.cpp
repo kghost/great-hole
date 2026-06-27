@@ -149,7 +149,10 @@ Omni::Fiber::Coroutine<void> UdpMux::ReadLoop() {
         BOOST_LOG_TRIVIAL(error) << "UdpMux(" << this << ") read error: " << err.message();
         for (auto& [id, channel] : _Channels) {
           if (channel->GetState() == ServiceBase::State::kRunning) {
-            co_await channel->Send(std::unexpected(err));
+            auto result = co_await channel->Send(std::unexpected(err));
+            if (!result.has_value()) {
+              BOOST_LOG_TRIVIAL(error) << channel->GetName() << " send failed.";
+            }
           }
         }
       }
@@ -176,7 +179,10 @@ Omni::Fiber::Coroutine<void> UdpMux::ReadLoop() {
         it->second->GetPeer() = peer;
       }
 
-      co_await it->second->Send(std::move(p));
+      auto result = co_await it->second->Send(std::move(p));
+      if (!result.has_value()) {
+        BOOST_LOG_TRIVIAL(error) << it->second->GetName() << " send failed.";
+      }
     } else {
       BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") packet from unknown channel ID: " << (int)id;
     }
