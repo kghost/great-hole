@@ -3,6 +3,7 @@
 set -e
 
 cmake --workflow --preset debug
+cmake --workflow --preset debug-gcc-14
 cmake --workflow --preset debug-gcc-snapshot
 src/android/build_deps.sh
 cmake --workflow --preset android-arm64-v8a-debug
