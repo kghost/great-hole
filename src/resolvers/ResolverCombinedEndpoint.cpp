@@ -35,7 +35,6 @@ Omni::Fiber::Coroutine<void> ResolverCombinedEndpoint::DoWork() {
                                    Omni::Fiber::SelectPair(*eventPtrIp, [](auto const& res) { return res; }));
 
   if (cancelIp) {
-    co_await _IpResolver->Stop();
     co_await fiber.Join(resolveIpFiber);
     _ResolveError = make_error_code(boost::asio::error::operation_aborted);
     co_return;
@@ -61,7 +60,6 @@ Omni::Fiber::Coroutine<void> ResolverCombinedEndpoint::DoWork() {
                                    Omni::Fiber::SelectPair(*eventPtrPort, [](auto const& res) { return res; }));
 
   if (cancelPort) {
-    co_await _PortResolver->Stop();
     co_await fiber.Join(resolvePortFiber);
     _ResolveError = make_error_code(boost::asio::error::operation_aborted);
     co_return;
@@ -81,11 +79,9 @@ Omni::Fiber::Coroutine<void> ResolverCombinedEndpoint::DoWork() {
 Omni::Fiber::Coroutine<ErrorCode> ResolverCombinedEndpoint::DoGracefulStop() {
   if (_IpResolver->GetState() != ServiceBase::State::kNone) {
     co_await _IpResolver->Stop();
-    co_await _IpResolver->WaitService();
   }
   if (_PortResolver->GetState() != ServiceBase::State::kNone) {
     co_await _PortResolver->Stop();
-    co_await _PortResolver->WaitService();
   }
   co_return ErrorCode{};
 }

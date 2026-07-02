@@ -46,7 +46,7 @@ public:
 
   std::string GetName() { return std::format("Pipeline[{}:{}]", _Ep1->GetName(), _Ep2->GetName()); }
   Omni::Fiber::Coroutine<ErrorCode> Start() override;
-  Omni::Fiber::Coroutine<void> Stop() override;
+  Omni::Fiber::Coroutine<ErrorCode> Stop() override;
 
   TrafficStats GetTrafficStats() const { return _TrafficStats; }
 

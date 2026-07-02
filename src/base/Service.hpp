@@ -10,7 +10,7 @@ public:
   virtual ~Service() = default;
 
   virtual Omni::Fiber::Coroutine<ErrorCode> Start() = 0;
-  virtual Omni::Fiber::Coroutine<void> Stop() = 0;
+  virtual Omni::Fiber::Coroutine<ErrorCode> Stop() = 0;
 };
 
 } // namespace gh

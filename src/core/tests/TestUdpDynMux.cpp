@@ -467,7 +467,6 @@ TEST(UdpDynMuxTest, InvalidChannelAndRenegotiation) {
 
     auto dev1Port = dev1->LocalEndpoint().port();
     co_await dev1->Stop();
-    co_await dev1->WaitService();
 
     auto dev1New = std::make_shared<UdpDynMux>(io.get_executor(),
                                                udp::endpoint(boost::asio::ip::address_v6::loopback(), dev1Port));

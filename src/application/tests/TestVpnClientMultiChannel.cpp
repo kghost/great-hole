@@ -349,9 +349,7 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
     }
 
     co_await connTrack->Stop();
-    co_await connTrack->WaitService();
     co_await udpServer->Stop();
-    co_await udpServer->WaitService();
     testPassed = true;
     co_return;
   });
@@ -503,11 +501,8 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
 
     // Cleanup
     co_await connTrack->Stop();
-    co_await connTrack->WaitService();
     co_await udpClient->Stop();
-    co_await udpClient->WaitService();
     co_await udpServer->Stop();
-    co_await udpServer->WaitService();
 
     co_await current.WaitAll();
     testPassed = true;
@@ -601,11 +596,8 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
 
     // Cleanup
     co_await connTrack->Stop();
-    co_await connTrack->WaitService();
     co_await udpClient->Stop();
-    co_await udpClient->WaitService();
     co_await udpServer->Stop();
-    co_await udpServer->WaitService();
 
     co_await current.WaitAll();
     testPassed = true;
@@ -686,9 +678,7 @@ TEST(VpnClientMultiChannelTest, MigrateTun) {
     }
 
     co_await connTrack->Stop();
-    co_await connTrack->WaitService();
     co_await udpServer->Stop();
-    co_await udpServer->WaitService();
     testPassed = true;
     co_return;
   });
@@ -758,11 +748,8 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
 
     // Cleanup
     co_await connTrack->Stop();
-    co_await connTrack->WaitService();
     co_await udpClient->Stop();
-    co_await udpClient->WaitService();
     co_await udpServer->Stop();
-    co_await udpServer->WaitService();
 
     co_await current.WaitAll();
     testPassed = true;

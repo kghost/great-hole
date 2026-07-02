@@ -93,13 +93,11 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::MigrateTun(int tunFd) {
     if (ec) {
       BOOST_LOG_TRIVIAL(error) << "Failed to migrate Tun in VpnClientMultiChannel: " << ec.message();
       co_await newTun->Stop();
-      co_await newTun->WaitService();
       co_return;
     }
 
     if (_Tun) {
       co_await _Tun->Stop();
-      co_await _Tun->WaitService();
     }
     _Tun = newTun;
   } else {
@@ -118,17 +116,14 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Stop() {
 
   if (_Client) {
     co_await _Client->Stop();
-    co_await _Client->WaitService();
   }
 
   if (_UdpDynMux) {
     co_await _UdpDynMux->Stop();
-    co_await _UdpDynMux->WaitService();
   }
 
   if (_Tun) {
     co_await _Tun->Stop();
-    co_await _Tun->WaitService();
   }
 
   _Client.reset();

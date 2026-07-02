@@ -242,9 +242,9 @@ TEST(ResolverTest, ResolverCancellation) {
 
     // ResolverIpDns cancellation
     auto dnsResolver = std::make_shared<ResolverIpDns>(io.get_executor(), "nonexistent.example.invalid");
+    Cancel dnsCancel;
     auto resolveFiber = current.Spawn("resolve", [&]() -> Omni::Fiber::Coroutine<void> {
-      Cancel c;
-      auto res = co_await dnsResolver->Resolve(c);
+      auto res = co_await dnsResolver->Resolve(dnsCancel);
       EXPECT_FALSE(res.has_value());
       if (!res.has_value()) {
         auto err = ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
@@ -253,7 +253,7 @@ TEST(ResolverTest, ResolverCancellation) {
       co_return;
     });
     auto resolveFiberCancel = current.Spawn("resolve_cancel", [&]() -> Omni::Fiber::Coroutine<void> {
-      co_await dnsResolver->Stop();
+      dnsCancel.Trigger();
       co_return;
     });
     co_await current.Join(resolveFiber);
@@ -262,9 +262,9 @@ TEST(ResolverTest, ResolverCancellation) {
     auto mockedResolveFor = MockResolveeFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
     // ResolverDnsService cancellation
     auto srvResolver = std::make_shared<ResolverDnsService>("_sip._udp.nonexistent.example.invalid", mockedResolveFor);
+    Cancel srvCancel;
     auto srvFiber = current.Spawn("srv_resolve", [&]() -> Omni::Fiber::Coroutine<void> {
-      Cancel c;
-      auto res = co_await srvResolver->Resolve(c);
+      auto res = co_await srvResolver->Resolve(srvCancel);
       EXPECT_FALSE(res.has_value());
       if (!res.has_value()) {
         auto err = ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
@@ -273,7 +273,7 @@ TEST(ResolverTest, ResolverCancellation) {
       co_return;
     });
     auto srvFiberCancel = current.Spawn("srv_resolve_cancel", [&]() -> Omni::Fiber::Coroutine<void> {
-      co_await srvResolver->Stop();
+      srvCancel.Trigger();
       co_return;
     });
     co_await current.Join(srvFiber);
@@ -295,7 +295,6 @@ TEST(ResolverTest, ResolverHelperTest) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
     auto mockedResolveFor = MockResolveeFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
     Cancel c;
 

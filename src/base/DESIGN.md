@@ -19,3 +19,9 @@ struct Context {
 - **`_Stop`**: A cooperative cancellation trigger used to signal the worker fiber to stop execution.
 - **`_StopError`**: An event fired when the service has stopped, containing the error code returned by `DoGracefulStop()`.
 - **`_Fiber`**: A shared pointer to the worker fiber running `DoWork()`.
+
+The lifecycle is controlled by the `Stop()` method, which performs the following operations:
+1. Triggers cooperative cancellation via `_Stop`.
+2. Joins the worker fiber `_Fiber` to ensure it completes.
+3. Awaits the `_StopError` event to retrieve the `DoGracefulStop()` return value.
+4. Resets the `_Service` context and transitions the state back to `kNone` to allow restarting.

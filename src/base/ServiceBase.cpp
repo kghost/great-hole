@@ -49,16 +49,11 @@ Omni::Fiber::Coroutine<ErrorCode> ServiceBase::Start() {
 
 Omni::Fiber::Coroutine<void> ServiceBase::DoWork() { co_return co_await _Service.value()._Stop.GetFiberCancelEvent(); }
 
-Omni::Fiber::Coroutine<void> ServiceBase::Stop() {
+Omni::Fiber::Coroutine<ErrorCode> ServiceBase::Stop() {
   if (!_Service.has_value()) {
-    co_return;
+    co_return ErrorCode{};
   }
   _Service.value()._Stop.Trigger();
-  co_return;
-}
-
-Omni::Fiber::Coroutine<ErrorCode> ServiceBase::WaitService() {
-  assert(_State != State::kNone);
   co_await (co_await Omni::Fiber::GetCurrentOmniFiber()).Join(_Service.value()._Fiber);
   auto err = co_await _Service.value()._StopError;
   _Service.reset();

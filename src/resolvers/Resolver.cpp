@@ -13,7 +13,7 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverBase::DoResolve(Cancel& c) {
   _ResolveError = ErrorCode{};
   auto errStart = co_await Start();
   if (errStart) {
-    co_await WaitService();
+    co_await Stop();
     co_return errStart;
   }
 
@@ -21,11 +21,7 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverBase::DoResolve(Cancel& c) {
       co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}),
                                    Omni::Fiber::SelectPair(_Service.value()._StopError, [](auto) {}));
 
-  if (cancelled) {
-    co_await Stop();
-  }
-
-  co_await WaitService();
+  co_await Stop();
 
   if (_ResolveError) {
     co_return _ResolveError;

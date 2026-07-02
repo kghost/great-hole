@@ -20,20 +20,19 @@ When implementing a new service class by inheriting from `ServiceBase`, you must
 When consuming or managing the lifecycle of a `ServiceBase` instance, you must orchestrate execution using the following interface:
 
 - **`Start()`**: Spawns the service's internal worker fiber on the current fiber and executes `DoWork()`. Returns the result of `DoStart()`.
-- **`Stop()`**: Triggers the cancel event to exit the `DoWork()` loop, waits for `DoGracefulStop()` to finish, and returns its stop code.
-- **`WaitService()`**: Cleans up the internal context after the service fiber has completely exited.
+- **`Stop()`**: Triggers the cancel event to exit the `DoWork()` loop, joins the service worker fiber, cleans up the internal context, and returns its stop code.
 
 ### Critical Fiber Context Ownership Rules
 Fibers in `OmniFiber` enforce structured parent-child concurrency invariants:
 
 1. **The Initiator owns the Service Fiber**:
    - Calling `Start()` spawns the service's worker fiber as a child of the **currently executing fiber**.
-   - Therefore, calling `WaitService()` (which joins the worker fiber) **MUST** occur in the same fiber context (the owner fiber) that started the service.
-   - Calling `WaitService()` from a different fiber context (e.g. starting a child service inside an RPC handler but joining it in the root test fiber) will crash with:
+   - Therefore, calling `Stop()` (which joins the worker fiber) **MUST** occur in the same fiber context (the owner fiber) that started the service.
+   - Calling `Stop()` from a different fiber context (e.g. starting a child service inside an RPC handler but stopping it in the root test fiber) will crash with:
      `Assertion _Children.contains(child) || _FinishedChildren.contains(child) failed`.
 
 2. **Joining Child Services Safely in Tests**:
-   - In unit tests, rather than directly calling `WaitService()` on dynamically spawned/started services from the root fiber, let the parent manager clean them up under its own fiber context (e.g. calling `Stop()` on the parent multiplexer).
+   - In unit tests, rather than directly calling `Stop()` on dynamically spawned/started services from the root fiber, let the parent manager clean them up under its own fiber context (e.g. calling `Stop()` on the parent multiplexer).
    - Alternatively, poll the service state (e.g., waiting for `GetState() == ServiceBase::State::kFinished`) and then call `co_await current.WaitAll()` to clean up/join children safely.
 
 3. **Structured Cleanup**:

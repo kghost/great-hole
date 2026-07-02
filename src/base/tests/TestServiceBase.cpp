@@ -46,15 +46,15 @@ TEST(ServiceBaseTest, StopReentrantAfterWaitService) {
     auto errStart = co_await service->Start();
     EXPECT_FALSE(errStart);
 
-    // Call Stop and WaitService to clean up context.
-    co_await service->Stop();
-    auto errStop1 = co_await service->WaitService();
+    // Call Stop to clean up context.
+    auto errStop1 = co_await service->Stop();
     EXPECT_FALSE(errStop1);
 
     EXPECT_EQ(service->GetState(), ServiceBase::State::kNone);
 
     // Call Stop again on the stopped service. It must be safe and do nothing.
-    co_await service->Stop();
+    auto errStop2 = co_await service->Stop();
+    EXPECT_FALSE(errStop2);
 
     testPassed = true;
     co_return;

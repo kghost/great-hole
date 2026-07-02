@@ -168,7 +168,6 @@ protected:
     _Pipe.GetConsumer().DiscardAndClose();
 
     co_await _ConnectionTracker->Stop();
-    co_await _ConnectionTracker->WaitService();
 
     co_return ErrorCode{};
   }
@@ -262,7 +261,6 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoGracefulStop() {
     session.SessionPipeline.reset();
     if (session.ChannelSide) {
       co_await session.ChannelSide->Stop();
-      co_await session.ChannelSide->WaitService();
     }
     session.ChannelSide.reset();
 
@@ -273,7 +271,6 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoGracefulStop() {
   }
   _Sessions.clear();
   co_await _TunSide->Stop();
-  co_await _TunSide->WaitService();
   _ChannelCall.DiscardAndClose();
 
   BOOST_LOG_TRIVIAL(info) << GetName() << " stopped";
@@ -331,7 +328,6 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelEstablished(std::sh
             if (errChannel) {
               BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel side for " << channel->GetName();
               co_await channelSide->Stop();
-              co_await channelSide->WaitService();
               _StateListener.get().OnSessionFailed(session, "Failed to start channel side: " + errChannel.message());
               co_return;
             }
@@ -376,7 +372,6 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelClosed(std::shared_
           session.SessionPipeline.reset();
           if (session.ChannelSide) {
             co_await session.ChannelSide->Stop();
-            co_await session.ChannelSide->WaitService();
           }
           session.ChannelSide.reset();
           _StateListener.get().OnSessionStopped(session);

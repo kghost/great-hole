@@ -445,7 +445,6 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoGracefulStop() {
   _ChannelRpc.DiscardAndClose();
   for (auto& [psk, channel] : std::exchange(_Channels, {})) {
     co_await channel->Stop();
-    co_await channel->WaitService();
   }
   _RxIdToChannel.clear();
   if (_ReadLoopFiber) {
@@ -478,7 +477,7 @@ UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, std::shared_ptr<Resolver
         if (err) {
           udp._RxIdToChannel.erase(channel->_LocalRxId);
           udp._Channels.erase(psk);
-          co_await channel->WaitService();
+          co_await channel->Stop();
           co_return nullptr;
         }
 
@@ -496,7 +495,6 @@ Omni::Fiber::Coroutine<void> UdpDynMux::RemoveChannel(const UdpDynMux::PskType& 
       _RxIdToChannel.erase(channel->_LocalRxId);
       _Channels.erase(it);
       co_await channel->Stop();
-      co_await channel->WaitService();
     }
   });
   if (!result.has_value()) {

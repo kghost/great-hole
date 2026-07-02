@@ -67,12 +67,10 @@ TEST(VpnServerTest, ConstructorStoresFiltersAndAppliesThem) {
     auto vpnStartErr = co_await vpnServer->Start();
     EXPECT_FALSE(vpnStartErr);
 
-    co_await vpnServer->Stop();
-    auto vpnStopErr = co_await vpnServer->WaitService();
+    auto vpnStopErr = co_await vpnServer->Stop();
     EXPECT_FALSE(vpnStopErr);
 
     co_await udpDynMux->Stop();
-    co_await udpDynMux->WaitService();
 
     co_await tunSplit->Stop();
 
@@ -257,11 +255,8 @@ TEST(VpnServerTest, EndToEndBidirectionalRouting) {
     // Cleanup
     co_await clientPipeline->Stop();
     co_await vpnServer->Stop();
-    co_await vpnServer->WaitService();
     co_await udpClient->Stop();
-    co_await udpClient->WaitService();
     co_await udpServer->Stop();
-    co_await udpServer->WaitService();
     co_await tunClient->Stop();
     co_await tunServer->Stop();
 

@@ -78,7 +78,6 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::DoGracefulStop() {
   _ChannelRpc.DiscardAndClose();
   for (auto& [peer, channel] : std::exchange(_Channels, {})) {
     co_await channel->Stop();
-    co_await channel->WaitService();
   }
   if (_ReadLoopFiber) {
     co_await (co_await Omni::Fiber::GetCurrentOmniFiber()).Join(_ReadLoopFiber);
@@ -123,7 +122,6 @@ Omni::Fiber::Coroutine<void> Udp::RemoveChannel(const boost::asio::ip::udp::endp
     auto channel = std::move(it->second);
     _Channels.erase(it);
     co_await channel->Stop();
-    co_await channel->WaitService();
   });
   if (!result.has_value()) {
     BOOST_LOG_TRIVIAL(error) << GetName() << " remove channel failed";

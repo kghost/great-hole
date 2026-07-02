@@ -111,7 +111,7 @@ Omni::Fiber::Coroutine<void> Pipeline::RunDirection(std::shared_ptr<Endpoint> in
   co_return;
 }
 
-Omni::Fiber::Coroutine<void> Pipeline::Stop() {
+Omni::Fiber::Coroutine<ErrorCode> Pipeline::Stop() {
   _Stop.Trigger();
   auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
   if (_Fiber1) {
@@ -122,7 +122,7 @@ Omni::Fiber::Coroutine<void> Pipeline::Stop() {
     co_await current.Join(_Fiber2);
     _Fiber2.reset();
   }
-  co_return;
+  co_return ErrorCode{};
 }
 
 bool Pipeline::IsCritical(const ErrorCode& ec) {

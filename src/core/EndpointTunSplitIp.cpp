@@ -94,7 +94,6 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::DoGracefulStop() {
   _ChannelRpc.DiscardAndClose();
   for (auto& channel : std::exchange(_Channels, {}) | std::ranges::views::values | std::ranges::to<std::set>()) {
     co_await channel->Stop();
-    co_await channel->WaitService();
   }
   if (_ReadLoopFiber) {
     co_await (co_await Omni::Fiber::GetCurrentOmniFiber()).Join(_ReadLoopFiber);
@@ -144,7 +143,6 @@ Omni::Fiber::Coroutine<void> EndpointTunSplitIp::RemoveChannel(std::shared_ptr<E
       _Channels.erase(chIp);
     }
     co_await channel->Stop();
-    co_await channel->WaitService();
   });
 }
 

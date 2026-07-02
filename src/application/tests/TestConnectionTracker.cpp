@@ -159,8 +159,7 @@ TEST(ConnectionTrackerTest, BasicOperations) {
         tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p2, ConnectionTracker::Nothing{},
                                                                                nullptr)));
 
-    co_await tracker->Stop();
-    auto errStop = co_await tracker->WaitService();
+    auto errStop = co_await tracker->Stop();
     EXPECT_FALSE(errStop);
 
     testPassed = true;
@@ -208,8 +207,7 @@ TEST(ConnectionTrackerTest, ExpirationAndPruning) {
         tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p1, ConnectionTracker::Nothing{},
                                                                                nullptr)));
 
-    co_await tracker->Stop();
-    auto errStop = co_await tracker->WaitService();
+    auto errStop = co_await tracker->Stop();
     EXPECT_FALSE(errStop);
 
     testPassed = true;
@@ -262,8 +260,7 @@ TEST(ConnectionTrackerTest, SelectorAndValidator) {
         tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p1, ConnectionTracker::Nothing{},
                                                                                nullptr)));
 
-    co_await tracker->Stop();
-    auto errStop = co_await tracker->WaitService();
+    auto errStop = co_await tracker->Stop();
     EXPECT_FALSE(errStop);
 
     testPassed = true;
@@ -338,8 +335,7 @@ TEST(ConnectionTrackerTest, TcpStateTransitions) {
         tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(pSyn, ConnectionTracker::Nothing{},
                                                                                nullptr)));
 
-    co_await tracker->Stop();
-    auto errStop = co_await tracker->WaitService();
+    auto errStop = co_await tracker->Stop();
     EXPECT_FALSE(errStop);
 
     testPassed = true;
@@ -411,8 +407,7 @@ TEST(ConnectionTrackerTest, IcmpDestinationUnreachable) {
       EXPECT_EQ(GetMark(checkRes), &mark1);
     }
 
-    co_await tracker->Stop();
-    auto errStop = co_await tracker->WaitService();
+    auto errStop = co_await tracker->Stop();
     EXPECT_FALSE(errStop);
 
     testPassed = true;
