@@ -1,10 +1,8 @@
-# Default configuration for the whole project
 CompileFlags:
   Remove: [-fsanitize=address, /fsanitize=address]
   CompilationDatabase: "build/"
 
 ---
-# Override configuration specifically for the "tests" directory
 If:
   PathMatch: src/android/.*
 CompileFlags:

@@ -105,29 +105,30 @@ public:
   explicit JniSelector(JniSession& session) : _Session(session) {}
   ~JniSelector() override = default;
 
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip4TcpKey& key) const override;
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip6TcpKey& key) const override;
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip4UdpKey& key) const override;
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip6UdpKey& key) const override;
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::IcmpKey& key) const override;
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Icmp6Key& key) const override;
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4TcpKey& key) const override;
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6TcpKey& key) const override;
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4UdpKey& key) const override;
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6UdpKey& key) const override;
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::IcmpKey& key) const override;
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Icmp6Key& key) const override;
 
 private:
-  ConnectionTracker::RouteResult FindTunnel(int protocol, const boost::asio::ip::address& localAddr, uint16_t localPort,
-                                            const boost::asio::ip::address& remoteAddr, uint16_t remotePort) const;
+  std::unique_ptr<ConnectionMark> FindTunnel(int protocol, const boost::asio::ip::address& localAddr,
+                                             uint16_t localPort, const boost::asio::ip::address& remoteAddr,
+                                             uint16_t remotePort) const;
 
   JniSession& _Session;
 };
 
 // JniSelector Implementation
 
-ConnectionTracker::RouteResult JniSelector::FindTunnel(int protocol, const boost::asio::ip::address& localAddr,
-                                                       uint16_t localPort, const boost::asio::ip::address& remoteAddr,
-                                                       uint16_t remotePort) const {
+std::unique_ptr<ConnectionMark> JniSelector::FindTunnel(int protocol, const boost::asio::ip::address& localAddr,
+                                                        uint16_t localPort, const boost::asio::ip::address& remoteAddr,
+                                                        uint16_t remotePort) const {
 
   JNIEnv* env = JniSession::GetEnv();
   if (!env || !_Session.GetCallbacks()) {
-    return ConnectionTracker::Discard{};
+    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
 
   jbyteArray localBytes = env->NewByteArray(16);
@@ -136,7 +137,7 @@ ConnectionTracker::RouteResult JniSelector::FindTunnel(int protocol, const boost
     if (env->ExceptionCheck()) {
       env->ExceptionClear();
     }
-    return ConnectionTracker::Discard{};
+    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
   auto v6Local = MapToV6(localAddr).to_bytes();
   env->SetByteArrayRegion(localBytes, 0, 16, reinterpret_cast<const jbyte*>(v6Local.data()));
@@ -148,7 +149,7 @@ ConnectionTracker::RouteResult JniSelector::FindTunnel(int protocol, const boost
       env->ExceptionClear();
     }
     env->DeleteLocalRef(localBytes);
-    return ConnectionTracker::Discard{};
+    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
   auto v6Remote = MapToV6(remoteAddr).to_bytes();
   env->SetByteArrayRegion(remoteBytes, 0, 16, reinterpret_cast<const jbyte*>(v6Remote.data()));
@@ -169,30 +170,30 @@ ConnectionTracker::RouteResult JniSelector::FindTunnel(int protocol, const boost
     auto dp = _Session.GetDataPlane();
     if (dp) {
       auto session = dp->FindSessionByHandle(reinterpret_cast<VpnClientMultiChannel::Session*>(endpointHandle));
-      if (session.has_value()) {
-        return session.value();
+      if (session) {
+        return std::make_unique<VpnClientMultiChannel::Mark>(std::move(session));
       }
     }
   }
-  return ConnectionTracker::Discard{};
+  return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
 }
 
-ConnectionTracker::RouteResult JniSelector::operator()(const ConnectionTracker::Ip4TcpKey& key) const {
+std::unique_ptr<ConnectionMark> JniSelector::operator()(const ConnectionTracker::Ip4TcpKey& key) const {
   return FindTunnel(6, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
 }
-ConnectionTracker::RouteResult JniSelector::operator()(const ConnectionTracker::Ip6TcpKey& key) const {
+std::unique_ptr<ConnectionMark> JniSelector::operator()(const ConnectionTracker::Ip6TcpKey& key) const {
   return FindTunnel(6, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
 }
-ConnectionTracker::RouteResult JniSelector::operator()(const ConnectionTracker::Ip4UdpKey& key) const {
+std::unique_ptr<ConnectionMark> JniSelector::operator()(const ConnectionTracker::Ip4UdpKey& key) const {
   return FindTunnel(17, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
 }
-ConnectionTracker::RouteResult JniSelector::operator()(const ConnectionTracker::Ip6UdpKey& key) const {
+std::unique_ptr<ConnectionMark> JniSelector::operator()(const ConnectionTracker::Ip6UdpKey& key) const {
   return FindTunnel(17, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
 }
-ConnectionTracker::RouteResult JniSelector::operator()(const ConnectionTracker::IcmpKey& key) const {
+std::unique_ptr<ConnectionMark> JniSelector::operator()(const ConnectionTracker::IcmpKey& key) const {
   return FindTunnel(1, key.LocalAddress, key.Id, key.RemoteAddress, 0);
 }
-ConnectionTracker::RouteResult JniSelector::operator()(const ConnectionTracker::Icmp6Key& key) const {
+std::unique_ptr<ConnectionMark> JniSelector::operator()(const ConnectionTracker::Icmp6Key& key) const {
   return FindTunnel(58, key.LocalAddress, key.Id, key.RemoteAddress, 0);
 }
 
@@ -297,8 +298,8 @@ jlong JniSession::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& 
   auto future = promise.get_future();
 
   PostTask([&promise, psk, host, port](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
-    VpnClientMultiChannel::Session* session = co_await dp.AddEndpoint(psk, host, port);
-    promise.set_value(reinterpret_cast<jlong>(session));
+    auto session = co_await dp.AddEndpoint(psk, host, port);
+    promise.set_value(reinterpret_cast<jlong>(session.get()));
     co_return;
   });
 
@@ -310,7 +311,7 @@ void JniSession::RemoveEndpoint(jlong handle) {
   auto future = promise.get_future();
 
   PostTask([&promise, handle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
-    co_await dp.RemoveEndpoint(reinterpret_cast<VpnClientMultiChannel::Session*>(handle));
+    co_await dp.RemoveEndpoint(dp.FindSessionByHandle(reinterpret_cast<VpnClientMultiChannel::Session*>(handle)));
     promise.set_value();
     co_return;
   });
@@ -375,7 +376,7 @@ std::optional<VpnTrafficStats> JniSession::GetTrafficStats(jlong endpointHandle)
 
   PostTask([&promise, endpointHandle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
     auto* session = reinterpret_cast<VpnClientMultiChannel::Session*>(endpointHandle);
-    promise.set_value(dp.GetTrafficStats(session));
+    promise.set_value(dp.GetTrafficStats(dp.FindSessionByHandle(session)));
     co_return;
   });
 

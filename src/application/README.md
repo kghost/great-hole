@@ -12,22 +12,13 @@ The `great-hole-application` module provides high-level application components f
 *   **`LookupAndUpdate`**:
     Looks up an existing tracking entry or registers/selects a new one.
     ```cpp
-    template <ConnectionDirection Direction>
-    std::optional<std::reference_wrapper<ConnectionMark>>
-    LookupAndUpdate(const Packet& packet,
-                    std::optional<std::reference_wrapper<ConnectionMark>> mark = std::nullopt,
-                    ValidatorType validator = nullptr);
+    template <typename Direction>
+    std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>
+    LookupAndUpdate(const Packet& packet, Selector& selector);
     ```
-    *   `Direction`: Specifies if the packet is `kOutput` (outgoing) or `kInput` (incoming).
-    *   `mark`: An optional reference to a `ConnectionMark`. If provided, and no connection entry exists, a new entry is registered with this mark.
-    *   `validator`: An optional callback used to validate any existing/selected mark. If validation fails, the entry is pruned.
-    *   Returns the matched or registered `ConnectionMark`.
-
-*   **`RemoveMark`**:
-    Removes all tracking entries associated with a specific `ConnectionMark`.
-    ```cpp
-    void RemoveMark(const ConnectionMark& mark);
-    ```
+    *   `Direction`: Specifies if the packet is `ConnectionDirectionOutput` (outgoing) or `ConnectionDirectionInput` (incoming).
+    *   `selector`: A reference to a `Selector` interface used to select a new mark when no tracked entry exists or the existing entry is invalid.
+    *   Returns the matched or registered `ConnectionMark` reference, or an `ErrorCode` if parsing or tracking failed.
 
 *   **`Clear`**:
     Clears all tracking tables.

@@ -32,7 +32,7 @@ public:
   class TunSideEndpoint;
   class ChannelSideEndpoint;
 
-  class Session : public ConnectionMark {
+  class Session {
   public:
     Session() {}
     std::string GetDescription() const { return Channel ? Channel->GetName() : "Invalid Session"; }
@@ -43,24 +43,52 @@ public:
     bool Running = true;
   };
 
+  class Mark : public ConnectionMark {
+  public:
+    struct ToBeSelected {};
+    struct Bypass {};
+    struct Discard {};
+
+    using ValueType = std::variant<ToBeSelected, Bypass, Discard, std::weak_ptr<Session>>;
+
+    explicit Mark() : _Value(ToBeSelected{}) {}
+    explicit Mark(Bypass) : _Value(Bypass{}) {}
+    explicit Mark(Discard) : _Value(Discard{}) {}
+    explicit Mark(std::shared_ptr<Session> session) : _Value(std::move(session)) {}
+    ~Mark() override = default;
+
+    Mark(const Mark&) = delete;
+    Mark(Mark&&) = delete;
+    Mark& operator=(const Mark&) = delete;
+    Mark& operator=(Mark&&) = delete;
+
+    std::string GetDescription() const override;
+    bool Validate() const override;
+
+    const ValueType& GetValue() const { return _Value; }
+
+  private:
+    ValueType _Value;
+  };
+
   class SessionStateListener {
   public:
     virtual ~SessionStateListener() = default;
-    virtual void OnSessionStarting(Session& session) = 0;
-    virtual void OnSessionRunning(Session& session) = 0;
-    virtual void OnSessionStopping(Session& session) = 0;
-    virtual void OnSessionStopped(Session& session) = 0;
-    virtual void OnSessionFailed(Session& session, const std::string& error) = 0;
+    virtual void OnSessionStarting(std::shared_ptr<Session> session) = 0;
+    virtual void OnSessionRunning(std::shared_ptr<Session> session) = 0;
+    virtual void OnSessionStopping(std::shared_ptr<Session> session) = 0;
+    virtual void OnSessionStopped(std::shared_ptr<Session> session) = 0;
+    virtual void OnSessionFailed(std::shared_ptr<Session> session, const std::string& error) = 0;
   };
 
   class NoopSessionStateListener : public SessionStateListener {
   public:
     ~NoopSessionStateListener() override = default;
-    void OnSessionStarting(Session&) override {}
-    void OnSessionRunning(Session&) override {}
-    void OnSessionStopping(Session&) override {}
-    void OnSessionStopped(Session&) override {}
-    void OnSessionFailed(Session&, const std::string&) override {}
+    void OnSessionStarting(std::shared_ptr<Session>) override {}
+    void OnSessionRunning(std::shared_ptr<Session>) override {}
+    void OnSessionStopping(std::shared_ptr<Session>) override {}
+    void OnSessionStopped(std::shared_ptr<Session>) override {}
+    void OnSessionFailed(std::shared_ptr<Session>, const std::string&) override {}
   };
   static NoopSessionStateListener _NoopSessionStateListener;
 
@@ -77,12 +105,12 @@ public:
 
   std::string GetName() const override;
 
-  Omni::Fiber::Coroutine<std::reference_wrapper<Session>> RegisterChannel(const UdpDynMux::PskType& psk,
-                                                                          std::shared_ptr<ResolverEndpoint> resolver);
-  Omni::Fiber::Coroutine<void> UnregisterChannel(Session& session);
+  Omni::Fiber::Coroutine<std::shared_ptr<Session>> RegisterChannel(const UdpDynMux::PskType& psk,
+                                                                   std::shared_ptr<ResolverEndpoint> resolver);
+  Omni::Fiber::Coroutine<void> UnregisterChannel(std::shared_ptr<Session> session);
   Omni::Fiber::Coroutine<ErrorCode> MigrateTun(std::shared_ptr<Endpoint> newTun);
 
-  std::optional<VpnTrafficStats> GetStats(Session& session) const;
+  std::optional<VpnTrafficStats> GetStats(std::shared_ptr<Session> session) const;
 
   Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override;
   Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override;
@@ -101,7 +129,7 @@ private:
   std::shared_ptr<TunSideEndpoint> _TunSide;
   std::shared_ptr<Pipeline> _TunPipeline;
 
-  std::map<UdpDynMux::PskType, Session> _Sessions;
+  std::map<UdpDynMux::PskType, std::shared_ptr<Session>> _Sessions;
   Omni::Fiber::RemoteCall _ChannelCall;
   std::reference_wrapper<SessionStateListener> _StateListener;
 };

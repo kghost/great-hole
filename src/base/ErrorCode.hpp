@@ -50,6 +50,7 @@ public:
     kSourceIpMismatch = 1,
     kInvalidPacketSize = 2,
     kInvalidPacketSession = 3,
+    kUnsupportedPacket = 4,
   };
 
 private:
@@ -58,6 +59,7 @@ private:
       "source ip mismatch",
       "invalid_packet_size",
       "invalid_packet_session",
+      "unsupported packet",
   });
 };
 

@@ -5,13 +5,14 @@
 #include <cstdint>
 #include <expected>
 #include <functional>
-#include <set>
-#include <variant>
+#include <map>
+#include <utility>
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/address_v4.hpp>
 #include <boost/asio/ip/address_v6.hpp>
 
+#include "ErrorCode.hpp"
 #include "Packet.hpp"
 #include "ServiceBase.hpp"
 
@@ -21,17 +22,11 @@ class ConnectionMark {
 public:
   virtual ~ConnectionMark() = default;
   virtual std::string GetDescription() const = 0;
+  virtual bool Validate() const { return true; }
 };
 
 class ConnectionTracker : public ServiceBase {
 public:
-  struct UnsupportedPacket {};
-
-  struct ToBeSelected {};
-  struct Bypass {};
-  struct Discard {};
-  using RouteResult = std::variant<ToBeSelected, Bypass, Discard, std::reference_wrapper<ConnectionMark>>;
-
   struct Ip4TcpKey {
     boost::asio::ip::address_v4 LocalAddress;
     boost::asio::ip::address_v4 RemoteAddress;
@@ -91,25 +86,21 @@ public:
   };
 
   // Selector determines connection routing:
-  // - Bypass: Packets should bypass VPN (e.g. packets destined for the active VPN servers).
-  // - Discard: Packets should be dropped.
-  // - std::reference_wrapper<ConnectionMark>: Route via the chosen session.
+  // - Returns a std::unique_ptr<ConnectionMark> representing the routing decision.
   //
   // Explicit Guarantee:
-  // The Selector implementation must guarantee loop prevention by returning 'Bypass'
-  // for all traffic destined for the active VPN server endpoints.
+  // The Selector implementation must guarantee loop prevention by returning a 'Bypass'
+  // mark for all traffic destined for the active VPN server endpoints.
   class Selector {
   public:
     virtual ~Selector() = default;
-    virtual RouteResult operator()(const Ip4TcpKey&) const = 0;
-    virtual RouteResult operator()(const Ip6TcpKey&) const = 0;
-    virtual RouteResult operator()(const Ip4UdpKey&) const = 0;
-    virtual RouteResult operator()(const Ip6UdpKey&) const = 0;
-    virtual RouteResult operator()(const IcmpKey&) const = 0;
-    virtual RouteResult operator()(const Icmp6Key&) const = 0;
+    virtual std::unique_ptr<ConnectionMark> operator()(const Ip4TcpKey&) const = 0;
+    virtual std::unique_ptr<ConnectionMark> operator()(const Ip6TcpKey&) const = 0;
+    virtual std::unique_ptr<ConnectionMark> operator()(const Ip4UdpKey&) const = 0;
+    virtual std::unique_ptr<ConnectionMark> operator()(const Ip6UdpKey&) const = 0;
+    virtual std::unique_ptr<ConnectionMark> operator()(const IcmpKey&) const = 0;
+    virtual std::unique_ptr<ConnectionMark> operator()(const Icmp6Key&) const = 0;
   };
-
-  using ValidatorType = std::function<bool(ConnectionMark&)>;
 
   explicit ConnectionTracker(boost::asio::any_io_executor executor, Selector& selector);
   ~ConnectionTracker() override = default;
@@ -120,7 +111,7 @@ public:
   ConnectionTracker& operator=(ConnectionTracker&&) = delete;
 
   std::string GetName() const override { return "ConnectionTracker"; }
-  void RemoveMark(const ConnectionMark& mark);
+  Selector& GetSelector() const { return _Selector; }
   void Clear();
 
   Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
@@ -132,22 +123,26 @@ public:
   struct ConnectionDirectionInput;
   struct ConnectionDirectionOutput {
     using OppositeDirection = ConnectionDirectionInput;
-    using ConnectionTrackerInput = Nothing;
-    using ConnectionTrackerOutput = RouteResult;
   };
   struct ConnectionDirectionInput {
     using OppositeDirection = ConnectionDirectionOutput;
-    using ConnectionTrackerInput = ConnectionMark&;
-    using ConnectionTrackerOutput = Nothing;
   };
 
   template <typename Direction>
-  typename Direction::ConnectionTrackerOutput
-  LookupAndUpdate(const Packet& packet, Direction::ConnectionTrackerInput input, ValidatorType validator);
+  std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode> LookupAndUpdate(const Packet& packet,
+                                                                                   Selector& selector);
 
 private:
   struct ConnectionEntry {
-    RouteResult Result;
+    template <typename Self> bool Validate(this Self& self, std::chrono::time_point<std::chrono::steady_clock> now) {
+      return !self.IsExpired(now) && self.Result->Validate();
+    }
+
+    template <typename Self> bool IsExpired(this Self& self, std::chrono::time_point<std::chrono::steady_clock> now) {
+      return now - self.LastActive > self.GetTimeout();
+    }
+
+    std::unique_ptr<ConnectionMark> Result;
     std::chrono::steady_clock::time_point LastActive;
     static constexpr std::chrono::seconds ProneInterval = std::chrono::seconds(60);
   };
@@ -243,10 +238,10 @@ private:
       }
     } OutputDirection, InputDirection;
 
-    template <typename Direction>
-    explicit TcpEntry(std::in_place_type_t<Direction>, RouteResult result,
+    template <typename Direction, typename MarkFactory>
+    explicit TcpEntry(std::in_place_type_t<Direction>, MarkFactory&& mark,
                       std::chrono::steady_clock::time_point lastActive, TcpExtraKey extra)
-        : ConnectionEntry{result, lastActive} {
+        : ConnectionEntry{mark(), lastActive} {
       UpdateState<Direction>(extra);
     }
 
@@ -272,67 +267,23 @@ private:
   };
 
   struct UdpEntry : public ConnectionEntry {
-    template <typename Direction>
-    UdpEntry(std::in_place_type_t<Direction>, RouteResult result, std::chrono::steady_clock::time_point lastActive,
+    template <typename Direction, typename MarkFactory>
+    UdpEntry(std::in_place_type_t<Direction>, MarkFactory&& mark, std::chrono::steady_clock::time_point lastActive,
              Nothing)
-        : ConnectionEntry{result, lastActive} {}
+        : ConnectionEntry{mark(), lastActive} {}
     static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
     std::chrono::seconds GetTimeout() const { return Timeout; }
     template <typename Direction> void UpdateState(Nothing) {}
   };
 
   struct IcmpConnEntry : public ConnectionEntry {
-    template <typename Direction>
-    IcmpConnEntry(std::in_place_type_t<Direction>, RouteResult result, std::chrono::steady_clock::time_point lastActive,
+    template <typename Direction, typename MarkFactory>
+    IcmpConnEntry(std::in_place_type_t<Direction>, MarkFactory&& mark, std::chrono::steady_clock::time_point lastActive,
                   Nothing)
-        : ConnectionEntry{result, lastActive} {}
+        : ConnectionEntry{mark(), lastActive} {}
     static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
     std::chrono::seconds GetTimeout() const { return Timeout; }
     template <typename Direction> void UpdateState(Nothing) {}
-  };
-
-  template <typename Entry>
-  static bool IsExpired(Entry& entry, std::chrono::time_point<std::chrono::steady_clock> now) {
-    return now - entry.LastActive > entry.GetTimeout();
-  }
-
-  struct Ip4TcpEntry {
-    Ip4TcpKey Key;
-    mutable TcpEntry Entry;
-  };
-
-  struct Ip6TcpEntry {
-    Ip6TcpKey Key;
-    mutable TcpEntry Entry;
-  };
-
-  struct Ip4UdpEntry {
-    Ip4UdpKey Key;
-    mutable UdpEntry Entry;
-  };
-
-  struct Ip6UdpEntry {
-    Ip6UdpKey Key;
-    mutable UdpEntry Entry;
-  };
-
-  struct IcmpEntry {
-    IcmpKey Key;
-    mutable IcmpConnEntry Entry;
-  };
-
-  struct Icmp6Entry {
-    Icmp6Key Key;
-    mutable IcmpConnEntry Entry;
-  };
-
-  template <typename EntryType> struct EntryCompare {
-    using is_transparent = void;
-    using KeyType = std::decay_t<decltype(std::declval<EntryType>().Key)>;
-
-    bool operator()(const EntryType& lhs, const EntryType& rhs) const { return lhs.Key < rhs.Key; }
-    bool operator()(const EntryType& lhs, const KeyType& rhs) const { return lhs.Key < rhs; }
-    bool operator()(const KeyType& lhs, const EntryType& rhs) const { return lhs < rhs.Key; }
   };
 
   enum class PacketType {
@@ -340,18 +291,18 @@ private:
     kIcmpInnerPacket,
   };
 
-  template <typename KeyDirection, typename Result, typename F>
-  static std::expected<Result, UnsupportedPacket> ParseConnectionKey(std::span<const uint8_t> p, PacketType type,
-                                                                     F&& f);
+  template <typename KeyDirection, typename F>
+  static std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode> ParseConnectionKey(std::span<const uint8_t> p,
+                                                                                             PacketType type, F&& f);
 
   boost::asio::any_io_executor _Executor;
   Selector& _Selector;
-  std::set<Ip4TcpEntry, EntryCompare<Ip4TcpEntry>> _Ip4TcpTable;
-  std::set<Ip6TcpEntry, EntryCompare<Ip6TcpEntry>> _Ip6TcpTable;
-  std::set<Ip4UdpEntry, EntryCompare<Ip4UdpEntry>> _Ip4UdpTable;
-  std::set<Ip6UdpEntry, EntryCompare<Ip6UdpEntry>> _Ip6UdpTable;
-  std::set<IcmpEntry, EntryCompare<IcmpEntry>> _IcmpTable;
-  std::set<Icmp6Entry, EntryCompare<Icmp6Entry>> _Icmp6Table;
+  std::map<Ip4TcpKey, TcpEntry> _Ip4TcpTable;
+  std::map<Ip6TcpKey, TcpEntry> _Ip6TcpTable;
+  std::map<Ip4UdpKey, UdpEntry> _Ip4UdpTable;
+  std::map<Ip6UdpKey, UdpEntry> _Ip6UdpTable;
+  std::map<IcmpKey, IcmpConnEntry> _IcmpTable;
+  std::map<Icmp6Key, IcmpConnEntry> _Icmp6Table;
 };
 
 } // namespace gh

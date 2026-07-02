@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #if !defined(_WIN32)
@@ -133,7 +134,7 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Stop() {
   _Callbacks.OnVpnStateChanged(TunnelState::Stopped, "VPN tunnel stopped");
 }
 
-Omni::Fiber::Coroutine<VpnClientMultiChannel::Session*>
+Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>>
 TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& host, int port) {
   std::shared_ptr<ResolverEndpoint> resolver;
   if (_UdpDynMux) {
@@ -141,57 +142,58 @@ TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& h
     resolver = FindResolverEndpoint(addrStr, *_UdpDynMux);
   }
   if (_Client) {
-    auto refSession = co_await _Client->RegisterChannel(psk, resolver);
-    auto* sessionPtr = &refSession.get();
-    _Endpoints.insert(sessionPtr);
-    co_return sessionPtr;
+    auto session = co_await _Client->RegisterChannel(psk, resolver);
+    _Endpoints.insert(session);
+    co_return session;
   }
   co_return nullptr;
 }
 
-Omni::Fiber::Coroutine<void> TunnelDataPlane::RemoveEndpoint(VpnClientMultiChannel::Session* session) {
-  if (session != nullptr) {
-    _Endpoints.erase(session);
-    if (_Client) {
-      co_await _Client->UnregisterChannel(*session);
-    }
+Omni::Fiber::Coroutine<void> TunnelDataPlane::RemoveEndpoint(std::shared_ptr<VpnClientMultiChannel::Session> session) {
+  _Endpoints.erase(session);
+  if (_Client) {
+    co_await _Client->UnregisterChannel(session);
   }
-  co_return;
 }
 
-std::optional<std::reference_wrapper<ConnectionMark>>
+std::shared_ptr<VpnClientMultiChannel::Session>
 TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannel::Session* session) {
-  if (_Endpoints.contains(session)) {
-    return *session;
+  auto it = _Endpoints.find(session);
+  if (it != _Endpoints.end()) {
+    return *it;
   }
-  return std::nullopt;
+  return nullptr;
 }
 
-std::optional<VpnTrafficStats> TunnelDataPlane::GetTrafficStats(VpnClientMultiChannel::Session* session) {
-  if (!_Client || !_Endpoints.contains(session)) {
-    return std::nullopt;
-  }
-  return _Client->GetStats(*session);
+std::optional<VpnTrafficStats>
+TunnelDataPlane::GetTrafficStats(std::shared_ptr<VpnClientMultiChannel::Session> session) {
+  return _Client->GetStats(session);
 }
 
-void TunnelDataPlane::OnSessionStarting(VpnClientMultiChannel::Session& session) {
-  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(&session), static_cast<int>(TunnelState::Starting), "");
+void TunnelDataPlane::OnSessionStarting(std::shared_ptr<VpnClientMultiChannel::Session> session) {
+  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(session.get()), std::to_underlying(TunnelState::Starting),
+                                  "");
 }
 
-void TunnelDataPlane::OnSessionRunning(VpnClientMultiChannel::Session& session) {
-  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(&session), static_cast<int>(TunnelState::Running), "");
+void TunnelDataPlane::OnSessionRunning(std::shared_ptr<VpnClientMultiChannel::Session> session) {
+  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(session.get()), std::to_underlying(TunnelState::Running),
+                                  "");
 }
 
-void TunnelDataPlane::OnSessionStopping(VpnClientMultiChannel::Session& session) {
-  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(&session), static_cast<int>(TunnelState::Stopping), "");
+void TunnelDataPlane::OnSessionStopping(std::shared_ptr<VpnClientMultiChannel::Session> session) {
+  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(session.get()), std::to_underlying(TunnelState::Stopping),
+                                  "");
 }
 
-void TunnelDataPlane::OnSessionStopped(VpnClientMultiChannel::Session& session) {
-  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(&session), static_cast<int>(TunnelState::Stopped), "");
+void TunnelDataPlane::OnSessionStopped(std::shared_ptr<VpnClientMultiChannel::Session> session) {
+  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(session.get()), std::to_underlying(TunnelState::Stopped),
+                                  "");
 }
 
-void TunnelDataPlane::OnSessionFailed(VpnClientMultiChannel::Session& session, const std::string& error) {
-  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(&session), static_cast<int>(TunnelState::Failed), error);
+void TunnelDataPlane::OnSessionFailed(std::shared_ptr<VpnClientMultiChannel::Session> session,
+                                      const std::string& error) {
+  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(session.get()), std::to_underlying(TunnelState::Failed),
+                                  error);
 }
 
 } // namespace gh

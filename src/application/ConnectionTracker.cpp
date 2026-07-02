@@ -5,12 +5,12 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
-#include <set>
 
 #include <boost/asio/ip/address_v6.hpp>
 #include <boost/asio/steady_timer.hpp>
 #include <utility>
 
+#include "ErrorCode.hpp"
 #include "PacketHeader.hpp"
 #include "Select.hpp"
 #include "SelectPair.hpp"
@@ -39,7 +39,7 @@ Omni::Fiber::Coroutine<void> ConnectionTracker::DoWork() {
     auto now = std::chrono::steady_clock::now();
 
     if (timerFired && !timerFired.value()) {
-      auto condition = [now](const auto& item) { return IsExpired(item.Entry, now); };
+      auto condition = [now](const auto& item) { return item.second.IsExpired(now); };
       std::erase_if(_Ip4TcpTable, condition);
       std::erase_if(_Ip6TcpTable, condition);
       std::erase_if(_Ip4UdpTable, condition);
@@ -57,13 +57,13 @@ Omni::Fiber::Coroutine<ErrorCode> ConnectionTracker::DoGracefulStop() {
 }
 
 template <typename Direction>
-typename Direction::ConnectionTrackerOutput ConnectionTracker::LookupAndUpdate(const Packet& packet,
-                                                                               Direction::ConnectionTrackerInput input,
-                                                                               ValidatorType validator) {
+std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>
+ConnectionTracker::LookupAndUpdate(const Packet& packet, ConnectionTracker::Selector& selector) {
   auto now = std::chrono::steady_clock::now();
-  auto res = ParseConnectionKey<Direction, typename Direction::ConnectionTrackerOutput>(
+  return ParseConnectionKey<Direction>(
       packet.Data(), PacketType::kRealPacket,
-      [&](auto&& key, PacketType type, auto keyExtra) -> Direction::ConnectionTrackerOutput {
+      [&](auto&& key, PacketType type,
+          auto keyExtra) -> std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode> {
         auto& table = (Overload{
             [this](const Ip4TcpKey& key) -> auto& { return _Ip4TcpTable; },
             [this](const Ip6TcpKey& key) -> auto& { return _Ip6TcpTable; },
@@ -74,92 +74,39 @@ typename Direction::ConnectionTrackerOutput ConnectionTracker::LookupAndUpdate(c
         })(key);
 
         if (type == PacketType::kRealPacket) {
-          RouteResult resetRoute = ([&]() {
-            if constexpr (std::is_same_v<Direction, ConnectionDirectionOutput>) {
-              return RouteResult{ToBeSelected{}};
-            } else {
-              return RouteResult{input};
-            }
-          })();
-
-          using TableValueType = typename std::decay_t<decltype(table)>::value_type;
-          using EntryType = decltype(std::declval<TableValueType>().Entry);
+          using EntryType = typename std::decay_t<decltype(table)>::mapped_type;
           auto [it, inserted] =
-              table.insert({key, EntryType{std::in_place_type<Direction>, resetRoute, now, keyExtra}});
-          auto& entry = it->Entry;
+              table.try_emplace(key, std::in_place_type<Direction>, [&] { return selector(key); }, now, keyExtra);
+          auto& entry = it->second;
           if (!inserted) {
-            if (IsExpired(entry, now)) {
-              entry = EntryType{std::in_place_type<Direction>, resetRoute, now, keyExtra};
+            if (entry.IsExpired(now)) {
+              entry = EntryType{std::in_place_type<Direction>, [&] { return selector(key); }, now, keyExtra};
             } else {
-              if constexpr (std::is_same_v<Direction, ConnectionDirectionInput>) {
-                entry.Result = resetRoute;
-              } else {
-                if (std::holds_alternative<std::reference_wrapper<ConnectionMark>>(entry.Result)) {
-                  if (validator && !validator(std::get<std::reference_wrapper<ConnectionMark>>(entry.Result).get())) {
-                    entry.Result = resetRoute;
-                  }
-                }
+              if (!entry.Result->Validate()) {
+                entry.Result = selector(key);
               }
               entry.LastActive = now;
               entry.template UpdateState<Direction>(keyExtra);
             }
           }
 
-          if constexpr (std::is_same_v<Direction, ConnectionDirectionOutput>) {
-            if (std::holds_alternative<ToBeSelected>(entry.Result)) {
-              entry.Result = _Selector(key);
-            }
-          }
-
-          if constexpr (std::is_same_v<Direction, ConnectionDirectionOutput>) {
-            return entry.Result;
-          } else {
-            return Nothing{};
-          }
+          return std::reference_wrapper<ConnectionMark>(*entry.Result);
         } else {
-          if constexpr (std::is_same_v<Direction, ConnectionDirectionOutput>) {
-            if (auto it = table.find(key); it != table.end() && !IsExpired(it->Entry, now)) {
-              return it->Entry.Result;
-            } else {
-              return RouteResult{Discard{}};
-            }
-          } else {
-            return Nothing{};
+          if (auto it = table.find(key); it != table.end() && it->second.Validate(now)) {
+            return std::reference_wrapper<ConnectionMark>(*it->second.Result);
           }
+          return std::unexpected(ErrorCode{AppMinorErrorCategory::kUnsupportedPacket, kAppError});
         }
       });
-
-  if constexpr (std::is_same_v<Direction, ConnectionDirectionOutput>) {
-    return res.value_or(Discard{});
-  } else {
-    return Nothing{};
-  }
 }
 
-template typename ConnectionTracker::ConnectionDirectionOutput::ConnectionTrackerOutput
-ConnectionTracker::LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(
-    const Packet& packet, ConnectionTracker::ConnectionDirectionOutput::ConnectionTrackerInput input,
-    ValidatorType validator);
+template std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>
+ConnectionTracker::LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(const Packet& packet,
+                                                                                 ConnectionTracker::Selector& selector);
 
-template typename ConnectionTracker::ConnectionDirectionInput::ConnectionTrackerOutput
-ConnectionTracker::LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(
-    const Packet& packet, ConnectionTracker::ConnectionDirectionInput::ConnectionTrackerInput input,
-    ValidatorType validator);
-
-void ConnectionTracker::RemoveMark(const ConnectionMark& mark) {
-  auto predicate = [&mark](const auto& item) {
-    if (std::holds_alternative<std::reference_wrapper<ConnectionMark>>(item.Entry.Result)) {
-      return &std::get<std::reference_wrapper<ConnectionMark>>(item.Entry.Result).get() == &mark;
-    }
-    return false;
-  };
-  std::erase_if(_Ip4TcpTable, predicate);
-  std::erase_if(_Ip6TcpTable, predicate);
-  std::erase_if(_Ip4UdpTable, predicate);
-  std::erase_if(_Ip6UdpTable, predicate);
-  std::erase_if(_IcmpTable, predicate);
-  std::erase_if(_Icmp6Table, predicate);
-}
+template std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>
+ConnectionTracker::LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(const Packet& packet,
+                                                                                ConnectionTracker::Selector& selector);
 
 void ConnectionTracker::Clear() {
   _Ip4TcpTable.clear();
@@ -170,10 +117,10 @@ void ConnectionTracker::Clear() {
   _Icmp6Table.clear();
 }
 
-template <typename KeyDirection, typename Result, typename F>
-std::expected<Result, ConnectionTracker::UnsupportedPacket>
+template <typename KeyDirection, typename F>
+std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>
 ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> p, PacketType type, F&& f) {
-  using ReturnType = std::expected<Result, UnsupportedPacket>;
+  using ReturnType = std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>;
   const IPHeader* iph = reinterpret_cast<const IPHeader*>(p.data());
   return iph->As(
       p, type != PacketType::kRealPacket,
@@ -213,16 +160,16 @@ ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> p, PacketType typ
                                return f(IcmpKey{dstAddr, srcAddr, id}, type, Nothing{});
                              }
                            } else if (icmp->GetType() == IcmpType::DestinationUnreachable) {
-                             return ParseConnectionKey<typename KeyDirection::OppositeDirection, Result>(
+                             return ParseConnectionKey<typename KeyDirection::OppositeDirection>(
                                  icmpspan.template subspan<sizeof(ICMPv4Header)>(), PacketType::kIcmpInnerPacket,
                                  std::forward<F>(f));
                            }
-                           return std::unexpected(UnsupportedPacket{});
+                           return std::unexpected(ErrorCode{AppMinorErrorCategory::kUnsupportedPacket, kAppError});
                          },
                          [&](std::span<const uint8_t> span, std::string err) -> ReturnType {
                            BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {} -> {} {}", srcAddr.to_string(),
                                                                   dstAddr.to_string(), err);
-                           return std::unexpected(UnsupportedPacket{});
+                           return std::unexpected(ErrorCode{AppMinorErrorCategory::kUnsupportedPacket, kAppError});
                          },
                      });
                },
@@ -266,22 +213,22 @@ ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> p, PacketType typ
                                return f(Icmp6Key{dstAddr, srcAddr, id}, type, Nothing{});
                              }
                            } else if (icmp6->GetType() == Icmp6Type::DestinationUnreachable) {
-                             return ParseConnectionKey<typename KeyDirection::OppositeDirection, Result>(
+                             return ParseConnectionKey<typename KeyDirection::OppositeDirection>(
                                  icmp6span.template subspan<sizeof(ICMPv6Header)>(), PacketType::kIcmpInnerPacket,
                                  std::forward<F>(f));
                            }
-                           return std::unexpected(UnsupportedPacket{});
+                           return std::unexpected(ErrorCode{AppMinorErrorCategory::kUnsupportedPacket, kAppError});
                          },
                          [&](std::span<const uint8_t> span, std::string err) -> ReturnType {
                            BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {} -> {} {}", srcAddr.to_string(),
                                                                   dstAddr.to_string(), err);
-                           return std::unexpected(UnsupportedPacket{});
+                           return std::unexpected(ErrorCode{AppMinorErrorCategory::kUnsupportedPacket, kAppError});
                          },
                      });
                },
                [&](std::span<const uint8_t> span, std::string err) -> ReturnType {
                  BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {}", err);
-                 return std::unexpected(UnsupportedPacket{});
+                 return std::unexpected(ErrorCode{AppMinorErrorCategory::kUnsupportedPacket, kAppError});
                }});
 }
 

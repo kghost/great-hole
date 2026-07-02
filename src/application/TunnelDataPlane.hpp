@@ -13,11 +13,12 @@
 #include "Coroutine.hpp"
 #include "Endpoint.hpp"
 #include "EndpointUdpDynMux.hpp"
+#include "Utils/Comparator.hpp"
 #include "VpnClientMultiChannel.hpp"
 
 namespace gh {
 
-enum class TunnelState { Starting = 0, Running = 1, Stopping = 2, Stopped = 3, Failed = 4 };
+enum class TunnelState : int { Starting = 0, Running = 1, Stopping = 2, Stopped = 3, Failed = 4 };
 
 class DataPlaneCallbacks {
 public:
@@ -32,11 +33,11 @@ public:
                   DataPlaneCallbacks& callbacks);
   ~TunnelDataPlane();
 
-  void OnSessionStarting(VpnClientMultiChannel::Session& session) override;
-  void OnSessionRunning(VpnClientMultiChannel::Session& session) override;
-  void OnSessionStopping(VpnClientMultiChannel::Session& session) override;
-  void OnSessionStopped(VpnClientMultiChannel::Session& session) override;
-  void OnSessionFailed(VpnClientMultiChannel::Session& session, const std::string& error) override;
+  void OnSessionStarting(std::shared_ptr<VpnClientMultiChannel::Session> session) override;
+  void OnSessionRunning(std::shared_ptr<VpnClientMultiChannel::Session> session) override;
+  void OnSessionStopping(std::shared_ptr<VpnClientMultiChannel::Session> session) override;
+  void OnSessionStopped(std::shared_ptr<VpnClientMultiChannel::Session> session) override;
+  void OnSessionFailed(std::shared_ptr<VpnClientMultiChannel::Session> session, const std::string& error) override;
 
   TunnelDataPlane(const TunnelDataPlane&) = delete;
   TunnelDataPlane& operator=(const TunnelDataPlane&) = delete;
@@ -50,13 +51,13 @@ public:
   Omni::Fiber::Coroutine<void> MigrateTun(int tunFd);
 #endif
   Omni::Fiber::Coroutine<void> Stop();
-  Omni::Fiber::Coroutine<VpnClientMultiChannel::Session*> AddEndpoint(const UdpDynMux::PskType& psk,
-                                                                      const std::string& host, int port);
-  Omni::Fiber::Coroutine<void> RemoveEndpoint(VpnClientMultiChannel::Session* handle);
+  Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>>
+  AddEndpoint(const UdpDynMux::PskType& psk, const std::string& host, int port);
+  Omni::Fiber::Coroutine<void> RemoveEndpoint(std::shared_ptr<VpnClientMultiChannel::Session> handle);
 
-  std::optional<std::reference_wrapper<ConnectionMark>> FindSessionByHandle(VpnClientMultiChannel::Session* session);
+  std::shared_ptr<VpnClientMultiChannel::Session> FindSessionByHandle(VpnClientMultiChannel::Session* session);
 
-  std::optional<VpnTrafficStats> GetTrafficStats(VpnClientMultiChannel::Session* session);
+  std::optional<VpnTrafficStats> GetTrafficStats(std::shared_ptr<VpnClientMultiChannel::Session> session);
 
 private:
   boost::asio::any_io_executor _Executor;
@@ -67,7 +68,7 @@ private:
   std::shared_ptr<UdpDynMux> _UdpDynMux;
   std::shared_ptr<VpnClientMultiChannel> _Client;
 
-  std::set<VpnClientMultiChannel::Session*> _Endpoints;
+  std::set<std::shared_ptr<VpnClientMultiChannel::Session>, SharedPtrCompare> _Endpoints;
   bool _Running = false;
 };
 

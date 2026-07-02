@@ -192,31 +192,31 @@ class CallbackSelector : public ConnectionTracker::Selector {
 public:
   CallbackSelector(std::vector<CallbackArgs>& invocations) : _Invocations(invocations) {}
 
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip4TcpKey& k) const override {
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4TcpKey& k) const override {
     _Invocations.push_back(
         CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.LocalPort, k.RemotePort, 6});
-    return ConnectionTracker::RouteResult{ConnectionTracker::Discard{}};
+    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip6TcpKey& k) const override {
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6TcpKey& k) const override {
     _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.LocalPort, k.RemotePort, 6});
-    return ConnectionTracker::RouteResult{ConnectionTracker::Discard{}};
+    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip4UdpKey& k) const override {
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4UdpKey& k) const override {
     _Invocations.push_back(
         CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.LocalPort, k.RemotePort, 17});
-    return ConnectionTracker::RouteResult{ConnectionTracker::Discard{}};
+    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip6UdpKey& k) const override {
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6UdpKey& k) const override {
     _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.LocalPort, k.RemotePort, 17});
-    return ConnectionTracker::RouteResult{ConnectionTracker::Discard{}};
+    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::IcmpKey& k) const override {
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::IcmpKey& k) const override {
     _Invocations.push_back(CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.Id, k.Id, 1});
-    return ConnectionTracker::RouteResult{ConnectionTracker::Discard{}};
+    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Icmp6Key& k) const override {
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Icmp6Key& k) const override {
     _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.Id, k.Id, 58});
-    return ConnectionTracker::RouteResult{ConnectionTracker::Discard{}};
+    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
 
 private:
@@ -225,27 +225,26 @@ private:
 
 class RoutingSelector : public ConnectionTracker::Selector {
 public:
-  RoutingSelector(std::optional<std::reference_wrapper<VpnClientMultiChannel::Session>>& resolvedSession,
-                  int& selectorCalls)
+  RoutingSelector(std::shared_ptr<VpnClientMultiChannel::Session>& resolvedSession, int& selectorCalls)
       : _ResolvedSession(resolvedSession), _SelectorCalls(selectorCalls) {}
 
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip4TcpKey&) const override { return Handle(); }
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip6TcpKey&) const override { return Handle(); }
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip4UdpKey&) const override { return Handle(); }
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Ip6UdpKey&) const override { return Handle(); }
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::IcmpKey&) const override { return Handle(); }
-  ConnectionTracker::RouteResult operator()(const ConnectionTracker::Icmp6Key&) const override { return Handle(); }
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4TcpKey&) const override { return Handle(); }
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6TcpKey&) const override { return Handle(); }
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4UdpKey&) const override { return Handle(); }
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6UdpKey&) const override { return Handle(); }
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::IcmpKey&) const override { return Handle(); }
+  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Icmp6Key&) const override { return Handle(); }
 
 private:
-  ConnectionTracker::RouteResult Handle() const {
+  std::unique_ptr<ConnectionMark> Handle() const {
     _SelectorCalls++;
-    if (_ResolvedSession.has_value()) {
-      return ConnectionTracker::RouteResult{_ResolvedSession.value()};
+    if (_ResolvedSession) {
+      return std::make_unique<VpnClientMultiChannel::Mark>(_ResolvedSession);
     }
-    return ConnectionTracker::RouteResult{ConnectionTracker::Discard{}};
+    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
 
-  std::optional<std::reference_wrapper<VpnClientMultiChannel::Session>>& _ResolvedSession;
+  std::shared_ptr<VpnClientMultiChannel::Session>& _ResolvedSession;
   int& _SelectorCalls;
 };
 
@@ -375,7 +374,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
 
   UdpDynMux::PskType psk = {9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6};
 
-  std::optional<std::reference_wrapper<VpnClientMultiChannel::Session>> resolvedSession;
+  std::shared_ptr<VpnClientMultiChannel::Session> resolvedSession;
   int selectorCalls = 0;
 
   RoutingSelector selector(resolvedSession, selectorCalls);
@@ -395,9 +394,9 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     EXPECT_FALSE(co_await connTrack->Start());
 
     // Register channel on server side first so it can receive client initiates
-    auto& session = (co_await connTrack->RegisterChannel(psk, nullptr)).get();
-    EXPECT_NE(session.Channel, nullptr);
-    if (session.Channel == nullptr) {
+    auto session = (co_await connTrack->RegisterChannel(psk, nullptr));
+    EXPECT_NE(session->Channel, nullptr);
+    if (session->Channel == nullptr) {
       co_return;
     }
     resolvedSession = session;
@@ -526,7 +525,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
 
   UdpDynMux::PskType psk = {1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6};
 
-  std::optional<std::reference_wrapper<VpnClientMultiChannel::Session>> resolvedSession;
+  std::shared_ptr<VpnClientMultiChannel::Session> resolvedSession;
   int selectorCalls = 0;
 
   RoutingSelector selector(resolvedSession, selectorCalls);
@@ -546,8 +545,9 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
     EXPECT_FALSE(co_await connTrack->Start());
 
     // Register channel
-    auto& session = (co_await connTrack->RegisterChannel(psk, nullptr)).get();
-    EXPECT_NE(session.Channel, nullptr);
+    auto session = co_await connTrack->RegisterChannel(psk, nullptr);
+    EXPECT_NE(session, nullptr);
+    EXPECT_NE(session->Channel, nullptr);
     resolvedSession = session;
 
     // Connect client to server
@@ -577,7 +577,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
 
     // 2. Unregister the channel
     co_await connTrack->UnregisterChannel(session);
-    resolvedSession = std::nullopt;
+    resolvedSession = nullptr;
 
     // 3. Send an outgoing packet matching the established connection key
     {
@@ -700,7 +700,7 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
 
   UdpDynMux::PskType psk = {1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6};
 
-  std::optional<std::reference_wrapper<VpnClientMultiChannel::Session>> resolvedSession;
+  std::shared_ptr<VpnClientMultiChannel::Session> resolvedSession;
   int selectorCalls = 0;
 
   RoutingSelector selector(resolvedSession, selectorCalls);
@@ -720,8 +720,9 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
     EXPECT_FALSE(co_await connTrack->Start());
 
     // Before session channel is established/registered, stats should be nullopt
-    auto& session = (co_await connTrack->RegisterChannel(psk, nullptr)).get();
-    EXPECT_NE(session.Channel, nullptr);
+    auto session = co_await connTrack->RegisterChannel(psk, nullptr);
+    EXPECT_NE(session, nullptr);
+    EXPECT_NE(session->Channel, nullptr);
     resolvedSession = session;
 
     auto initialStats = connTrack->GetStats(session);

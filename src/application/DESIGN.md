@@ -48,10 +48,11 @@ To prevent memory leaks and handle dead connections, entries are timed out and p
 When `LookupAndUpdate` is called:
 1. It looks up the key in the appropriate table.
 2. If found, it checks if the entry has expired based on its protocol-specific timeout.
-3. **Expired entries** are immediately erased from the table, and the packet is re-evaluated as a new connection (inserting it with `ToBeSelected` route and querying the selector to check for new routing marks).
+3. **Expired entries** are immediately erased from the table, and the packet is re-evaluated as a new connection (inserting it and querying the selector to choose new routing marks).
 4. **Active entries** are updated (`LastActive` set to `now`, TCP flags updated) and handled based on the lookup direction:
-   - **`Input` Direction (Incoming)**: The entry's `Result` is updated with the incoming channel's mark.
-   - **`Output` Direction (Outgoing)**: If the current result is `ToBeSelected`, the selector is re-queried to see if a routing mark has become available. If the result holds a `ConnectionMark` and a validator is provided, the validator is run; if validation fails, the result is set to `Discard`.
+   - **`Input` Direction (Incoming)**: The entry's `Result` is updated by querying the selector.
+   - **`Output` Direction (Outgoing)**: If the result is invalid (as checked by the virtual `Validate()` method of the mark), the selector is queried to select a new routing mark. Otherwise, the existing mark is returned.
+5. If key parsing fails (e.g. invalid packet) or lookup fails, `LookupAndUpdate` returns `std::unexpected` containing the error code.
 
 ---
 
