@@ -102,7 +102,7 @@ public:
     virtual std::unique_ptr<ConnectionMark> operator()(const Icmp6Key&) const = 0;
   };
 
-  explicit ConnectionTracker(boost::asio::any_io_executor executor, Selector& selector);
+  explicit ConnectionTracker(boost::asio::any_io_executor executor);
   ~ConnectionTracker() override = default;
 
   ConnectionTracker(const ConnectionTracker&) = delete;
@@ -111,7 +111,6 @@ public:
   ConnectionTracker& operator=(ConnectionTracker&&) = delete;
 
   std::string GetName() const override { return "ConnectionTracker"; }
-  Selector& GetSelector() const { return _Selector; }
   void Clear();
 
   Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
@@ -296,7 +295,6 @@ private:
                                                                                              PacketType type, F&& f);
 
   boost::asio::any_io_executor _Executor;
-  Selector& _Selector;
   std::map<Ip4TcpKey, TcpEntry> _Ip4TcpTable;
   std::map<Ip6TcpKey, TcpEntry> _Ip6TcpTable;
   std::map<Ip4UdpKey, UdpEntry> _Ip4UdpTable;

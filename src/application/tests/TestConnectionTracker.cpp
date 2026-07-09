@@ -172,7 +172,7 @@ TEST(ConnectionTrackerTest, BasicOperations) {
     MockConnectionMark mark2("mark2");
 
     MockSelector selector(g_TestDiscardMark);
-    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
+    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
 
@@ -246,7 +246,7 @@ TEST(ConnectionTrackerTest, ExpirationAndPruning) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     MockConnectionMark mark1("mark1");
     MockSelector selector(g_TestDiscardMark);
-    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
+    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
 
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
@@ -289,7 +289,7 @@ TEST(ConnectionTrackerTest, SelectorAndValidator) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     MockConnectionMark mark1("mark1");
     MockSelector selector(mark1);
-    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
+    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
 
@@ -343,7 +343,7 @@ TEST(ConnectionTrackerTest, TcpStateTransitions) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     MockConnectionMark mark1("mark1");
     MockSelector selector(g_TestDiscardMark);
-    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
+    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
 
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
@@ -420,7 +420,7 @@ TEST(ConnectionTrackerTest, IcmpDestinationUnreachable) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     MockConnectionMark mark1("mark1");
     MockSelector selector(g_TestDiscardMark);
-    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
+    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
     auto errStart = co_await tracker->Start();
     EXPECT_FALSE(errStart);
 

@@ -34,7 +34,7 @@ public:
 
   class Session {
   public:
-    Session() {}
+    explicit Session() = default;
     std::string GetDescription() const { return Channel ? Channel->GetName() : "Invalid Session"; }
 
     std::shared_ptr<UdpDynMux::Channel> Channel;
@@ -94,6 +94,7 @@ public:
 
   VpnClientMultiChannel(boost::asio::any_io_executor executor, std::shared_ptr<Endpoint> tun,
                         std::shared_ptr<UdpDynMux> udpDynMux, std::shared_ptr<ConnectionTracker> tracker,
+                        ConnectionTracker::Selector& selector,
                         std::vector<std::shared_ptr<Filter>> filters,
                         SessionStateListener& listener = _NoopSessionStateListener);
   ~VpnClientMultiChannel() override;
@@ -124,6 +125,7 @@ private:
   boost::asio::any_io_executor _Executor;
   std::shared_ptr<Endpoint> _Tun;
   std::shared_ptr<UdpDynMux> _UdpDynMux;
+  std::shared_ptr<ConnectionTracker> _ConnectionTracker;
   std::vector<std::shared_ptr<Filter>> _Filters;
 
   std::shared_ptr<TunSideEndpoint> _TunSide;

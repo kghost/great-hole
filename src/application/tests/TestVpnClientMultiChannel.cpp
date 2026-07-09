@@ -260,12 +260,12 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     std::vector<CallbackArgs> invocations;
     CallbackSelector selector(invocations);
-    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
+    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
     auto mockTun = std::make_shared<MockEndpoint>();
     auto udpServer = std::make_shared<UdpDynMux>(
         io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
     co_await udpServer->Start();
-    auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker,
+    auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker, selector,
                                                              std::vector<std::shared_ptr<Filter>>{});
     EXPECT_FALSE(co_await connTrack->Start());
 
@@ -378,9 +378,9 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
   int selectorCalls = 0;
 
   RoutingSelector selector(resolvedSession, selectorCalls);
-  auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
+  auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
   auto mockTun = std::make_shared<MockEndpoint>();
-  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker,
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker, selector,
                                                            std::vector<std::shared_ptr<Filter>>{});
 
   bool testPassed = false;
@@ -529,9 +529,9 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
   int selectorCalls = 0;
 
   RoutingSelector selector(resolvedSession, selectorCalls);
-  auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
+  auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
   auto mockTun = std::make_shared<MockEndpoint>();
-  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker,
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker, selector,
                                                            std::vector<std::shared_ptr<Filter>>{});
 
   bool testPassed = false;
@@ -619,13 +619,13 @@ TEST(VpnClientMultiChannelTest, MigrateTun) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     std::vector<CallbackArgs> invocations;
     CallbackSelector selector(invocations);
-    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
+    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
     auto mockTun1 = std::make_shared<MockEndpoint>();
     auto mockTun2 = std::make_shared<MockEndpoint>();
     auto udpServer = std::make_shared<UdpDynMux>(
         io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
     co_await udpServer->Start();
-    auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun1, udpServer, tracker,
+    auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun1, udpServer, tracker, selector,
                                                              std::vector<std::shared_ptr<Filter>>{});
     EXPECT_FALSE(co_await connTrack->Start());
 
@@ -704,9 +704,9 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
   int selectorCalls = 0;
 
   RoutingSelector selector(resolvedSession, selectorCalls);
-  auto tracker = std::make_shared<ConnectionTracker>(io.get_executor(), selector);
+  auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
   auto mockTun = std::make_shared<MockEndpoint>();
-  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker,
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker, selector,
                                                            std::vector<std::shared_ptr<Filter>>{});
 
   bool testPassed = false;

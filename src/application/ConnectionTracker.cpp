@@ -18,8 +18,8 @@
 
 namespace gh {
 
-ConnectionTracker::ConnectionTracker(boost::asio::any_io_executor executor, Selector& selector)
-    : _Executor(executor), _Selector(selector) {}
+ConnectionTracker::ConnectionTracker(boost::asio::any_io_executor executor)
+    : _Executor(executor) {}
 
 Omni::Fiber::Coroutine<ErrorCode> ConnectionTracker::DoStart() { co_return ErrorCode{}; }
 

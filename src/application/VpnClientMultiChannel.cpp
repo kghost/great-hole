@@ -112,7 +112,7 @@ public:
     co_return ErrorCode{};
   }
 
-  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel& c) override;
+  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& packet, Cancel& c) override;
 
   Omni::Fiber::Coroutine<std::expected<void, Omni::Fiber::PipeClosed>> PushOutgoing(Packet p) {
     co_return co_await _Pipe.GetProducer().Put(std::move(p));
@@ -134,33 +134,34 @@ private:
 class VpnClientMultiChannel::TunSideEndpoint : public Endpoint {
 public:
   struct QueueEntry {
-    Packet Pkt;
+    Packet PacketData;
     std::shared_ptr<Session> PacketSession;
   };
 
-  explicit TunSideEndpoint(VpnClientMultiChannel& parent, std::shared_ptr<ConnectionTracker> tracker)
-      : _Parent(parent), _ConnectionTracker(tracker) {}
+  explicit TunSideEndpoint(VpnClientMultiChannel& parent, ConnectionTracker& tracker,
+                           ConnectionTracker::Selector& selector)
+      : _Parent(parent), _ConnectionTracker(tracker), _Selector(selector) {}
   ~TunSideEndpoint() override = default;
 
   std::string GetName() const override { return std::format("VpnClientMultiChannel:TunSide:{}", _Parent.GetName()); }
 
-  Omni::Fiber::Coroutine<std::expected<void, Omni::Fiber::PipeClosed>> PushIncoming(Packet p,
+  Omni::Fiber::Coroutine<std::expected<void, Omni::Fiber::PipeClosed>> PushIncoming(Packet packet,
                                                                                     std::shared_ptr<Session> session) {
-    co_return co_await _Pipe.GetProducer().Put(QueueEntry{std::move(p), session});
+    co_return co_await _Pipe.GetProducer().Put(QueueEntry{.PacketData = std::move(packet), .PacketSession = session});
   }
 
-  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override {
+  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& packet, Cancel& c) override {
     if (c.IsTriggered()) {
       co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
     }
     auto [cancelFired, queueFired] = co_await Omni::Fiber::Select(
         Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}),
-        Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&p, this](auto&& entry) -> ErrorCode {
+        Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&packet, this](auto&& entry) -> ErrorCode {
           if (entry.has_value()) {
-            p = std::move(entry.value().Pkt);
+            packet = std::move(entry.value().PacketData);
             SessionSelector sessionSelector(entry.value().PacketSession);
-            auto res =
-                _ConnectionTracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(p, sessionSelector);
+            auto res = _ConnectionTracker.LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(
+                packet, sessionSelector);
             if (!res) {
               BOOST_LOG_TRIVIAL(warning) << GetName()
                                          << ": LookupAndUpdate on input path failed: " << res.error().message();
@@ -180,13 +181,13 @@ public:
     co_return ErrorCode{};
   }
 
-  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel& c) override {
+  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& packet, Cancel& c) override {
     if (c.IsTriggered()) {
       co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
     }
 
-    auto route = _ConnectionTracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(
-        p, _ConnectionTracker->GetSelector());
+    auto route = _ConnectionTracker.LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(
+        packet, _Selector);
 
     if (!route) {
       BOOST_LOG_TRIVIAL(debug) << GetName() << ": LookupAndUpdate failed: " << route.error().message()
@@ -212,7 +213,7 @@ public:
                  [&](const std::weak_ptr<Session>& sessionWeak) -> Omni::Fiber::Coroutine<ErrorCode> {
                    if (auto session = sessionWeak.lock()) {
                      if (session->ChannelSide) {
-                       auto result = co_await session->ChannelSide->PushOutgoing(std::move(p));
+                       auto result = co_await session->ChannelSide->PushOutgoing(std::move(packet));
                        if (!result.has_value()) {
                          BOOST_LOG_TRIVIAL(info) << GetName() << " PushOutgoing: ChannelSide is closed";
                        }
@@ -228,23 +229,24 @@ public:
   }
 
 protected:
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override { co_return co_await _ConnectionTracker->Start(); }
+  Omni::Fiber::Coroutine<ErrorCode> DoStart() override { co_return ErrorCode{}; }
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override {
     _Pipe.GetConsumer().DiscardAndClose();
-    co_return co_await _ConnectionTracker->Stop();
+    co_return ErrorCode{};
   }
 
 private:
   VpnClientMultiChannel& _Parent;
-  std::shared_ptr<ConnectionTracker> _ConnectionTracker;
+  ConnectionTracker& _ConnectionTracker;
+  ConnectionTracker::Selector& _Selector;
   Omni::Fiber::Pipe<QueueEntry> _Pipe;
 };
 
-Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::ChannelSideEndpoint::Write(Packet& p, Cancel& c) {
+Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::ChannelSideEndpoint::Write(Packet& packet, Cancel& c) {
   if (c.IsTriggered()) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
-  auto result = co_await _Parent._TunSide->PushIncoming(std::move(p), _Session);
+  auto result = co_await _Parent._TunSide->PushIncoming(std::move(packet), _Session);
   if (!result.has_value()) {
     BOOST_LOG_TRIVIAL(info) << GetName() << " PushIncoming: TunSide is closed";
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
@@ -257,10 +259,12 @@ VpnClientMultiChannel::NoopSessionStateListener VpnClientMultiChannel::_NoopSess
 VpnClientMultiChannel::VpnClientMultiChannel(boost::asio::any_io_executor executor, std::shared_ptr<Endpoint> tun,
                                              std::shared_ptr<UdpDynMux> udpDynMux,
                                              std::shared_ptr<ConnectionTracker> tracker,
+                                             ConnectionTracker::Selector& selector,
                                              std::vector<std::shared_ptr<Filter>> filters,
                                              SessionStateListener& listener)
-    : _Executor(executor), _Tun(tun), _UdpDynMux(udpDynMux), _Filters(filters), _StateListener(listener) {
-  _TunSide = std::make_shared<TunSideEndpoint>(*this, tracker);
+    : _Executor(executor), _Tun(tun), _UdpDynMux(udpDynMux), _ConnectionTracker(tracker), _Filters(filters),
+      _StateListener(listener) {
+  _TunSide = std::make_shared<TunSideEndpoint>(*this, *_ConnectionTracker, selector);
   _UdpDynMux->SetChannelNotification(*this);
 }
 
@@ -271,9 +275,16 @@ std::string VpnClientMultiChannel::GetName() const {
 }
 
 Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoStart() {
-  auto err = co_await _TunSide->Start();
+  auto err = co_await _ConnectionTracker->Start();
+  if (err) {
+    BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start ConnectionTracker";
+    co_return err;
+  }
+
+  err = co_await _TunSide->Start();
   if (err) {
     BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start TunSideEndpoint";
+    co_await _ConnectionTracker->Stop();
     co_return err;
   }
 
@@ -282,6 +293,7 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoStart() {
   if (err) {
     BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start TUN pipeline";
     co_await _TunSide->Stop();
+    co_await _ConnectionTracker->Stop();
     co_return err;
   }
   co_return ErrorCode{};
@@ -333,6 +345,7 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoGracefulStop() {
   }
   _Sessions.clear();
   co_await _TunSide->Stop();
+  co_await _ConnectionTracker->Stop();
   _ChannelCall.DiscardAndClose();
 
   BOOST_LOG_TRIVIAL(info) << GetName() << " stopped";

@@ -49,10 +49,10 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(
   _Tun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
 #endif
 
-  auto tracker = std::make_shared<ConnectionTracker>(_Executor, _Selector);
+  auto tracker = std::make_shared<ConnectionTracker>(_Executor);
   _UdpDynMux = std::make_shared<UdpDynMux>(_Executor);
   auto filter = std::make_shared<FilterXor>(std::move(encryptionKey));
-  _Client = std::make_shared<VpnClientMultiChannel>(_Executor, _Tun, _UdpDynMux, tracker,
+  _Client = std::make_shared<VpnClientMultiChannel>(_Executor, _Tun, _UdpDynMux, tracker, _Selector,
                                                     std::vector<std::shared_ptr<Filter>>{filter}, *this);
 
   auto ec = co_await _Tun->Start();

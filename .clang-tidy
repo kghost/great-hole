@@ -1,3 +1,3 @@
 ---
-Checks: '*, -llvmlibc-*, -bugprone-reserved-identifier'
+Checks: 'bugprone-*, concurrency-*, cppcoreguidelines-*, misc-*, modernize-*, performance-*, portability-*, readability-*, -bugprone-reserved-identifier'
 HeaderFilterRegex: '.*'
