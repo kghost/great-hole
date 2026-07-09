@@ -14,6 +14,7 @@
 #include "EndpointUdpDynMux.hpp"
 #include "ErrorCode.hpp"
 #include "Filter.hpp"
+#include "Packet.hpp"
 #include "Pipeline.hpp"
 #include "RemoteCall.hpp"
 #include "ServiceBase.hpp"
@@ -35,7 +36,9 @@ public:
   class Session {
   public:
     explicit Session() = default;
-    std::string GetDescription() const { return Channel ? Channel->GetName() : "Invalid Session"; }
+    [[nodiscard]] auto GetDescription() const -> std::string {
+      return Channel ? Channel->GetName() : "Invalid Session";
+    }
 
     std::shared_ptr<UdpDynMux::Channel> Channel;
     std::shared_ptr<ChannelSideEndpoint> ChannelSide;
@@ -43,7 +46,7 @@ public:
     bool Running = true;
   };
 
-  class Mark : public ConnectionMark {
+  class Mark : public ConnectionMark, public PacketMark {
   public:
     struct ToBeSelected {};
     struct Bypass {};
@@ -52,20 +55,19 @@ public:
     using ValueType = std::variant<ToBeSelected, Bypass, Discard, std::weak_ptr<Session>>;
 
     explicit Mark() : _Value(ToBeSelected{}) {}
-    explicit Mark(Bypass) : _Value(Bypass{}) {}
-    explicit Mark(Discard) : _Value(Discard{}) {}
+    explicit Mark(Bypass /*unused*/) : _Value(Bypass{}) {}
+    explicit Mark(Discard /*unused*/) : _Value(Discard{}) {}
     explicit Mark(std::shared_ptr<Session> session) : _Value(std::move(session)) {}
     ~Mark() override = default;
 
     Mark(const Mark&) = delete;
+    auto operator=(const Mark&) -> Mark& = delete;
     Mark(Mark&&) = delete;
-    Mark& operator=(const Mark&) = delete;
-    Mark& operator=(Mark&&) = delete;
+    auto operator=(Mark&&) -> Mark& = delete;
 
-    std::string GetDescription() const override;
-    bool Validate() const override;
-
-    const ValueType& GetValue() const { return _Value; }
+    [[nodiscard]] auto GetDescription() const -> std::string override;
+    [[nodiscard]] auto Validate() const -> bool override;
+    [[nodiscard]] auto GetValue() const -> const ValueType& { return _Value; }
 
   private:
     ValueType _Value;
@@ -73,7 +75,14 @@ public:
 
   class SessionStateListener {
   public:
+    explicit SessionStateListener() = default;
     virtual ~SessionStateListener() = default;
+
+    SessionStateListener(const SessionStateListener&) = delete;
+    auto operator=(const SessionStateListener&) -> SessionStateListener& = delete;
+    SessionStateListener(SessionStateListener&&) = delete;
+    auto operator=(SessionStateListener&&) -> SessionStateListener& = delete;
+
     virtual void OnSessionStarting(std::shared_ptr<Session> session) = 0;
     virtual void OnSessionRunning(std::shared_ptr<Session> session) = 0;
     virtual void OnSessionStopping(std::shared_ptr<Session> session) = 0;
@@ -83,43 +92,49 @@ public:
 
   class NoopSessionStateListener : public SessionStateListener {
   public:
+    explicit NoopSessionStateListener() = default;
     ~NoopSessionStateListener() override = default;
-    void OnSessionStarting(std::shared_ptr<Session>) override {}
-    void OnSessionRunning(std::shared_ptr<Session>) override {}
-    void OnSessionStopping(std::shared_ptr<Session>) override {}
-    void OnSessionStopped(std::shared_ptr<Session>) override {}
-    void OnSessionFailed(std::shared_ptr<Session>, const std::string&) override {}
+
+    NoopSessionStateListener(const NoopSessionStateListener&) = delete;
+    auto operator=(const NoopSessionStateListener&) -> NoopSessionStateListener& = delete;
+    NoopSessionStateListener(NoopSessionStateListener&&) = delete;
+    auto operator=(NoopSessionStateListener&&) -> NoopSessionStateListener& = delete;
+
+    void OnSessionStarting(std::shared_ptr<Session> /*session*/) override {}
+    void OnSessionRunning(std::shared_ptr<Session> /*session*/) override {}
+    void OnSessionStopping(std::shared_ptr<Session> /*session*/) override {}
+    void OnSessionStopped(std::shared_ptr<Session> /*session*/) override {}
+    void OnSessionFailed(std::shared_ptr<Session> /*session*/, const std::string& /*error*/) override {}
   };
   static NoopSessionStateListener _NoopSessionStateListener;
 
   VpnClientMultiChannel(boost::asio::any_io_executor executor, std::shared_ptr<Endpoint> tun,
                         std::shared_ptr<UdpDynMux> udpDynMux, std::shared_ptr<ConnectionTracker> tracker,
-                        ConnectionTracker::Selector& selector,
-                        std::vector<std::shared_ptr<Filter>> filters,
+                        ConnectionTracker::Selector& selector, std::vector<std::shared_ptr<Filter>> filters,
                         SessionStateListener& listener = _NoopSessionStateListener);
   ~VpnClientMultiChannel() override;
 
   VpnClientMultiChannel(const VpnClientMultiChannel&) = delete;
-  VpnClientMultiChannel& operator=(const VpnClientMultiChannel&) = delete;
+  auto operator=(const VpnClientMultiChannel&) -> VpnClientMultiChannel& = delete;
   VpnClientMultiChannel(VpnClientMultiChannel&&) = delete;
-  VpnClientMultiChannel& operator=(VpnClientMultiChannel&&) = delete;
+  auto operator=(VpnClientMultiChannel&&) -> VpnClientMultiChannel& = delete;
 
-  std::string GetName() const override;
+  auto GetName() const -> std::string override;
 
-  Omni::Fiber::Coroutine<std::shared_ptr<Session>> RegisterChannel(const UdpDynMux::PskType& psk,
-                                                                   std::shared_ptr<ResolverEndpoint> resolver);
-  Omni::Fiber::Coroutine<void> UnregisterChannel(std::shared_ptr<Session> session);
-  Omni::Fiber::Coroutine<ErrorCode> MigrateTun(std::shared_ptr<Endpoint> newTun);
+  auto RegisterChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver)
+      -> Omni::Fiber::Coroutine<std::shared_ptr<Session>>;
+  auto UnregisterChannel(std::shared_ptr<Session> session) -> Omni::Fiber::Coroutine<void>;
+  auto MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni::Fiber::Coroutine<ErrorCode>;
 
-  std::optional<VpnTrafficStats> GetStats(std::shared_ptr<Session> session) const;
+  static auto GetStats(const std::shared_ptr<Session>& session) -> std::optional<VpnTrafficStats>;
 
-  Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override;
-  Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override;
+  auto OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override;
+  auto OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override;
 
 protected:
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<void> DoWork() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoWork() -> Omni::Fiber::Coroutine<void> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
   boost::asio::any_io_executor _Executor;

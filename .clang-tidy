@@ -2,6 +2,8 @@
 Checks: |
   bugprone-*, concurrency-*, cppcoreguidelines-*, misc-*, modernize-*, performance-*, portability-*, readability-*,
   -bugprone-reserved-identifier,
-  -readability-else-after-return,
-  -misc-non-private-member-variables-in-classes,
+  -readability-else-after-return, -readability-function-cognitive-complexity,
+  -misc-non-private-member-variables-in-classes, -misc-use-internal-linkage,
+  -cppcoreguidelines-avoid-reference-coroutine-parameters, -cppcoreguidelines-avoid-capturing-lambda-coroutines,
+
 HeaderFilterRegex: '.*'

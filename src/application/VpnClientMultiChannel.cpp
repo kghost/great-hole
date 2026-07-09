@@ -30,22 +30,29 @@ namespace gh {
 class SessionSelector : public ConnectionTracker::Selector {
 public:
   explicit SessionSelector(std::shared_ptr<VpnClientMultiChannel::Session> session) : _Session(std::move(session)) {}
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4TcpKey&) const override {
+  ~SessionSelector() override = default;
+
+  SessionSelector(const SessionSelector&) = delete;
+  auto operator=(const SessionSelector&) -> SessionSelector& = delete;
+  SessionSelector(SessionSelector&&) = delete;
+  auto operator=(SessionSelector&&) -> SessionSelector& = delete;
+
+  auto operator()(const ConnectionTracker::Ip4TcpKey& /*unused*/) const -> std::unique_ptr<ConnectionMark> override {
     return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6TcpKey&) const override {
+  auto operator()(const ConnectionTracker::Ip6TcpKey& /*unused*/) const -> std::unique_ptr<ConnectionMark> override {
     return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4UdpKey&) const override {
+  auto operator()(const ConnectionTracker::Ip4UdpKey& /*unused*/) const -> std::unique_ptr<ConnectionMark> override {
     return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6UdpKey&) const override {
+  auto operator()(const ConnectionTracker::Ip6UdpKey& /*unused*/) const -> std::unique_ptr<ConnectionMark> override {
     return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::IcmpKey&) const override {
+  auto operator()(const ConnectionTracker::IcmpKey& /*unused*/) const -> std::unique_ptr<ConnectionMark> override {
     return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Icmp6Key&) const override {
+  auto operator()(const ConnectionTracker::Icmp6Key& /*unused*/) const -> std::unique_ptr<ConnectionMark> override {
     return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
   }
 
@@ -53,25 +60,25 @@ private:
   std::shared_ptr<VpnClientMultiChannel::Session> _Session;
 };
 
-std::string VpnClientMultiChannel::Mark::GetDescription() const {
+auto VpnClientMultiChannel::Mark::GetDescription() const -> std::string {
   return std::visit(Overload{[](const ToBeSelected&) -> std::string { return "ToBeSelected"; },
                              [](const Bypass&) -> std::string { return "Bypass"; },
                              [](const Discard&) -> std::string { return "Discard"; },
-                             [](const std::weak_ptr<Session>& session) -> std::string {
-                               if (auto s = session.lock()) {
-                                 return s->GetDescription();
+                             [](const std::weak_ptr<Session>& weakSession) -> std::string {
+                               if (auto session = weakSession.lock()) {
+                                 return session->GetDescription();
                                }
                                return "Expired Session";
                              }},
                     _Value);
 }
 
-bool VpnClientMultiChannel::Mark::Validate() const {
-  return std::visit(Overload{[](const ToBeSelected&) { return false; }, [](const Bypass&) { return true; },
-                             [](const Discard&) { return true; },
-                             [](const std::weak_ptr<Session>& session) {
-                               if (auto s = session.lock()) {
-                                 return s->Running;
+auto VpnClientMultiChannel::Mark::Validate() const -> bool {
+  return std::visit(Overload{[](const ToBeSelected&) -> bool { return false; },
+                             [](const Bypass&) -> bool { return true; }, [](const Discard&) -> bool { return true; },
+                             [](const std::weak_ptr<Session>& weakSession) -> bool {
+                               if (auto session = weakSession.lock()) {
+                                 return session->Running;
                                }
                                return false;
                              }},
@@ -84,19 +91,24 @@ public:
       : _Parent(parent), _Session(std::move(session)) {}
   ~ChannelSideEndpoint() override = default;
 
-  std::string GetName() const override {
+  ChannelSideEndpoint(const ChannelSideEndpoint&) = delete;
+  auto operator=(const ChannelSideEndpoint&) -> ChannelSideEndpoint& = delete;
+  ChannelSideEndpoint(ChannelSideEndpoint&&) = delete;
+  auto operator=(ChannelSideEndpoint&&) -> ChannelSideEndpoint& = delete;
+
+  auto GetName() const -> std::string override {
     return std::format("VpnClientMultiChannel:ChannelSide:[{}]", _Session->Channel->GetName());
   }
 
-  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override {
-    if (c.IsTriggered()) {
+  auto Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override {
+    if (cancel.IsTriggered()) {
       co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
     }
     auto [cancelFired, queueFired] =
-        co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}),
-                                     Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&p](auto pkt) -> ErrorCode {
+        co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] {}),
+                                     Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&packet](auto pkt) -> ErrorCode {
                                        if (pkt.has_value()) {
-                                         p = std::move(pkt.value());
+                                         packet = std::move(pkt.value());
                                          return ErrorCode{};
                                        } else {
                                          return ErrorCode{AppErrorCategory::kEndOfStream, kAppError};
@@ -112,15 +124,15 @@ public:
     co_return ErrorCode{};
   }
 
-  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& packet, Cancel& c) override;
+  auto Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override;
 
-  Omni::Fiber::Coroutine<std::expected<void, Omni::Fiber::PipeClosed>> PushOutgoing(Packet p) {
-    co_return co_await _Pipe.GetProducer().Put(std::move(p));
+  auto PushOutgoing(Packet packet) -> Omni::Fiber::Coroutine<std::expected<void, Omni::Fiber::PipeClosed>> {
+    co_return co_await _Pipe.GetProducer().Put(std::move(packet));
   }
 
 protected:
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override { co_return ErrorCode{}; }
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override {
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override { co_return ErrorCode{}; }
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override {
     _Pipe.GetConsumer().DiscardAndClose();
     co_return ErrorCode{};
   }
@@ -143,25 +155,32 @@ public:
       : _Parent(parent), _ConnectionTracker(tracker), _Selector(selector) {}
   ~TunSideEndpoint() override = default;
 
-  std::string GetName() const override { return std::format("VpnClientMultiChannel:TunSide:{}", _Parent.GetName()); }
+  TunSideEndpoint(const TunSideEndpoint&) = delete;
+  auto operator=(const TunSideEndpoint&) -> TunSideEndpoint& = delete;
+  TunSideEndpoint(TunSideEndpoint&&) = delete;
+  auto operator=(TunSideEndpoint&&) -> TunSideEndpoint& = delete;
 
-  Omni::Fiber::Coroutine<std::expected<void, Omni::Fiber::PipeClosed>> PushIncoming(Packet packet,
-                                                                                    std::shared_ptr<Session> session) {
+  auto GetName() const -> std::string override {
+    return std::format("VpnClientMultiChannel:TunSide:{}", _Parent.GetName());
+  }
+
+  auto PushIncoming(Packet packet, std::shared_ptr<Session> session)
+      -> Omni::Fiber::Coroutine<std::expected<void, Omni::Fiber::PipeClosed>> {
     co_return co_await _Pipe.GetProducer().Put(QueueEntry{.PacketData = std::move(packet), .PacketSession = session});
   }
 
-  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& packet, Cancel& c) override {
-    if (c.IsTriggered()) {
+  auto Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override {
+    if (cancel.IsTriggered()) {
       co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
     }
     auto [cancelFired, queueFired] = co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}),
+        Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] {}),
         Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&packet, this](auto&& entry) -> ErrorCode {
           if (entry.has_value()) {
             packet = std::move(entry.value().PacketData);
             SessionSelector sessionSelector(entry.value().PacketSession);
-            auto res = _ConnectionTracker.LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(
-                packet, sessionSelector);
+            auto res = _ConnectionTracker.LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(packet,
+                                                                                                       sessionSelector);
             if (!res) {
               BOOST_LOG_TRIVIAL(warning) << GetName()
                                          << ": LookupAndUpdate on input path failed: " << res.error().message();
@@ -181,22 +200,38 @@ public:
     co_return ErrorCode{};
   }
 
-  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& packet, Cancel& c) override {
-    if (c.IsTriggered()) {
+  auto Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override {
+    if (cancel.IsTriggered()) {
       co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
     }
 
-    auto route = _ConnectionTracker.LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(
-        packet, _Selector);
-
-    if (!route) {
-      BOOST_LOG_TRIVIAL(debug) << GetName() << ": LookupAndUpdate failed: " << route.error().message()
-                               << ", dropping packet";
-      co_return ErrorCode{};
+    if (packet.HasMark()) {
+      co_return co_await RouteByMark(packet, dynamic_cast<Mark&>(packet.GetMark()).GetValue());
+    } else {
+      auto route = _ConnectionTracker.LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(packet, _Selector);
+      if (!route) {
+        BOOST_LOG_TRIVIAL(debug) << GetName() << ": LookupAndUpdate failed: " << route.error().message()
+                                 << ", dropping packet";
+        co_return ErrorCode{};
+      }
+      co_return co_await RouteByMark(packet, dynamic_cast<Mark&>(route->get()).GetValue());
     }
+  }
 
-    auto& mark = dynamic_cast<Mark&>(route->get());
+protected:
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override { co_return ErrorCode{}; }
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override {
+    _Pipe.GetConsumer().DiscardAndClose();
+    co_return ErrorCode{};
+  }
 
+private:
+  VpnClientMultiChannel& _Parent;
+  ConnectionTracker& _ConnectionTracker;
+  ConnectionTracker::Selector& _Selector;
+  Omni::Fiber::Pipe<QueueEntry> _Pipe;
+
+  auto RouteByMark(Packet& packet, const Mark::ValueType& value) const -> Omni::Fiber::Coroutine<ErrorCode> {
     co_return co_await std::visit(
         Overload{[&](Mark::ToBeSelected) -> Omni::Fiber::Coroutine<ErrorCode> {
                    assert(false && "should not reach here");
@@ -225,25 +260,13 @@ public:
                    }
                    co_return ErrorCode{};
                  }},
-        mark.GetValue());
+        value);
   }
-
-protected:
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override { co_return ErrorCode{}; }
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override {
-    _Pipe.GetConsumer().DiscardAndClose();
-    co_return ErrorCode{};
-  }
-
-private:
-  VpnClientMultiChannel& _Parent;
-  ConnectionTracker& _ConnectionTracker;
-  ConnectionTracker::Selector& _Selector;
-  Omni::Fiber::Pipe<QueueEntry> _Pipe;
 };
 
-Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::ChannelSideEndpoint::Write(Packet& packet, Cancel& c) {
-  if (c.IsTriggered()) {
+auto VpnClientMultiChannel::ChannelSideEndpoint::Write(Packet& packet, Cancel& cancel)
+    -> Omni::Fiber::Coroutine<ErrorCode> {
+  if (cancel.IsTriggered()) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
   auto result = co_await _Parent._TunSide->PushIncoming(std::move(packet), _Session);
@@ -262,19 +285,19 @@ VpnClientMultiChannel::VpnClientMultiChannel(boost::asio::any_io_executor execut
                                              ConnectionTracker::Selector& selector,
                                              std::vector<std::shared_ptr<Filter>> filters,
                                              SessionStateListener& listener)
-    : _Executor(executor), _Tun(tun), _UdpDynMux(udpDynMux), _ConnectionTracker(tracker), _Filters(filters),
-      _StateListener(listener) {
+    : _Executor(std::move(executor)), _Tun(std::move(tun)), _UdpDynMux(std::move(udpDynMux)),
+      _ConnectionTracker(std::move(tracker)), _Filters(std::move(filters)), _StateListener(listener) {
   _TunSide = std::make_shared<TunSideEndpoint>(*this, *_ConnectionTracker, selector);
   _UdpDynMux->SetChannelNotification(*this);
 }
 
 VpnClientMultiChannel::~VpnClientMultiChannel() { assert(_Sessions.empty()); }
 
-std::string VpnClientMultiChannel::GetName() const {
+auto VpnClientMultiChannel::GetName() const -> std::string {
   return std::format("VpnClientMultiChannel:[{}]", _UdpDynMux->GetName());
 }
 
-Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoStart() {
+auto VpnClientMultiChannel::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   auto err = co_await _ConnectionTracker->Start();
   if (err) {
     BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start ConnectionTracker";
@@ -352,24 +375,24 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoGracefulStop() {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>>
-VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver) {
-  auto [it, inserted] = _Sessions.emplace(psk, nullptr);
+auto VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver)
+    -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>> {
+  auto [iterator, inserted] = _Sessions.emplace(psk, nullptr);
   if (inserted) {
-    it->second = std::make_shared<Session>();
+    iterator->second = std::make_shared<Session>();
   } else {
-    co_return it->second;
+    co_return iterator->second;
   }
-  _StateListener.get().OnSessionStarting(it->second);
-  it->second->Channel = co_await _UdpDynMux->CreateChannel(psk, resolver);
-  if (!it->second->Channel) {
-    _StateListener.get().OnSessionFailed(it->second, "Failed to create channel");
+  _StateListener.get().OnSessionStarting(iterator->second);
+  iterator->second->Channel = co_await _UdpDynMux->CreateChannel(psk, resolver);
+  if (!iterator->second->Channel) {
+    _StateListener.get().OnSessionFailed(iterator->second, "Failed to create channel");
   }
-  co_return it->second;
+  co_return iterator->second;
 }
 
-Omni::Fiber::Coroutine<void>
-VpnClientMultiChannel::UnregisterChannel(std::shared_ptr<VpnClientMultiChannel::Session> session) {
+auto VpnClientMultiChannel::UnregisterChannel(std::shared_ptr<VpnClientMultiChannel::Session> session)
+    -> Omni::Fiber::Coroutine<void> {
   _StateListener.get().OnSessionStopping(session);
   session->Running = false;
   if (session->Channel) {
@@ -383,7 +406,8 @@ VpnClientMultiChannel::UnregisterChannel(std::shared_ptr<VpnClientMultiChannel::
   }
 }
 
-Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) {
+auto VpnClientMultiChannel::OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel)
+    -> Omni::Fiber::Coroutine<void> {
   BOOST_LOG_TRIVIAL(info) << GetName() << ": on channel established: " << channel->GetName();
   if (_State != State::kRunning) {
     co_return;
@@ -393,9 +417,9 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelEstablished(std::sh
         if (_State != State::kRunning) {
           co_return;
         }
-        auto it = _Sessions.find(channel->GetPsk());
-        if (it != _Sessions.end()) {
-          auto session = it->second;
+        auto iterator = _Sessions.find(channel->GetPsk());
+        if (iterator != _Sessions.end()) {
+          auto session = iterator->second;
           session->Channel = channel;
           session->Running = true;
 
@@ -429,7 +453,8 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelEstablished(std::sh
   }
 }
 
-Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) {
+auto VpnClientMultiChannel::OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel)
+    -> Omni::Fiber::Coroutine<void> {
   BOOST_LOG_TRIVIAL(info) << GetName() << ": on channel closed: " << channel->GetName();
   if (_State != State::kRunning) {
     co_return;
@@ -439,9 +464,9 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelClosed(std::shared_
         if (_State != State::kRunning) {
           co_return;
         }
-        auto it = _Sessions.find(channel->GetPsk());
-        if (it != _Sessions.end()) {
-          auto session = it->second;
+        auto iterator = _Sessions.find(channel->GetPsk());
+        if (iterator != _Sessions.end()) {
+          auto session = iterator->second;
           session->Running = false;
           if (session->SessionPipeline) {
             co_await session->SessionPipeline->Stop();
@@ -459,8 +484,8 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::OnChannelClosed(std::shared_
   }
 }
 
-Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::MigrateTun(std::shared_ptr<Endpoint> newTun) {
-  auto ec = co_await _ChannelCall.Call([this, newTun]() -> Omni::Fiber::Coroutine<ErrorCode> {
+auto VpnClientMultiChannel::MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni::Fiber::Coroutine<ErrorCode> {
+  auto err = co_await _ChannelCall.Call([this, newTun]() -> Omni::Fiber::Coroutine<ErrorCode> {
     BOOST_LOG_TRIVIAL(info) << GetName() << ": migrating TUN endpoint";
     if (_TunPipeline) {
       co_await _TunPipeline->Stop();
@@ -470,19 +495,19 @@ Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::MigrateTun(std::shared_
     _TunPipeline = std::make_shared<Pipeline>(_Tun, std::vector<std::shared_ptr<Filter>>{}, _TunSide);
     co_return co_await _TunPipeline->Start();
   });
-  if (ec.has_value()) {
-    if (ec.value()) {
-      BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to migrate TUN endpoint: " << ec.value().message();
+  if (err.has_value()) {
+    if (err.value()) {
+      BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to migrate TUN endpoint: " << err.value().message();
     }
-    co_return ec.value();
+    co_return err.value();
   } else {
     BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to migrate TUN endpoint: _ChannelCall closed";
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
 }
 
-std::optional<VpnTrafficStats>
-VpnClientMultiChannel::GetStats(std::shared_ptr<VpnClientMultiChannel::Session> session) const {
+auto VpnClientMultiChannel::GetStats(const std::shared_ptr<VpnClientMultiChannel::Session>& session)
+    -> std::optional<VpnTrafficStats> {
   if (session->SessionPipeline) {
     int64_t rttMs = -1;
     if (session->Channel) {

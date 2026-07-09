@@ -17,6 +17,7 @@ namespace gh {
 
 class PacketMark {
 public:
+  explicit PacketMark() = default;
   virtual ~PacketMark() = default;
 
   PacketMark(const PacketMark&) = delete;
