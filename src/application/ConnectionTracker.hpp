@@ -20,9 +20,16 @@ namespace gh {
 
 class ConnectionMark {
 public:
+  explicit ConnectionMark() = default;
   virtual ~ConnectionMark() = default;
-  virtual std::string GetDescription() const = 0;
-  virtual bool Validate() const { return true; }
+
+  ConnectionMark(const ConnectionMark&) = delete;
+  auto operator=(const ConnectionMark&) -> ConnectionMark& = delete;
+  ConnectionMark(ConnectionMark&&) = delete;
+  auto operator=(ConnectionMark&&) -> ConnectionMark& = delete;
+
+  [[nodiscard]] virtual auto GetDescription() const -> std::string = 0;
+  [[nodiscard]] virtual auto Validate() const -> bool { return true; }
 };
 
 class ConnectionTracker : public ServiceBase {
@@ -33,8 +40,8 @@ public:
     uint16_t LocalPort = 0;
     uint16_t RemotePort = 0;
 
-    std::strong_ordering operator<=>(const Ip4TcpKey& other) const = default;
-    bool operator==(const Ip4TcpKey&) const = default;
+    auto operator<=>(const Ip4TcpKey& other) const -> std::strong_ordering = default;
+    auto operator==(const Ip4TcpKey&) const -> bool = default;
   };
 
   struct Ip6TcpKey {
@@ -43,8 +50,8 @@ public:
     uint16_t LocalPort = 0;
     uint16_t RemotePort = 0;
 
-    std::strong_ordering operator<=>(const Ip6TcpKey& other) const = default;
-    bool operator==(const Ip6TcpKey&) const = default;
+    auto operator<=>(const Ip6TcpKey& other) const -> std::strong_ordering = default;
+    auto operator==(const Ip6TcpKey&) const -> bool = default;
   };
 
   struct Ip4UdpKey {
@@ -53,8 +60,8 @@ public:
     uint16_t LocalPort = 0;
     uint16_t RemotePort = 0;
 
-    std::strong_ordering operator<=>(const Ip4UdpKey& other) const = default;
-    bool operator==(const Ip4UdpKey&) const = default;
+    auto operator<=>(const Ip4UdpKey& other) const -> std::strong_ordering = default;
+    auto operator==(const Ip4UdpKey&) const -> bool = default;
   };
 
   struct Ip6UdpKey {
@@ -63,8 +70,8 @@ public:
     uint16_t LocalPort = 0;
     uint16_t RemotePort = 0;
 
-    std::strong_ordering operator<=>(const Ip6UdpKey& other) const = default;
-    bool operator==(const Ip6UdpKey&) const = default;
+    auto operator<=>(const Ip6UdpKey& other) const -> std::strong_ordering = default;
+    auto operator==(const Ip6UdpKey&) const -> bool = default;
   };
 
   struct IcmpKey {
@@ -72,8 +79,8 @@ public:
     boost::asio::ip::address_v4 RemoteAddress;
     uint16_t Id = 0;
 
-    std::strong_ordering operator<=>(const IcmpKey& other) const = default;
-    bool operator==(const IcmpKey&) const = default;
+    auto operator<=>(const IcmpKey& other) const -> std::strong_ordering = default;
+    auto operator==(const IcmpKey&) const -> bool = default;
   };
 
   struct Icmp6Key {
@@ -81,8 +88,8 @@ public:
     boost::asio::ip::address_v6 RemoteAddress;
     uint16_t Id = 0;
 
-    std::strong_ordering operator<=>(const Icmp6Key& other) const = default;
-    bool operator==(const Icmp6Key&) const = default;
+    auto operator<=>(const Icmp6Key& other) const -> std::strong_ordering = default;
+    auto operator==(const Icmp6Key&) const -> bool = default;
   };
 
   // Selector determines connection routing:
@@ -93,7 +100,14 @@ public:
   // mark for all traffic destined for the active VPN server endpoints.
   class Selector {
   public:
+    explicit Selector() = default;
     virtual ~Selector() = default;
+
+    Selector(const Selector&) = delete;
+    auto operator=(const Selector&) -> Selector& = delete;
+    Selector(Selector&&) = delete;
+    auto operator=(Selector&&) -> Selector& = delete;
+
     virtual std::unique_ptr<ConnectionMark> operator()(const Ip4TcpKey&) const = 0;
     virtual std::unique_ptr<ConnectionMark> operator()(const Ip6TcpKey&) const = 0;
     virtual std::unique_ptr<ConnectionMark> operator()(const Ip4UdpKey&) const = 0;
@@ -106,16 +120,16 @@ public:
   ~ConnectionTracker() override = default;
 
   ConnectionTracker(const ConnectionTracker&) = delete;
-  ConnectionTracker& operator=(const ConnectionTracker&) = delete;
+  auto operator=(const ConnectionTracker&) -> ConnectionTracker& = delete;
   ConnectionTracker(ConnectionTracker&&) = delete;
-  ConnectionTracker& operator=(ConnectionTracker&&) = delete;
+  auto operator=(ConnectionTracker&&) -> ConnectionTracker& = delete;
 
-  std::string GetName() const override { return "ConnectionTracker"; }
+  auto GetName() const -> std::string override { return "ConnectionTracker"; }
   void Clear();
 
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<void> DoWork() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoWork() -> Omni::Fiber::Coroutine<void> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
   struct Nothing {};
   struct ConnectionDirectionOutput;
@@ -128,16 +142,18 @@ public:
   };
 
   template <typename Direction>
-  std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode> LookupAndUpdate(const Packet& packet,
-                                                                                   Selector& selector);
+  auto LookupAndUpdate(const Packet& packet, Selector& selector)
+      -> std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>;
 
 private:
   struct ConnectionEntry {
-    template <typename Self> bool Validate(this Self& self, std::chrono::time_point<std::chrono::steady_clock> now) {
+    template <typename Self>
+    auto Validate(this Self& self, std::chrono::time_point<std::chrono::steady_clock> now) -> bool {
       return !self.IsExpired(now) && self.Result->Validate();
     }
 
-    template <typename Self> bool IsExpired(this Self& self, std::chrono::time_point<std::chrono::steady_clock> now) {
+    template <typename Self>
+    auto IsExpired(this Self& self, std::chrono::time_point<std::chrono::steady_clock> now) -> bool {
       return now - self.LastActive > self.GetTimeout();
     }
 
@@ -170,20 +186,20 @@ private:
       static constexpr std::chrono::seconds EstablishedTimeout = std::chrono::seconds(1200);
       static constexpr std::chrono::seconds FinTimeout = std::chrono::seconds(30);
 
-      bool IsClosing() const {
+      auto IsClosing() const -> bool {
         return State == State::kFinSent || State == State::kFinAcked || State == State::kClosed;
       }
 
-      bool IsEstablished() const { return State == State::kSynAcked; }
+      auto IsEstablished() const -> bool { return State == State::kSynAcked; }
 
-      bool HandleThisDirectionPacket(TcpExtraKey extra) {
-        if (extra.Flags & TcpFlags::kRst) {
+      auto HandleThisDirectionPacket(TcpExtraKey extra) -> bool {
+        if ((extra.Flags & TcpFlags::kRst) != 0) {
           State = State::kClosed;
           return true;
         }
         switch (State) {
         case State::kNone:
-          if (extra.Flags & TcpFlags::kSyn) {
+          if ((extra.Flags & TcpFlags::kSyn) != 0) {
             State = State::kSynSent;
             SequenceNumber = extra.SequenceNumber;
             AcknowledgedNumber = extra.SequenceNumber;
@@ -192,7 +208,7 @@ private:
         case State::kSynSent:
           break;
         case State::kSynAcked:
-          if (extra.Flags & TcpFlags::kFin) {
+          if ((extra.Flags & TcpFlags::kFin) != 0) {
             State = State::kFinSent;
             SequenceNumber = extra.SequenceNumber;
           }
@@ -206,8 +222,8 @@ private:
         return true;
       }
 
-      bool HandleOppositeDirectionPacket(TcpExtraKey extra) {
-        if (extra.Flags & TcpFlags::kRst) {
+      auto HandleOppositeDirectionPacket(TcpExtraKey extra) -> bool {
+        if ((extra.Flags & TcpFlags::kRst) != 0) {
           State = State::kClosed;
           return true;
         }
@@ -215,7 +231,7 @@ private:
         case State::kNone:
           break;
         case State::kSynSent:
-          if ((extra.Flags & TcpFlags::kAck) && (extra.AcknowledgementNumber == SequenceNumber + 1)) {
+          if (((extra.Flags & TcpFlags::kAck) != 0) && (extra.AcknowledgementNumber == SequenceNumber + 1)) {
             State = State::kSynAcked;
             AcknowledgedNumber = extra.AcknowledgementNumber;
           }
@@ -223,7 +239,7 @@ private:
         case State::kSynAcked:
           break;
         case State::kFinSent:
-          if ((extra.Flags & TcpFlags::kAck) && (extra.AcknowledgementNumber == SequenceNumber + 1)) {
+          if (((extra.Flags & TcpFlags::kAck) != 0) && (extra.AcknowledgementNumber == SequenceNumber + 1)) {
             State = State::kFinAcked;
             AcknowledgedNumber = extra.AcknowledgementNumber;
           }
@@ -237,14 +253,14 @@ private:
       }
     } OutputDirection, InputDirection;
 
-    template <typename Direction, typename MarkFactory>
-    explicit TcpEntry(std::in_place_type_t<Direction>, MarkFactory&& mark,
+    template <typename Direction>
+    explicit TcpEntry(std::in_place_type_t<Direction> /*unused*/, auto&& mark,
                       std::chrono::steady_clock::time_point lastActive, TcpExtraKey extra)
         : ConnectionEntry{mark(), lastActive} {
       UpdateState<Direction>(extra);
     }
 
-    std::chrono::seconds GetTimeout() const {
+    auto GetTimeout() const -> std::chrono::seconds {
       if (OutputDirection.IsClosing() || InputDirection.IsClosing()) {
         return OneDirectionState::FinTimeout;
       }
@@ -266,33 +282,33 @@ private:
   };
 
   struct UdpEntry : public ConnectionEntry {
-    template <typename Direction, typename MarkFactory>
-    UdpEntry(std::in_place_type_t<Direction>, MarkFactory&& mark, std::chrono::steady_clock::time_point lastActive,
-             Nothing)
+    template <typename Direction>
+    UdpEntry(std::in_place_type_t<Direction> /*unused*/, auto&& mark, std::chrono::steady_clock::time_point lastActive,
+             Nothing /*unused*/)
         : ConnectionEntry{mark(), lastActive} {}
     static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
-    std::chrono::seconds GetTimeout() const { return Timeout; }
-    template <typename Direction> void UpdateState(Nothing) {}
+    static auto GetTimeout() -> std::chrono::seconds { return Timeout; }
+    template <typename Direction> void UpdateState(Nothing /*unused*/) {}
   };
 
   struct IcmpConnEntry : public ConnectionEntry {
-    template <typename Direction, typename MarkFactory>
-    IcmpConnEntry(std::in_place_type_t<Direction>, MarkFactory&& mark, std::chrono::steady_clock::time_point lastActive,
-                  Nothing)
+    template <typename Direction>
+    IcmpConnEntry(std::in_place_type_t<Direction> /*unused*/, auto&& mark,
+                  std::chrono::steady_clock::time_point lastActive, Nothing /*unused*/)
         : ConnectionEntry{mark(), lastActive} {}
     static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
-    std::chrono::seconds GetTimeout() const { return Timeout; }
-    template <typename Direction> void UpdateState(Nothing) {}
+    static auto GetTimeout() -> std::chrono::seconds { return Timeout; }
+    template <typename Direction> void UpdateState(Nothing /*unused*/) {}
   };
 
-  enum class PacketType {
+  enum class PacketType : std::uint8_t {
     kRealPacket,
     kIcmpInnerPacket,
   };
 
-  template <typename KeyDirection, typename F>
-  static std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode> ParseConnectionKey(std::span<const uint8_t> p,
-                                                                                             PacketType type, F&& f);
+  template <typename KeyDirection>
+  static auto ParseConnectionKey(std::span<const uint8_t> packet, PacketType type, auto&& function)
+      -> std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>;
 
   boost::asio::any_io_executor _Executor;
   std::map<Ip4TcpKey, TcpEntry> _Ip4TcpTable;
