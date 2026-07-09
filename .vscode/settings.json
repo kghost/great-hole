@@ -1,8 +1,9 @@
 {
-    "chat.tools.terminal.autoApprove": {
-        "./build/tests/udp_mux_test": true,
-        "./build/tests/udp_dyn_mux_test": true
-    },
     "cmake.useCMakePresets": "always",
-    "json.format.keepLines": true
+    "json.format.keepLines": true,
+    "files.associations": {
+        ".clang-format": "yaml",
+        ".clang-tidy": "yaml",
+        ".clangd": "yaml"
+    }
 }

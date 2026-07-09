@@ -5,6 +5,6 @@ Checks: |
   -readability-else-after-return, -readability-function-cognitive-complexity,
   -misc-non-private-member-variables-in-classes, -misc-use-internal-linkage, -misc-no-recursion,
   -cppcoreguidelines-avoid-reference-coroutine-parameters, -cppcoreguidelines-avoid-capturing-lambda-coroutines,
-  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -cppcoreguidelines-avoid-const-or-ref-data-members, -cppcoreguidelines-non-private-member-variables-in-classes,
 
 HeaderFilterRegex: '.*'
