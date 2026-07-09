@@ -1,3 +1,7 @@
 ---
-Checks: 'bugprone-*, concurrency-*, cppcoreguidelines-*, misc-*, modernize-*, performance-*, portability-*, readability-*, -bugprone-reserved-identifier'
+Checks: |
+  bugprone-*, concurrency-*, cppcoreguidelines-*, misc-*, modernize-*, performance-*, portability-*, readability-*,
+  -bugprone-reserved-identifier,
+  -readability-else-after-return,
+  -misc-non-private-member-variables-in-classes,
 HeaderFilterRegex: '.*'
