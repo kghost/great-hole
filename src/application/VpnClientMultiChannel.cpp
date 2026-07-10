@@ -105,7 +105,7 @@ public:
       co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
     }
     auto [cancelFired, queueFired] =
-        co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] {}),
+        co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] -> void {}),
                                      Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&packet](auto pkt) -> ErrorCode {
                                        if (pkt.has_value()) {
                                          packet = std::move(pkt.value());
@@ -174,7 +174,7 @@ public:
       co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
     }
     auto [cancelFired, queueFired] = co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] {}),
+        Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] -> void {}),
         Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&packet, this](auto&& entry) -> ErrorCode {
           if (entry.has_value()) {
             packet = std::move(entry.value().PacketData);
@@ -322,13 +322,13 @@ auto VpnClientMultiChannel::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<void> VpnClientMultiChannel::DoWork() {
+auto VpnClientMultiChannel::DoWork() -> Omni::Fiber::Coroutine<void> {
   BOOST_LOG_TRIVIAL(info) << GetName() << " run loop started";
 
   bool stopped = false;
   while (!stopped) {
     auto [stopResult, rpcResult] = co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] {}),
+        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] -> void {}),
         Omni::Fiber::SelectPair(_ChannelCall.GetServiceAwaitor(), Omni::Fiber::RemoteCall::HandleRequest));
     if (stopResult) {
       stopped = true;
@@ -341,7 +341,7 @@ Omni::Fiber::Coroutine<void> VpnClientMultiChannel::DoWork() {
   BOOST_LOG_TRIVIAL(info) << GetName() << " run loop finished";
 }
 
-Omni::Fiber::Coroutine<ErrorCode> VpnClientMultiChannel::DoGracefulStop() {
+auto VpnClientMultiChannel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   BOOST_LOG_TRIVIAL(info) << GetName() << " stopping";
 
   if (_TunPipeline) {
@@ -402,7 +402,7 @@ auto VpnClientMultiChannel::UnregisterChannel(std::shared_ptr<VpnClientMultiChan
     _Sessions.erase(psk);
   } else {
     _StateListener.get().OnSessionStopped(session);
-    std::erase_if(_Sessions, [&](const auto& pair) { return pair.second == session; });
+    std::erase_if(_Sessions, [&](const auto& pair) -> auto { return pair.second == session; });
   }
 }
 

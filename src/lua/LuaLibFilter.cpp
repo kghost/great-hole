@@ -8,7 +8,7 @@ namespace gh {
 
 static const struct luaL_Reg kFilterMetatable[] = {{"__gc", SafeCall<LuaFilter::Gc>}, {nullptr, nullptr}};
 
-static int FilterXorNew(lua_State* L) {
+static auto FilterXorNew(lua_State* L) -> int {
   auto c = lua_gettop(L);
   if (c != 1) {
     return luaL_error(L, "filter_xor: not enough arguments");

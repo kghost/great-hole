@@ -7,7 +7,7 @@
 
 namespace gh {
 
-static int TunSplitIpNew(lua_State* L) {
+static auto TunSplitIpNew(lua_State* L) -> int {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
   if (lua_gettop(L) == 1) {
     LuaTunSplitIp::MakeShared(L, interface.GetExecutor(), lua_tostring(L, 1));

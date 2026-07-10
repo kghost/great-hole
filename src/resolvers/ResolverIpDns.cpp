@@ -9,7 +9,7 @@ namespace gh {
 ResolverIpDns::ResolverIpDns(boost::asio::any_io_executor executor, std::string const& host)
     : _Executor(executor), _Host(host) {}
 
-boost::asio::ip::address_v6 ResolverIpDns::GetResolverResult() const {
+auto ResolverIpDns::GetResolverResult() const -> boost::asio::ip::address_v6 {
   if (_Addresses.empty()) {
     return boost::asio::ip::address_v6{};
   }
@@ -19,11 +19,11 @@ boost::asio::ip::address_v6 ResolverIpDns::GetResolverResult() const {
   return _Addresses[dis(gen)];
 }
 
-std::string ResolverIpDns::GetName() const { return std::format("ResolverIpDns:[{}]", _Host); }
+auto ResolverIpDns::GetName() const -> std::string { return std::format("ResolverIpDns:[{}]", _Host); }
 
-Omni::Fiber::Coroutine<ErrorCode> ResolverIpDns::DoStart() { co_return ErrorCode{}; }
+auto ResolverIpDns::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
-Omni::Fiber::Coroutine<void> ResolverIpDns::DoWork() {
+auto ResolverIpDns::DoWork() -> Omni::Fiber::Coroutine<void> {
   auto result = co_await AresResolver::ResolveIp(_Executor, _Host, _Service.value()._Stop);
   if (!result.has_value()) {
     _ResolveError = result.error();
@@ -37,6 +37,6 @@ Omni::Fiber::Coroutine<void> ResolverIpDns::DoWork() {
   }
 }
 
-Omni::Fiber::Coroutine<ErrorCode> ResolverIpDns::DoGracefulStop() { co_return ErrorCode{}; }
+auto ResolverIpDns::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
 } // namespace gh

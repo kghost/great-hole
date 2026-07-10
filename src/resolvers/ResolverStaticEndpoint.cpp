@@ -5,15 +5,15 @@
 namespace gh {
 
 ResolverStaticEndpoint::ResolverStaticEndpoint(boost::asio::ip::udp::endpoint const& endpoint) : _Endpoint(endpoint) {}
-boost::asio::ip::udp::endpoint ResolverStaticEndpoint::GetResolverResult() const { return _Endpoint; }
-std::string ResolverStaticEndpoint::GetName() const {
+auto ResolverStaticEndpoint::GetResolverResult() const -> boost::asio::ip::udp::endpoint { return _Endpoint; }
+auto ResolverStaticEndpoint::GetName() const -> std::string {
   return std::format("ResolverStaticEndpoint:{}", boost::lexical_cast<std::string>(_Endpoint));
 }
-Omni::Fiber::Coroutine<ErrorCode> ResolverStaticEndpoint::DoStart() { co_return ErrorCode{}; }
-Omni::Fiber::Coroutine<void> ResolverStaticEndpoint::DoWork() {
+auto ResolverStaticEndpoint::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
+auto ResolverStaticEndpoint::DoWork() -> Omni::Fiber::Coroutine<void> {
   _ResolveError = ErrorCode{};
   co_return;
 }
-Omni::Fiber::Coroutine<ErrorCode> ResolverStaticEndpoint::DoGracefulStop() { co_return ErrorCode{}; }
+auto ResolverStaticEndpoint::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
 } // namespace gh

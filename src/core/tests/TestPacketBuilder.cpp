@@ -79,7 +79,7 @@ TEST(PacketComponentContainerTest, SimpleBuildParse) {
 
   bool parsed = false;
   // Parse elements
-  PacketParser<void, TestSimpleComponent, 0>{dataSpan}([&parsed](auto u16, auto e, auto raw) {
+  PacketParser<void, TestSimpleComponent, 0>{dataSpan}([&parsed](auto u16, auto e, auto raw) -> auto {
     parsed = true;
     EXPECT_EQ(u16, 0xabcd);
     EXPECT_EQ(e, TestEnum::kValA);
@@ -110,11 +110,11 @@ TEST(PacketComponentContainerTest, ChainedBuildParse) {
   // Parse
   bool parsedA = false;
   bool parsedB = false;
-  PacketParser<void, ComponentPartA, 0>{dataSpan}([&](auto u16, auto e) {
+  PacketParser<void, ComponentPartA, 0>{dataSpan}([&](auto u16, auto e) -> auto {
     parsedA = true;
     EXPECT_EQ(u16, 0x7788);
     EXPECT_EQ(e, TestEnum::kValB);
-    return [&](auto raw) {
+    return [&](auto raw) -> auto {
       parsedB = true;
       EXPECT_EQ(raw[0], 0x99);
       EXPECT_EQ(raw[3], 0x66);
@@ -154,19 +154,19 @@ TEST(PacketComponentEnumMapTest, DynamicBuildParse) {
     bool parsedB = false;
     bool parsedFallback = false;
     PacketParser<void, TestDynamicPacket, 0>{dataSpan}(
-        Overload{[&](std::integral_constant<TestEnum, TestEnum::kValA> e) {
+        Overload{[&](std::integral_constant<TestEnum, TestEnum::kValA> e) -> auto {
                    parsedA = true;
-                   return [&](auto u16) { EXPECT_EQ(u16, 0x5566); };
+                   return [&](auto u16) -> auto { EXPECT_EQ(u16, 0x5566); };
                  },
-                 [&](std::integral_constant<TestEnum, TestEnum::kValB> e) {
+                 [&](std::integral_constant<TestEnum, TestEnum::kValB> e) -> auto {
                    parsedB = true;
-                   return [&](auto u32, auto raw) {
+                   return [&](auto u32, auto raw) -> auto {
                      EXPECT_EQ(u32, 0x11223344);
                      EXPECT_EQ(raw[0], 0xee);
                      EXPECT_EQ(raw[3], 0xbb);
                    };
                  },
-                 [&](TestEnum value) { parsedFallback = true; }});
+                 [&](TestEnum value) -> void { parsedFallback = true; }});
 
     EXPECT_TRUE(parsedA);
     EXPECT_FALSE(parsedB);
@@ -196,19 +196,19 @@ TEST(PacketComponentEnumMapTest, DynamicBuildParse) {
     bool parsedB = false;
     bool parsedFallback = false;
     PacketParser<void, TestDynamicPacket, 0>{dataSpan}(Overload{
-        [&](std::integral_constant<TestEnum, TestEnum::kValA> e) {
+        [&](std::integral_constant<TestEnum, TestEnum::kValA> e) -> auto {
           parsedA = true;
-          return [&](auto u16) { EXPECT_EQ(u16, 0x5566); };
+          return [&](auto u16) -> auto { EXPECT_EQ(u16, 0x5566); };
         },
-        [&](std::integral_constant<TestEnum, TestEnum::kValB> e) {
+        [&](std::integral_constant<TestEnum, TestEnum::kValB> e) -> auto {
           parsedB = true;
-          return [&](auto u32, auto raw) {
+          return [&](auto u32, auto raw) -> auto {
             EXPECT_EQ(u32, 0x11223344);
             EXPECT_EQ(raw[0], 0xee);
             EXPECT_EQ(raw[3], 0xbb);
           };
         },
-        [&](TestEnum value) { parsedFallback = true; },
+        [&](TestEnum value) -> void { parsedFallback = true; },
     });
 
     EXPECT_FALSE(parsedA);
@@ -230,15 +230,15 @@ TEST(PacketComponentEnumMapTest, DynamicBuildParse) {
     bool parsedB = false;
     bool parsedFallback = false;
     PacketParser<void, TestDynamicPacket, 0>{dataSpan}(Overload{
-        [&](std::integral_constant<TestEnum, TestEnum::kValA> e) {
+        [&](std::integral_constant<TestEnum, TestEnum::kValA> e) -> auto {
           parsedA = true;
-          return [&](auto u16) {};
+          return [&](auto u16) -> auto {};
         },
-        [&](std::integral_constant<TestEnum, TestEnum::kValB> e) {
+        [&](std::integral_constant<TestEnum, TestEnum::kValB> e) -> auto {
           parsedB = true;
-          return [&](auto u32, auto raw) {};
+          return [&](auto u32, auto raw) -> auto {};
         },
-        [&](TestEnum value) { parsedFallback = true; },
+        [&](TestEnum value) -> void { parsedFallback = true; },
     });
 
     EXPECT_FALSE(parsedA);

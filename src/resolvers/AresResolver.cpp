@@ -53,16 +53,16 @@ struct SocketTracker {
   explicit SocketTracker(boost::asio::any_io_executor executor, ares_socket_t fd)
       : Descriptor(ToAsioSocket(executor, fd)) {}
   ~SocketTracker() {
-    std::visit([](auto& descriptor) { descriptor.release(); }, Descriptor);
+    std::visit([](auto& descriptor) -> auto { descriptor.release(); }, Descriptor);
   }
 
   SocketTracker(const SocketTracker&) = delete;
-  SocketTracker& operator=(const SocketTracker&) = delete;
+  auto operator=(const SocketTracker&) -> SocketTracker& = delete;
   SocketTracker(SocketTracker&&) = delete;
-  SocketTracker& operator=(SocketTracker&&) = delete;
+  auto operator=(SocketTracker&&) -> SocketTracker& = delete;
 
-  static std::variant<boost::asio::ip::tcp::socket, boost::asio::ip::udp::socket>
-  ToAsioSocket(boost::asio::any_io_executor executor, ares_socket_t fd) {
+  static auto
+  ToAsioSocket(boost::asio::any_io_executor executor, ares_socket_t fd) -> std::variant<boost::asio::ip::tcp::socket, boost::asio::ip::udp::socket> {
     int soType = 0;
     socklen_t soTypeLen = sizeof(soType);
 
@@ -108,15 +108,15 @@ struct SocketTracker {
 
 template <typename InitiateQuery>
   requires std::same_as<decltype(std::declval<InitiateQuery>()(std::declval<ares_channel_t*>())), ErrorCode>
-Omni::Fiber::Coroutine<ErrorCode> RunChannel(boost::asio::any_io_executor executor, InitiateQuery&& initiateQuery,
-                                             Cancel& cancel) {
+auto RunChannel(boost::asio::any_io_executor executor, InitiateQuery&& initiateQuery,
+                                             Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> {
   if (cancel.IsTriggered()) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
 
   std::unordered_map<ares_socket_t, SocketTracker> trackers;
 
-  auto OnSocketStateChange = [&](ares_socket_t fd, int readable, int writable) {
+  auto OnSocketStateChange = [&](ares_socket_t fd, int readable, int writable) -> auto {
     auto it = trackers.find(fd);
     if (!readable && !writable) {
       if (it != trackers.end()) {
@@ -160,7 +160,7 @@ Omni::Fiber::Coroutine<ErrorCode> RunChannel(boost::asio::any_io_executor execut
     if (tvPtr) {
       auto duration = std::chrono::seconds(tv.tv_sec) + std::chrono::microseconds(tv.tv_usec);
       timer.expires_after(duration);
-      list.Add(timer.async_wait(Omni::Fiber::AsioUseFiber), [channel](auto const& tuple) {
+      list.Add(timer.async_wait(Omni::Fiber::AsioUseFiber), [channel](auto const& tuple) -> auto {
         auto [ec] = tuple;
         if (!ec) {
           ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
@@ -171,12 +171,12 @@ Omni::Fiber::Coroutine<ErrorCode> RunChannel(boost::asio::any_io_executor execut
     for (auto& [fd, tracker] : trackers) {
       if (tracker.ReadableInterest) {
         list.Add(std::visit(
-                     [](auto& descriptor) {
+                     [](auto& descriptor) -> auto {
                        return descriptor.async_wait(std::decay_t<decltype(descriptor)>::wait_read,
                                                     Omni::Fiber::AsioUseFiber);
                      },
                      tracker.Descriptor),
-                 [channel, fd](auto const& tuple) {
+                 [channel, fd](auto const& tuple) -> auto {
                    auto [ec] = tuple;
                    if (!ec) {
                      ares_process_fd(channel, fd, ARES_SOCKET_BAD);
@@ -187,12 +187,12 @@ Omni::Fiber::Coroutine<ErrorCode> RunChannel(boost::asio::any_io_executor execut
       }
       if (tracker.WritableInterest) {
         list.Add(std::visit(
-                     [](auto& descriptor) {
+                     [](auto& descriptor) -> auto {
                        return descriptor.async_wait(std::decay_t<decltype(descriptor)>::wait_write,
                                                     Omni::Fiber::AsioUseFiber);
                      },
                      tracker.Descriptor),
-                 [channel, fd](auto const& tuple) {
+                 [channel, fd](auto const& tuple) -> auto {
                    auto [ec] = tuple;
                    if (!ec) {
                      ares_process_fd(channel, ARES_SOCKET_BAD, fd);
@@ -208,11 +208,11 @@ Omni::Fiber::Coroutine<ErrorCode> RunChannel(boost::asio::any_io_executor execut
     }
 
     auto [listResult, cancelled] =
-        co_await Omni::Fiber::Select(list, Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] {}));
+        co_await Omni::Fiber::Select(list, Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] -> auto {}));
 
     // Cancel outstanding waits
     for (auto& [fd, tracker] : trackers) {
-      std::visit([](auto& descriptor) { descriptor.cancel(); }, tracker.Descriptor);
+      std::visit([](auto& descriptor) -> auto { descriptor.cancel(); }, tracker.Descriptor);
     }
     timer.cancel();
 
@@ -227,8 +227,8 @@ Omni::Fiber::Coroutine<ErrorCode> RunChannel(boost::asio::any_io_executor execut
 
 } // namespace
 
-Omni::Fiber::Coroutine<std::expected<std::vector<boost::asio::ip::address_v6>, ErrorCode>>
-AresResolver::ResolveIp(boost::asio::any_io_executor executor, const std::string& host, Cancel& cancel) {
+auto
+AresResolver::ResolveIp(boost::asio::any_io_executor executor, const std::string& host, Cancel& cancel) -> Omni::Fiber::Coroutine<std::expected<std::vector<boost::asio::ip::address_v6>, ErrorCode>> {
   std::expected<std::vector<boost::asio::ip::address_v6>, ErrorCode> result;
 
   struct ares_addrinfo_hints hints;
@@ -236,7 +236,7 @@ AresResolver::ResolveIp(boost::asio::any_io_executor executor, const std::string
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_DGRAM;
 
-  auto AddrInfoCallback = [&result](int status, int timeouts, struct ares_addrinfo* list) {
+  auto AddrInfoCallback = [&result](int status, int timeouts, struct ares_addrinfo* list) -> void {
     (void)timeouts;
     if (status == ARES_EDESTRUCTION) {
       return;
@@ -284,10 +284,10 @@ AresResolver::ResolveIp(boost::asio::any_io_executor executor, const std::string
   co_return result;
 }
 
-Omni::Fiber::Coroutine<std::expected<std::vector<SrvResult>, ErrorCode>>
-AresResolver::ResolveSrv(boost::asio::any_io_executor executor, const std::string& serviceName, Cancel& cancel) {
+auto
+AresResolver::ResolveSrv(boost::asio::any_io_executor executor, const std::string& serviceName, Cancel& cancel) -> Omni::Fiber::Coroutine<std::expected<std::vector<SrvResult>, ErrorCode>> {
   std::expected<std::vector<SrvResult>, ErrorCode> result;
-  auto SrvCallback = [&result](ares_status_t status, size_t timeouts, const ares_dns_record_t* dnsrec) {
+  auto SrvCallback = [&result](ares_status_t status, size_t timeouts, const ares_dns_record_t* dnsrec) -> void {
     (void)timeouts;
     if (status == ARES_EDESTRUCTION) {
       return;

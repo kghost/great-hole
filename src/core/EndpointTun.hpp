@@ -12,13 +12,13 @@ public:
   Tun(boost::asio::any_io_executor executor, std::string const& name);
   Tun(boost::asio::any_io_executor executor, std::string const& name, int fd);
 
-  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel&) override;
-  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel&) override;
+  auto Read(Packet& p, Cancel&) -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto Write(Packet& p, Cancel&) -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 protected:
-  std::string GetName() const override;
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto GetName() const -> std::string override;
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
   boost::asio::posix::stream_descriptor _TunFileDescriptor;

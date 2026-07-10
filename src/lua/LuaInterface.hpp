@@ -17,11 +17,11 @@ public:
       : _Executor(executor), _StopApplication(stopApplication) {}
   ~LuaInterface() {}
 
-  boost::asio::any_io_executor GetExecutor() { return _Executor; }
-  Cancel& GetStopApplication() { return _StopApplication; }
+  auto GetExecutor() -> boost::asio::any_io_executor { return _Executor; }
+  auto GetStopApplication() -> Cancel& { return _StopApplication; }
 
   void Schedule(std::move_only_function<Omni::Fiber::Coroutine<int>(lua_State*, int)>&&);
-  Omni::Fiber::Coroutine<int> Resume(lua_State*, int);
+  auto Resume(lua_State*, int) -> Omni::Fiber::Coroutine<int>;
 
 private:
   boost::asio::any_io_executor _Executor;

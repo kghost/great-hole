@@ -9,8 +9,8 @@
 
 namespace gh {
 
-std::shared_ptr<ResolverIp> FindResolverIp(const std::string& input, ResolveFor& target);
-std::shared_ptr<ResolverPort> FindResolverPort(const std::string& input, ResolveFor& target);
-std::shared_ptr<ResolverEndpoint> FindResolverEndpoint(const std::string& input, ResolveFor& target);
+auto FindResolverIp(const std::string& input, ResolveFor& target) -> std::shared_ptr<ResolverIp>;
+auto FindResolverPort(const std::string& input, ResolveFor& target) -> std::shared_ptr<ResolverPort>;
+auto FindResolverEndpoint(const std::string& input, ResolveFor& target) -> std::shared_ptr<ResolverEndpoint>;
 
 } // namespace gh

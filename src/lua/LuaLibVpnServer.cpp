@@ -9,7 +9,7 @@
 
 namespace gh {
 
-static int VpnServerNew(lua_State* L) {
+static auto VpnServerNew(lua_State* L) -> int {
   auto& tun = *LuaTunSplitIp::Get(L, 1);
   auto& udp = *LuaUdpDynMux::Get(L, 2);
 
@@ -99,7 +99,7 @@ static void VpnServerStop(lua_State* L) {
   });
 }
 
-static int VpnServerAsUdpDynMuxChannelNotification(lua_State* L) {
+static auto VpnServerAsUdpDynMuxChannelNotification(lua_State* L) -> int {
   auto vpn = *LuaVpnServer::Get(L, 1);
   LuaChannelNotification::New(L, vpn);
   luaL_getmetatable(L, LuaChannelNotification::GetTypeTag());

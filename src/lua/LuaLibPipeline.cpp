@@ -41,7 +41,7 @@ static const auto kPipelineMetatable = std::to_array<const struct luaL_Reg>({
     {.name = nullptr, .func = nullptr},
 });
 
-static int PipelineNew(lua_State* L) {
+static auto PipelineNew(lua_State* L) -> int {
   auto c = lua_gettop(L);
   if (c < 2) {
     throw std::runtime_error("pipeline: not enough arguments");

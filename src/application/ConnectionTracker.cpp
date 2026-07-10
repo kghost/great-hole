@@ -31,7 +31,7 @@ auto ConnectionTracker::DoWork() -> Omni::Fiber::Coroutine<void> {
   timer.expires_after(ConnectionEntry::ProneInterval);
   while (_State == State::kRunning && !_Service.value()._Stop.IsTriggered()) {
     auto [stop, timerFired] = co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] {}),
+        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] -> void {}),
         Omni::Fiber::SelectPair(timer.async_wait(_Service.value()._Stop.AsioSlot()()),
                                 Omni::Fiber::AsioApply([](auto err) -> auto { return err; })));
 

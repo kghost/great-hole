@@ -9,7 +9,7 @@
 
 namespace gh {
 
-Omni::Fiber::Coroutine<ErrorCode> ResolverBase::DoResolve(Cancel& c) {
+auto ResolverBase::DoResolve(Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   _ResolveError = ErrorCode{};
   auto errStart = co_await Start();
   if (errStart) {
@@ -18,8 +18,8 @@ Omni::Fiber::Coroutine<ErrorCode> ResolverBase::DoResolve(Cancel& c) {
   }
 
   auto [cancelled, stopped] =
-      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}),
-                                   Omni::Fiber::SelectPair(_Service.value()._StopError, [](auto) {}));
+      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] -> void {}),
+                                   Omni::Fiber::SelectPair(_Service.value()._StopError, [](auto) -> auto {}));
 
   co_await Stop();
 

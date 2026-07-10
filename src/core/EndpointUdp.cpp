@@ -30,9 +30,9 @@ Udp::Udp(boost::asio::any_io_executor executor, boost::asio::ip::udp::endpoint b
     : _Socket(executor), _Local(bind) {}
 Udp::~Udp() { assert(_Channels.empty()); }
 
-std::string Udp::GetName() const { return "Udp:" + boost::lexical_cast<std::string>(_Local); }
+auto Udp::GetName() const -> std::string { return "Udp:" + boost::lexical_cast<std::string>(_Local); }
 
-Omni::Fiber::Coroutine<ErrorCode> Udp::DoStart() {
+auto Udp::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   ErrorCode ec;
   try {
     _Socket.open(boost::asio::ip::udp::v6());
@@ -51,7 +51,7 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::DoStart() {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<void> Udp::DoWork() {
+auto Udp::DoWork() -> Omni::Fiber::Coroutine<void> {
   _ReadLoopFiber = (co_await Omni::Fiber::GetCurrentOmniFiber())
                        .Spawn("Udp ReadLoop:" + boost::lexical_cast<std::string>(LocalEndpoint()) + "@" +
                                   std::to_string(reinterpret_cast<uintptr_t>(this)),
@@ -63,7 +63,7 @@ Omni::Fiber::Coroutine<void> Udp::DoWork() {
   bool stopped = false;
   while (!stopped) {
     auto [stopResult, rpcResult] = co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] {}),
+        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] -> void {}),
         Omni::Fiber::SelectPair(_ChannelRpc.GetServiceAwaitor(), Omni::Fiber::RemoteCall::HandleRequest));
     if (stopResult) {
       stopped = true;
@@ -74,7 +74,7 @@ Omni::Fiber::Coroutine<void> Udp::DoWork() {
   }
 }
 
-Omni::Fiber::Coroutine<ErrorCode> Udp::DoGracefulStop() {
+auto Udp::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   _ChannelRpc.DiscardAndClose();
   for (auto& [peer, channel] : std::exchange(_Channels, {})) {
     co_await channel->Stop();
@@ -87,8 +87,8 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::DoGracefulStop() {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>>
-Udp::CreateChannel(std::shared_ptr<ResolverEndpoint> resolver) {
+auto
+Udp::CreateChannel(std::shared_ptr<ResolverEndpoint> resolver) -> Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>> {
   auto result = co_await _ChannelRpc.Call(
       [&udp = *this, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>> {
         auto peer = co_await resolver->Resolve(udp._Service.value()._Stop);
@@ -109,12 +109,12 @@ Udp::CreateChannel(std::shared_ptr<ResolverEndpoint> resolver) {
   co_return result.value();
 }
 
-Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>>
-Udp::CreateChannel(boost::asio::ip::udp::endpoint const& peer) {
+auto
+Udp::CreateChannel(boost::asio::ip::udp::endpoint const& peer) -> Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>> {
   co_return co_await CreateChannel(std::make_shared<ResolverStaticEndpoint>(peer));
 }
 
-Omni::Fiber::Coroutine<void> Udp::RemoveChannel(const boost::asio::ip::udp::endpoint& peer) {
+auto Udp::RemoveChannel(const boost::asio::ip::udp::endpoint& peer) -> Omni::Fiber::Coroutine<void> {
   auto result = co_await _ChannelRpc.Call([this, peer]() -> Omni::Fiber::Coroutine<void> {
     auto it = _Channels.find(peer);
     assert(it != _Channels.end());
@@ -128,7 +128,7 @@ Omni::Fiber::Coroutine<void> Udp::RemoveChannel(const boost::asio::ip::udp::endp
   }
 }
 
-Omni::Fiber::Coroutine<void> Udp::ReadLoop() {
+auto Udp::ReadLoop() -> Omni::Fiber::Coroutine<void> {
   while (!_Service.value()._Stop.IsTriggered()) {
     Packet p;
     boost::asio::ip::udp::endpoint peer;
@@ -165,7 +165,7 @@ Omni::Fiber::Coroutine<void> Udp::ReadLoop() {
   }
 }
 
-Omni::Fiber::Coroutine<ErrorCode> Udp::WriteTo(boost::asio::ip::udp::endpoint const& peer, Packet& p, Cancel& c) {
+auto Udp::WriteTo(boost::asio::ip::udp::endpoint const& peer, Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   if (c.IsTriggered()) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
@@ -178,24 +178,24 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::WriteTo(boost::asio::ip::udp::endpoint co
 Udp::UdpChannel::UdpChannel(Udp& parent, boost::asio::ip::udp::endpoint peer) : _Parent(parent), _Peer(peer) {}
 Udp::UdpChannel::~UdpChannel() {}
 
-std::string Udp::UdpChannel::GetName() const {
+auto Udp::UdpChannel::GetName() const -> std::string {
   return std::format("UdpChannel({:p})@({}):{}", static_cast<const void*>(this),
                      boost::lexical_cast<std::string>(_Parent.LocalEndpoint()),
                      boost::lexical_cast<std::string>(_Peer));
 }
 
-Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::DoStart() { co_return ErrorCode{}; }
+auto Udp::UdpChannel::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
-Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::DoGracefulStop() {
+auto Udp::UdpChannel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   co_await _PipielineUsageCounter.WaitAll();
   _Pipe.GetConsumer().DiscardAndClose();
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::Read(Packet& p, Cancel& c) {
+auto Udp::UdpChannel::Read(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   auto [stopResult, pipeResult] =
-      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}),
-                                   Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&](auto data) {
+      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] -> void {}),
+                                   Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&](auto data) -> auto {
                                      if (data.has_value()) {
                                        auto& inner = data.value();
                                        if (inner.has_value()) {
@@ -219,7 +219,7 @@ Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::Read(Packet& p, Cancel& c) {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<ErrorCode> Udp::UdpChannel::Write(Packet& p, Cancel& c) {
+auto Udp::UdpChannel::Write(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   co_return co_await _Parent.WriteTo(_Peer, p, c);
 }
 

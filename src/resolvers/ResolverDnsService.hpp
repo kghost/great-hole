@@ -17,17 +17,17 @@ public:
   ~ResolverDnsService() override = default;
 
   ResolverDnsService(const ResolverDnsService&) = delete;
-  ResolverDnsService& operator=(const ResolverDnsService&) = delete;
+  auto operator=(const ResolverDnsService&) -> ResolverDnsService& = delete;
   ResolverDnsService(ResolverDnsService&&) = delete;
-  ResolverDnsService& operator=(ResolverDnsService&&) = delete;
+  auto operator=(ResolverDnsService&&) -> ResolverDnsService& = delete;
 
-  boost::asio::ip::udp::endpoint GetResolverResult() const override;
+  auto GetResolverResult() const -> boost::asio::ip::udp::endpoint override;
 
 protected:
-  std::string GetName() const override { return "ResolverDnsService"; }
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<void> DoWork() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto GetName() const -> std::string override { return "ResolverDnsService"; }
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoWork() -> Omni::Fiber::Coroutine<void> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
   const std::string _ServiceName;

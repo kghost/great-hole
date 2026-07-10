@@ -110,7 +110,7 @@ auto VpnServer::DoWork() -> Omni::Fiber::Coroutine<void> {
   bool stopped = false;
   while (!stopped) {
     auto [stopResult, rpcResult] = co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] {}),
+        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] -> void {}),
         Omni::Fiber::SelectPair(_ChannelCall.GetServiceAwaitor(), Omni::Fiber::RemoteCall::HandleRequest));
     if (stopResult) {
       stopped = true;

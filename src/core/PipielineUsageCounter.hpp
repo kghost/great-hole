@@ -22,7 +22,7 @@ public:
     }
   }
 
-  Omni::Fiber::Coroutine<void> WaitAll() {
+  auto WaitAll() -> Omni::Fiber::Coroutine<void> {
     while (_PipelineCount != 0) {
       co_await _AllPipelineStopped;
     }

@@ -35,7 +35,7 @@ static const struct luaL_Reg kEndpointMetatable[] = {{"__gc", SafeCall<LuaEndpoi
                                                      {"stop", SafeYield<EndpointStop>},
                                                      {nullptr, nullptr}};
 
-static int TunNew(lua_State* L) {
+static auto TunNew(lua_State* L) -> int {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   if (lua_gettop(L) != 1) {

@@ -11,7 +11,7 @@ namespace gh {
 
 class EndpointMixin : public ServiceBase {
 public:
-  PipielineUsageCounter& GetPipielineUsageCounter() { return _PipielineUsageCounter; }
+  auto GetPipielineUsageCounter() -> PipielineUsageCounter& { return _PipielineUsageCounter; }
 
 protected:
   PipielineUsageCounter _PipielineUsageCounter;
@@ -20,13 +20,13 @@ protected:
 class EndpointInput {
 public:
   virtual ~EndpointInput() = 0;
-  virtual Omni::Fiber::Coroutine<ErrorCode> Read(Packet&, Cancel&) = 0;
+  virtual auto Read(Packet&, Cancel&) -> Omni::Fiber::Coroutine<ErrorCode> = 0;
 };
 
 class EndpointOutput {
 public:
   virtual ~EndpointOutput() = 0;
-  virtual Omni::Fiber::Coroutine<ErrorCode> Write(Packet&, Cancel&) = 0;
+  virtual auto Write(Packet&, Cancel&) -> Omni::Fiber::Coroutine<ErrorCode> = 0;
 };
 
 class Endpoint : public EndpointMixin, public EndpointInput, public EndpointOutput {

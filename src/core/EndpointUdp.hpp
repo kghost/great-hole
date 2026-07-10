@@ -25,29 +25,29 @@ public:
   ~Udp() override;
 
   Udp(Udp&) = delete;
-  Udp& operator=(Udp&) = delete;
+  auto operator=(Udp&) -> Udp& = delete;
   Udp(Udp&&) = delete;
-  Udp& operator=(Udp&&) = delete;
+  auto operator=(Udp&&) -> Udp& = delete;
 
-  ResolveFor& GetResolveFor() { return *this; };
-  boost::asio::any_io_executor GetExecutor() override { return _Socket.get_executor(); }
-  std::string GetService() override { return "great_hole_udp"; }
-  Protocol GetProtocol() override { return Protocol::Udp; }
+  auto GetResolveFor() -> ResolveFor& { return *this; };
+  auto GetExecutor() -> boost::asio::any_io_executor override { return _Socket.get_executor(); }
+  auto GetService() -> std::string override { return "great_hole_udp"; }
+  auto GetProtocol() -> Protocol override { return Protocol::Udp; }
 
-  Omni::Fiber::Coroutine<std::shared_ptr<UdpChannel>> CreateChannel(boost::asio::ip::udp::endpoint const& peer);
-  Omni::Fiber::Coroutine<std::shared_ptr<UdpChannel>> CreateChannel(std::shared_ptr<ResolverEndpoint> resolver);
-  Omni::Fiber::Coroutine<void> RemoveChannel(boost::asio::ip::udp::endpoint const& peer);
-  Omni::Fiber::Coroutine<ErrorCode> WriteTo(boost::asio::ip::udp::endpoint const& peer, Packet& p, Cancel& c);
-  boost::asio::ip::udp::endpoint LocalEndpoint() const { return _Socket.local_endpoint(); }
+  auto CreateChannel(boost::asio::ip::udp::endpoint const& peer) -> Omni::Fiber::Coroutine<std::shared_ptr<UdpChannel>>;
+  auto CreateChannel(std::shared_ptr<ResolverEndpoint> resolver) -> Omni::Fiber::Coroutine<std::shared_ptr<UdpChannel>>;
+  auto RemoveChannel(boost::asio::ip::udp::endpoint const& peer) -> Omni::Fiber::Coroutine<void>;
+  auto WriteTo(boost::asio::ip::udp::endpoint const& peer, Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode>;
+  auto LocalEndpoint() const -> boost::asio::ip::udp::endpoint { return _Socket.local_endpoint(); }
 
 protected:
-  std::string GetName() const override;
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<void> DoWork() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto GetName() const -> std::string override;
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoWork() -> Omni::Fiber::Coroutine<void> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
-  Omni::Fiber::Coroutine<void> ReadLoop();
+  auto ReadLoop() -> Omni::Fiber::Coroutine<void>;
 
   boost::asio::ip::udp::socket _Socket;
   boost::asio::ip::udp::endpoint _Local;
@@ -62,20 +62,20 @@ public:
   ~UdpChannel() override;
 
   UdpChannel(UdpChannel&) = delete;
-  UdpChannel& operator=(UdpChannel&) = delete;
+  auto operator=(UdpChannel&) -> UdpChannel& = delete;
   UdpChannel(UdpChannel&&) = delete;
-  UdpChannel& operator=(UdpChannel&&) = delete;
+  auto operator=(UdpChannel&&) -> UdpChannel& = delete;
 
-  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel&) override;
-  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel&) override;
+  auto Read(Packet& p, Cancel&) -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto Write(Packet& p, Cancel&) -> Omni::Fiber::Coroutine<ErrorCode> override;
 
-  std::string GetName() const override;
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto GetName() const -> std::string override;
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 public:
   template <typename... Args>
-  Omni::Fiber::Coroutine<std::expected<void, Omni::Fiber::PipeClosed>> Send(Args&&... args) {
+  auto Send(Args&&... args) -> Omni::Fiber::Coroutine<std::expected<void, Omni::Fiber::PipeClosed>> {
     co_return co_await _Pipe.GetProducer().Put(std::forward<Args>(args)...);
   }
 

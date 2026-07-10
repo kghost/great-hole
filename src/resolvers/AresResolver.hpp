@@ -19,11 +19,11 @@ struct SrvResult {
 
 class AresResolver {
 public:
-  static Omni::Fiber::Coroutine<std::expected<std::vector<boost::asio::ip::address_v6>, ErrorCode>>
-  ResolveIp(boost::asio::any_io_executor executor, const std::string& host, Cancel& cancel);
+  static auto
+  ResolveIp(boost::asio::any_io_executor executor, const std::string& host, Cancel& cancel) -> Omni::Fiber::Coroutine<std::expected<std::vector<boost::asio::ip::address_v6>, ErrorCode>>;
 
-  static Omni::Fiber::Coroutine<std::expected<std::vector<SrvResult>, ErrorCode>>
-  ResolveSrv(boost::asio::any_io_executor executor, const std::string& serviceName, Cancel& cancel);
+  static auto
+  ResolveSrv(boost::asio::any_io_executor executor, const std::string& serviceName, Cancel& cancel) -> Omni::Fiber::Coroutine<std::expected<std::vector<SrvResult>, ErrorCode>>;
 };
 
 } // namespace gh

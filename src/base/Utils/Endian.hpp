@@ -7,7 +7,7 @@ namespace gh {
 // ============================================================================
 // ENDIAN CONVERSION UTILITY (C++23 Modern replacement for ntohs / ntohl)
 // ============================================================================
-template <typename T> [[nodiscard]] constexpr T ArchEndian(T value) noexcept {
+template <typename T> [[nodiscard]] constexpr auto ArchEndian(T value) noexcept -> T {
   // Network Byte Order is strictly Big Endian.
   // If the host system is Little Endian, swap the bytes.
   if constexpr (std::endian::native == std::endian::little) {

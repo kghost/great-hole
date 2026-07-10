@@ -172,8 +172,8 @@ template <size_t Length> class PacketFieldRaw {
 public:
   using TargetType = std::span<const uint8_t, Length>;
   static constexpr const size_t Size = Length;
-  static bool Validate(std::span<const uint8_t> data) { return data.size() >= Size; }
-  static std::span<const uint8_t, Size> Get(std::span<const uint8_t, Size> data) { return data; }
+  static auto Validate(std::span<const uint8_t> data) -> bool { return data.size() >= Size; }
+  static auto Get(std::span<const uint8_t, Size> data) -> std::span<const uint8_t, Size> { return data; }
   static void Set(std::span<uint8_t, Size> data, std::span<const uint8_t, Size> val) {
     std::ranges::copy(val, data.begin());
   }
@@ -184,8 +184,8 @@ public:
   static_assert(PacketField<UnderlyingType>, "UnderlyingType must satisfy PacketField!");
   using TargetType = typename UnderlyingType::TargetType;
   static constexpr const size_t Size = UnderlyingType::Size;
-  static bool Validate(std::span<const uint8_t> data) { return UnderlyingType::Validate(data); }
-  static TargetType Get(std::span<const uint8_t, Size> data) { return UnderlyingType::Get(data); }
+  static auto Validate(std::span<const uint8_t> data) -> bool { return UnderlyingType::Validate(data); }
+  static auto Get(std::span<const uint8_t, Size> data) -> TargetType { return UnderlyingType::Get(data); }
   static void Set(std::span<uint8_t, Size> data, TargetType val) { UnderlyingType::Set(data, val); }
 };
 
@@ -203,9 +203,10 @@ public:
     size_t Size = 0;
   };
 
-  static constexpr const std::array<FieldInfo, sizeof...(Fields)> FieldInfos = []() consteval {
+  static constexpr const std::array<FieldInfo, sizeof...(Fields)> FieldInfos =
+      []() consteval->std::array<FieldInfo, sizeof...(Fields)> {
     std::array<FieldInfo, sizeof...(Fields)> result{};
-    auto process = [&]<std::size_t Is, typename Field>() {
+    auto process = [&]<std::size_t Is, typename Field>() -> auto {
       result[Is].Size = Field::Size;
       if constexpr (Is == 0) {
         result[Is].Offset = 0;
@@ -213,13 +214,14 @@ public:
         result[Is].Offset = result[Is - 1].Offset + result[Is - 1].Size;
       }
     };
-    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+    [&]<std::size_t... Is>(std::index_sequence<Is...>) -> auto {
       (process.template operator()<Is, Fields>(), ...);
     }(std::make_index_sequence<sizeof...(Fields)>{});
     return result;
-  }();
+  }
+  ();
 
-  static constexpr const size_t Size = []() consteval {
+  static constexpr const size_t Size = []() consteval -> size_t {
     if constexpr (sizeof...(Fields) == 0) {
       return 0;
     } else {

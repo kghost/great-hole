@@ -19,12 +19,12 @@ public:
   MockService() = default;
   ~MockService() override = default;
 
-  std::string GetName() const override { return "MockService"; }
+  auto GetName() const -> std::string override { return "MockService"; }
 
 protected:
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override { co_return ErrorCode{}; }
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override { co_return ErrorCode{}; }
 
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override { co_return ErrorCode{}; }
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override { co_return ErrorCode{}; }
 };
 
 void RunEventLoop(boost::asio::io_context& io) {

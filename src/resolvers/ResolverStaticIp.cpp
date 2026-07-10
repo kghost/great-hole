@@ -7,16 +7,16 @@ namespace gh {
 
 ResolverStaticIp::ResolverStaticIp(const boost::asio::ip::address_v6& address) : _Address(address) {}
 
-std::string ResolverStaticIp::GetName() const {
+auto ResolverStaticIp::GetName() const -> std::string {
   return "ResolverStaticIp:" + boost::lexical_cast<std::string>(_Address);
 }
 
-boost::asio::ip::address_v6 ResolverStaticIp::GetResolverResult() const { return _Address; }
-Omni::Fiber::Coroutine<ErrorCode> ResolverStaticIp::DoStart() { co_return ErrorCode{}; }
-Omni::Fiber::Coroutine<void> ResolverStaticIp::DoWork() {
+auto ResolverStaticIp::GetResolverResult() const -> boost::asio::ip::address_v6 { return _Address; }
+auto ResolverStaticIp::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
+auto ResolverStaticIp::DoWork() -> Omni::Fiber::Coroutine<void> {
   _ResolveError = ErrorCode{};
   co_return;
 }
-Omni::Fiber::Coroutine<ErrorCode> ResolverStaticIp::DoGracefulStop() { co_return ErrorCode{}; }
+auto ResolverStaticIp::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
 } // namespace gh

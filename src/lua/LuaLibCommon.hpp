@@ -21,16 +21,16 @@ template <size_t N> struct FixedString {
 
 template <FixedString TypeTag, typename Type> class LuaSafeUserData {
 public:
-  static constexpr const char* GetTypeTag() { return TypeTag.value; }
-  static Type* Get(lua_State* L, int index) { return (Type*)luaL_checkudata(L, index, TypeTag.value); }
-  template <typename... Args> static Type* New(lua_State* L, Args&&... args) {
+  static constexpr auto GetTypeTag() -> const char* { return TypeTag.value; }
+  static auto Get(lua_State* L, int index) -> Type* { return (Type*)luaL_checkudata(L, index, TypeTag.value); }
+  template <typename... Args> static auto New(lua_State* L, Args&&... args) -> Type* {
     return new (lua_newuserdata(L, sizeof(Type))) Type(std::forward<Args>(args)...);
   }
   template <typename ElementType = typename Type::element_type, typename... Args>
-  static Type* MakeShared(lua_State* L, Args&&... args) {
+  static auto MakeShared(lua_State* L, Args&&... args) -> Type* {
     return new (lua_newuserdata(L, sizeof(Type))) Type(std::make_shared<ElementType>(std::forward<Args>(args)...));
   }
-  static int Gc(lua_State* L) {
+  static auto Gc(lua_State* L) -> int {
     Get(L, 1)->~Type();
     return 0;
   }
@@ -55,7 +55,7 @@ using LuaVpnServer = LuaSafeUserData<"Hole.vpn-server", std::shared_ptr<VpnServe
 using LuaChannelNotification =
     LuaSafeUserData<"Hole.channel-notification", std::shared_ptr<UdpDynMux::ChannelNotification>>;
 
-template <int F(lua_State* L)> inline int SafeCall(lua_State* L) {
+template <int F(lua_State* L)> inline auto SafeCall(lua_State* L) -> int {
   try {
     return F(L);
   } catch (std::exception const& e) {
@@ -63,7 +63,7 @@ template <int F(lua_State* L)> inline int SafeCall(lua_State* L) {
   }
 }
 
-template <void F(lua_State* L)> inline int SafeYield(lua_State* L) {
+template <void F(lua_State* L)> inline auto SafeYield(lua_State* L) -> int {
   try {
     F(L);
   } catch (std::exception const& e) {
@@ -72,7 +72,7 @@ template <void F(lua_State* L)> inline int SafeYield(lua_State* L) {
   return lua_yield(L, 0);
 }
 
-inline boost::asio::ip::address_v6 GetAddress(const char* str) {
+inline auto GetAddress(const char* str) -> boost::asio::ip::address_v6 {
   auto address = boost::asio::ip::make_address(str);
   if (address.is_v4()) {
     return boost::asio::ip::make_address_v6(boost::asio::ip::v4_mapped_t(), address.to_v4());

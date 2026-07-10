@@ -18,7 +18,7 @@ static void HoleWaitForExit(lua_State* L) {
   });
 }
 
-static int HoleOpen(lua_State* L) {
+static auto HoleOpen(lua_State* L) -> int {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
 
   luaL_checkversion(L);

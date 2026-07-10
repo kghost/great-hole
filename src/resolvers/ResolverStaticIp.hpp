@@ -16,17 +16,17 @@ public:
   ~ResolverStaticIp() override = default;
 
   ResolverStaticIp(const ResolverStaticIp&) = delete;
-  ResolverStaticIp& operator=(const ResolverStaticIp&) = delete;
+  auto operator=(const ResolverStaticIp&) -> ResolverStaticIp& = delete;
   ResolverStaticIp(ResolverStaticIp&&) = delete;
-  ResolverStaticIp& operator=(ResolverStaticIp&&) = delete;
+  auto operator=(ResolverStaticIp&&) -> ResolverStaticIp& = delete;
 
-  boost::asio::ip::address_v6 GetResolverResult() const override;
+  auto GetResolverResult() const -> boost::asio::ip::address_v6 override;
 
 protected:
-  std::string GetName() const override;
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<void> DoWork() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto GetName() const -> std::string override;
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoWork() -> Omni::Fiber::Coroutine<void> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
   boost::asio::ip::address_v6 _Address;

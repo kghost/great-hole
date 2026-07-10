@@ -11,7 +11,7 @@ namespace gh {
 class Filter {
 public:
   virtual ~Filter() = 0;
-  virtual Omni::Fiber::Coroutine<boost::system::error_code> Pipe(Packet& p, Cancel&) = 0;
+  virtual auto Pipe(Packet& p, Cancel&) -> Omni::Fiber::Coroutine<boost::system::error_code> = 0;
 };
 
 } // namespace gh

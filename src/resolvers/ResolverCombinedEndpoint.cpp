@@ -11,15 +11,15 @@ ResolverCombinedEndpoint::ResolverCombinedEndpoint(std::shared_ptr<ResolverIp> i
                                                    std::shared_ptr<ResolverPort> portResolver)
     : _IpResolver(ipResolver), _PortResolver(portResolver) {}
 
-boost::asio::ip::udp::endpoint ResolverCombinedEndpoint::GetResolverResult() const { return _Endpoint; }
+auto ResolverCombinedEndpoint::GetResolverResult() const -> boost::asio::ip::udp::endpoint { return _Endpoint; }
 
-std::string ResolverCombinedEndpoint::GetName() const {
+auto ResolverCombinedEndpoint::GetName() const -> std::string {
   return std::format("ResolverCombinedEndpoint:[{}/{}]", _IpResolver->GetName(), _PortResolver->GetName());
 }
 
-Omni::Fiber::Coroutine<ErrorCode> ResolverCombinedEndpoint::DoStart() { co_return ErrorCode{}; }
+auto ResolverCombinedEndpoint::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
-Omni::Fiber::Coroutine<void> ResolverCombinedEndpoint::DoWork() {
+auto ResolverCombinedEndpoint::DoWork() -> Omni::Fiber::Coroutine<void> {
   auto& fiber = co_await Omni::Fiber::GetCurrentOmniFiber();
 
   // 1. Resolve IP
@@ -31,8 +31,8 @@ Omni::Fiber::Coroutine<void> ResolverCombinedEndpoint::DoWork() {
   });
 
   auto [cancelIp, resIp] =
-      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] {}),
-                                   Omni::Fiber::SelectPair(*eventPtrIp, [](auto const& res) { return res; }));
+      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] -> void {}),
+                                   Omni::Fiber::SelectPair(*eventPtrIp, [](auto const& res) -> auto { return res; }));
 
   if (cancelIp) {
     co_await fiber.Join(resolveIpFiber);
@@ -56,8 +56,8 @@ Omni::Fiber::Coroutine<void> ResolverCombinedEndpoint::DoWork() {
   });
 
   auto [cancelPort, resPort] =
-      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] {}),
-                                   Omni::Fiber::SelectPair(*eventPtrPort, [](auto const& res) { return res; }));
+      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] -> void {}),
+                                   Omni::Fiber::SelectPair(*eventPtrPort, [](auto const& res) -> auto { return res; }));
 
   if (cancelPort) {
     co_await fiber.Join(resolvePortFiber);
@@ -76,7 +76,7 @@ Omni::Fiber::Coroutine<void> ResolverCombinedEndpoint::DoWork() {
   _ResolveError = ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<ErrorCode> ResolverCombinedEndpoint::DoGracefulStop() {
+auto ResolverCombinedEndpoint::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   if (_IpResolver->GetState() != ServiceBase::State::kNone) {
     co_await _IpResolver->Stop();
   }

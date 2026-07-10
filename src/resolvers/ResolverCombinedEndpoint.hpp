@@ -16,17 +16,17 @@ public:
   ~ResolverCombinedEndpoint() override = default;
 
   ResolverCombinedEndpoint(const ResolverCombinedEndpoint&) = delete;
-  ResolverCombinedEndpoint& operator=(const ResolverCombinedEndpoint&) = delete;
+  auto operator=(const ResolverCombinedEndpoint&) -> ResolverCombinedEndpoint& = delete;
   ResolverCombinedEndpoint(ResolverCombinedEndpoint&&) = delete;
-  ResolverCombinedEndpoint& operator=(ResolverCombinedEndpoint&&) = delete;
+  auto operator=(ResolverCombinedEndpoint&&) -> ResolverCombinedEndpoint& = delete;
 
-  boost::asio::ip::udp::endpoint GetResolverResult() const override;
+  auto GetResolverResult() const -> boost::asio::ip::udp::endpoint override;
 
 protected:
-  std::string GetName() const override;
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<void> DoWork() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto GetName() const -> std::string override;
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoWork() -> Omni::Fiber::Coroutine<void> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
   std::shared_ptr<ResolverIp> _IpResolver;

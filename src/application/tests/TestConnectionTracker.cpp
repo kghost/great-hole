@@ -47,8 +47,8 @@ private:
 class MockConnectionMark : public ConnectionMark {
 public:
   explicit MockConnectionMark(std::string name) : _Name(std::move(name)) {}
-  std::string GetDescription() const override { return _Name; }
-  bool Validate() const override { return Valid; }
+  auto GetDescription() const -> std::string override { return _Name; }
+  auto Validate() const -> bool override { return Valid; }
 
   bool Valid = true;
 
@@ -58,12 +58,12 @@ private:
 
 class TestDiscardMark : public ConnectionMark {
 public:
-  std::string GetDescription() const override { return "Discard"; }
+  auto GetDescription() const -> std::string override { return "Discard"; }
 };
 
 class TestBypassMark : public ConnectionMark {
 public:
-  std::string GetDescription() const override { return "Bypass"; }
+  auto GetDescription() const -> std::string override { return "Bypass"; }
 };
 
 inline TestDiscardMark g_TestDiscardMark;
@@ -71,9 +71,9 @@ inline TestDiscardMark g_TestDiscardMark;
 class ReferenceMark : public ConnectionMark {
 public:
   explicit ReferenceMark(ConnectionMark& mark) : _Mark(mark) {}
-  std::string GetDescription() const override { return _Mark.GetDescription(); }
-  bool Validate() const override { return _Mark.Validate(); }
-  ConnectionMark& GetReferencedMark() const { return _Mark; }
+  auto GetDescription() const -> std::string override { return _Mark.GetDescription(); }
+  auto Validate() const -> bool override { return _Mark.Validate(); }
+  auto GetReferencedMark() const -> ConnectionMark& { return _Mark; }
 
 private:
   ConnectionMark& _Mark;
@@ -83,27 +83,27 @@ class MockSelector : public ConnectionTracker::Selector {
 public:
   explicit MockSelector(ConnectionMark& result) : Result(&result) {}
 
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4TcpKey&) const override {
+  auto operator()(const ConnectionTracker::Ip4TcpKey&) const -> std::unique_ptr<ConnectionMark> override {
     return CloneResult();
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6TcpKey&) const override {
+  auto operator()(const ConnectionTracker::Ip6TcpKey&) const -> std::unique_ptr<ConnectionMark> override {
     return CloneResult();
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4UdpKey&) const override {
+  auto operator()(const ConnectionTracker::Ip4UdpKey&) const -> std::unique_ptr<ConnectionMark> override {
     return CloneResult();
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6UdpKey&) const override {
+  auto operator()(const ConnectionTracker::Ip6UdpKey&) const -> std::unique_ptr<ConnectionMark> override {
     return CloneResult();
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::IcmpKey&) const override { return CloneResult(); }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Icmp6Key&) const override {
+  auto operator()(const ConnectionTracker::IcmpKey&) const -> std::unique_ptr<ConnectionMark> override { return CloneResult(); }
+  auto operator()(const ConnectionTracker::Icmp6Key&) const -> std::unique_ptr<ConnectionMark> override {
     return CloneResult();
   }
 
   mutable ConnectionMark* Result = nullptr;
 
 private:
-  std::unique_ptr<ConnectionMark> CloneResult() const {
+  auto CloneResult() const -> std::unique_ptr<ConnectionMark> {
     if (Result) {
       return std::make_unique<ReferenceMark>(*Result);
     }
@@ -114,22 +114,22 @@ private:
 class ConstantSelector : public ConnectionTracker::Selector {
 public:
   explicit ConstantSelector(ConnectionMark& mark) : _Mark(mark) {}
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4TcpKey&) const override {
+  auto operator()(const ConnectionTracker::Ip4TcpKey&) const -> std::unique_ptr<ConnectionMark> override {
     return std::make_unique<ReferenceMark>(_Mark);
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6TcpKey&) const override {
+  auto operator()(const ConnectionTracker::Ip6TcpKey&) const -> std::unique_ptr<ConnectionMark> override {
     return std::make_unique<ReferenceMark>(_Mark);
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4UdpKey&) const override {
+  auto operator()(const ConnectionTracker::Ip4UdpKey&) const -> std::unique_ptr<ConnectionMark> override {
     return std::make_unique<ReferenceMark>(_Mark);
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6UdpKey&) const override {
+  auto operator()(const ConnectionTracker::Ip6UdpKey&) const -> std::unique_ptr<ConnectionMark> override {
     return std::make_unique<ReferenceMark>(_Mark);
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::IcmpKey&) const override {
+  auto operator()(const ConnectionTracker::IcmpKey&) const -> std::unique_ptr<ConnectionMark> override {
     return std::make_unique<ReferenceMark>(_Mark);
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Icmp6Key&) const override {
+  auto operator()(const ConnectionTracker::Icmp6Key&) const -> std::unique_ptr<ConnectionMark> override {
     return std::make_unique<ReferenceMark>(_Mark);
   }
 
@@ -137,7 +137,7 @@ private:
   ConnectionMark& _Mark;
 };
 
-static ConnectionMark* GetMark(const std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>& res) {
+static auto GetMark(const std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>& res) -> ConnectionMark* {
   if (res.has_value()) {
     ConnectionMark& mark = res->get();
     if (auto* refMark = dynamic_cast<ReferenceMark*>(&mark)) {
@@ -148,7 +148,7 @@ static ConnectionMark* GetMark(const std::expected<std::reference_wrapper<Connec
   return nullptr;
 }
 
-Packet CreatePacket(const std::vector<uint8_t>& bytes) {
+auto CreatePacket(const std::vector<uint8_t>& bytes) -> Packet {
   Packet p(bytes.size(), 0);
   std::copy(bytes.begin(), bytes.end(), p.Data().begin());
   return p;
@@ -484,7 +484,7 @@ TEST(ConnectionTrackerTest, IcmpDestinationUnreachable) {
   EXPECT_TRUE(testPassed);
 }
 
-int main(int argc, char* argv[]) {
+auto main(int argc, char* argv[]) -> int {
   if (std::getenv("OMNI_TIMETRAVEL_IS_CHILD")) {
     std::cout << "[Child] Running Google Test suite..." << std::endl;
     testing::InitGoogleTest(&argc, argv);

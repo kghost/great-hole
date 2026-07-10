@@ -28,9 +28,9 @@ public:
       : _Executor(executor), _Service(service), _Protocol(protocol) {}
   ~MockResolveeFor() override = default;
 
-  boost::asio::any_io_executor GetExecutor() override { return _Executor; }
-  std::string GetService() override { return _Service; }
-  Protocol GetProtocol() override { return _Protocol; }
+  auto GetExecutor() -> boost::asio::any_io_executor override { return _Executor; }
+  auto GetService() -> std::string override { return _Service; }
+  auto GetProtocol() -> Protocol override { return _Protocol; }
 
   boost::asio::any_io_executor _Executor;
   std::string _Service;

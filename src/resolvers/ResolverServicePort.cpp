@@ -13,13 +13,13 @@ namespace gh {
 
 ResolverServicePort::ResolverServicePort(std::string const& portStr) : _PortStr(portStr) {}
 
-std::string ResolverServicePort::GetName() const { return std::format("ResolverServicePort:[{}]", _PortStr); }
+auto ResolverServicePort::GetName() const -> std::string { return std::format("ResolverServicePort:[{}]", _PortStr); }
 
-uint16_t ResolverServicePort::GetResolverResult() const { return _Port; }
+auto ResolverServicePort::GetResolverResult() const -> uint16_t { return _Port; }
 
-Omni::Fiber::Coroutine<ErrorCode> ResolverServicePort::DoStart() { co_return ErrorCode{}; }
+auto ResolverServicePort::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
-Omni::Fiber::Coroutine<void> ResolverServicePort::DoWork() {
+auto ResolverServicePort::DoWork() -> Omni::Fiber::Coroutine<void> {
   if (_Service.value()._Stop.IsTriggered()) {
     _ResolveError = make_error_code(boost::asio::error::operation_aborted);
     co_return;
@@ -33,6 +33,6 @@ Omni::Fiber::Coroutine<void> ResolverServicePort::DoWork() {
   _ResolveError = ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<ErrorCode> ResolverServicePort::DoGracefulStop() { co_return ErrorCode{}; }
+auto ResolverServicePort::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
 } // namespace gh

@@ -14,17 +14,17 @@ public:
   ~ResolverNumberPort() override = default;
 
   ResolverNumberPort(const ResolverNumberPort&) = delete;
-  ResolverNumberPort& operator=(const ResolverNumberPort&) = delete;
+  auto operator=(const ResolverNumberPort&) -> ResolverNumberPort& = delete;
   ResolverNumberPort(ResolverNumberPort&&) = delete;
-  ResolverNumberPort& operator=(ResolverNumberPort&&) = delete;
+  auto operator=(ResolverNumberPort&&) -> ResolverNumberPort& = delete;
 
-  uint16_t GetResolverResult() const override;
+  auto GetResolverResult() const -> uint16_t override;
 
 protected:
-  std::string GetName() const override;
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<void> DoWork() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto GetName() const -> std::string override;
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoWork() -> Omni::Fiber::Coroutine<void> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
   uint16_t _Port = 0;

@@ -52,8 +52,8 @@ private:
   boost::asio::io_context& _Io;
 };
 
-Packet CreateTestIPv4Packet(const boost::asio::ip::address_v4& src, const boost::asio::ip::address_v4& dst,
-                            uint8_t protocol, const std::vector<uint8_t>& payload) {
+auto CreateTestIPv4Packet(const boost::asio::ip::address_v4& src, const boost::asio::ip::address_v4& dst,
+                            uint8_t protocol, const std::vector<uint8_t>& payload) -> Packet {
   std::size_t totalLen = 20 + payload.size();
   Packet p(totalLen);
   auto data = p.Data();
@@ -73,8 +73,8 @@ Packet CreateTestIPv4Packet(const boost::asio::ip::address_v4& src, const boost:
   return p;
 }
 
-Packet CreateTestIPv6Packet(const boost::asio::ip::address_v6& src, const boost::asio::ip::address_v6& dst,
-                            uint8_t nextHeader, const std::vector<uint8_t>& payload) {
+auto CreateTestIPv6Packet(const boost::asio::ip::address_v6& src, const boost::asio::ip::address_v6& dst,
+                            uint8_t nextHeader, const std::vector<uint8_t>& payload) -> Packet {
   std::size_t totalLen = 40 + payload.size();
   Packet p(totalLen);
   auto data = p.Data();
@@ -94,7 +94,7 @@ Packet CreateTestIPv6Packet(const boost::asio::ip::address_v6& src, const boost:
   return p;
 }
 
-std::vector<uint8_t> CreateTcpPayload(uint16_t srcPort, uint16_t dstPort) {
+auto CreateTcpPayload(uint16_t srcPort, uint16_t dstPort) -> std::vector<uint8_t> {
   std::vector<uint8_t> payload(20, 0);
   payload[0] = (srcPort >> 8) & 0xFF;
   payload[1] = srcPort & 0xFF;
@@ -104,7 +104,7 @@ std::vector<uint8_t> CreateTcpPayload(uint16_t srcPort, uint16_t dstPort) {
   return payload;
 }
 
-std::vector<uint8_t> CreateUdpPayload(uint16_t srcPort, uint16_t dstPort) {
+auto CreateUdpPayload(uint16_t srcPort, uint16_t dstPort) -> std::vector<uint8_t> {
   uint16_t totalLen = 8;
   std::vector<uint8_t> payload(totalLen, 0);
   payload[0] = (srcPort >> 8) & 0xFF;
@@ -116,7 +116,7 @@ std::vector<uint8_t> CreateUdpPayload(uint16_t srcPort, uint16_t dstPort) {
   return payload;
 }
 
-std::vector<uint8_t> CreateIcmpEchoPayload(uint8_t type, uint16_t identifier) {
+auto CreateIcmpEchoPayload(uint8_t type, uint16_t identifier) -> std::vector<uint8_t> {
   std::vector<uint8_t> payload(8, 0);
   payload[0] = type;
   payload[4] = (identifier >> 8) & 0xFF;
@@ -129,15 +129,15 @@ public:
   MockEndpoint() = default;
   ~MockEndpoint() override = default;
 
-  std::string GetName() const override { return "MockEndpoint"; }
+  auto GetName() const -> std::string override { return "MockEndpoint"; }
 
-  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override {
+  auto Read(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> override {
     while (_ReadQueue.IsEmpty()) {
       if (c.IsTriggered()) {
         co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
       }
       auto [cancelFired, queueFired] = co_await Omni::Fiber::Select(
-          Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}), Omni::Fiber::SelectPair(_ReadQueue, [] {}));
+          Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] -> void {}), Omni::Fiber::SelectPair(_ReadQueue, [] -> void {}));
       if (cancelFired) {
         co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
       }
@@ -146,7 +146,7 @@ public:
     co_return ErrorCode{};
   }
 
-  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel& c) override {
+  auto Write(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> override {
     if (c.IsTriggered()) {
       co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
     }
@@ -156,13 +156,13 @@ public:
 
   void PushRead(Packet p) { _ReadQueue.Push(std::move(p)); }
 
-  Omni::Fiber::Coroutine<Packet> PopWrite(Cancel& c) {
+  auto PopWrite(Cancel& c) -> Omni::Fiber::Coroutine<Packet> {
     while (_WriteQueue.IsEmpty()) {
       if (c.IsTriggered()) {
         co_return Packet();
       }
       auto [cancelFired, queueFired] = co_await Omni::Fiber::Select(
-          Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}), Omni::Fiber::SelectPair(_WriteQueue, [] {}));
+          Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] -> void {}), Omni::Fiber::SelectPair(_WriteQueue, [] -> void {}));
       if (cancelFired) {
         co_return Packet();
       }
@@ -170,11 +170,11 @@ public:
     co_return _WriteQueue.PopFront();
   }
 
-  bool IsWriteEmpty() const { return _WriteQueue.IsEmpty(); }
+  auto IsWriteEmpty() const -> bool { return _WriteQueue.IsEmpty(); }
 
 protected:
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override { co_return ErrorCode{}; }
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override { co_return ErrorCode{}; }
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override { co_return ErrorCode{}; }
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override { co_return ErrorCode{}; }
 
 private:
   Omni::Fiber::EventQueue<Packet> _ReadQueue;
@@ -192,29 +192,29 @@ class CallbackSelector : public ConnectionTracker::Selector {
 public:
   CallbackSelector(std::vector<CallbackArgs>& invocations) : _Invocations(invocations) {}
 
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4TcpKey& k) const override {
+  auto operator()(const ConnectionTracker::Ip4TcpKey& k) const -> std::unique_ptr<ConnectionMark> override {
     _Invocations.push_back(
         CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.LocalPort, k.RemotePort, 6});
     return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6TcpKey& k) const override {
+  auto operator()(const ConnectionTracker::Ip6TcpKey& k) const -> std::unique_ptr<ConnectionMark> override {
     _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.LocalPort, k.RemotePort, 6});
     return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4UdpKey& k) const override {
+  auto operator()(const ConnectionTracker::Ip4UdpKey& k) const -> std::unique_ptr<ConnectionMark> override {
     _Invocations.push_back(
         CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.LocalPort, k.RemotePort, 17});
     return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6UdpKey& k) const override {
+  auto operator()(const ConnectionTracker::Ip6UdpKey& k) const -> std::unique_ptr<ConnectionMark> override {
     _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.LocalPort, k.RemotePort, 17});
     return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::IcmpKey& k) const override {
+  auto operator()(const ConnectionTracker::IcmpKey& k) const -> std::unique_ptr<ConnectionMark> override {
     _Invocations.push_back(CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.Id, k.Id, 1});
     return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Icmp6Key& k) const override {
+  auto operator()(const ConnectionTracker::Icmp6Key& k) const -> std::unique_ptr<ConnectionMark> override {
     _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.Id, k.Id, 58});
     return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
@@ -228,15 +228,15 @@ public:
   RoutingSelector(std::shared_ptr<VpnClientMultiChannel::Session>& resolvedSession, int& selectorCalls)
       : _ResolvedSession(resolvedSession), _SelectorCalls(selectorCalls) {}
 
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4TcpKey&) const override { return Handle(); }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6TcpKey&) const override { return Handle(); }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4UdpKey&) const override { return Handle(); }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6UdpKey&) const override { return Handle(); }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::IcmpKey&) const override { return Handle(); }
-  std::unique_ptr<ConnectionMark> operator()(const ConnectionTracker::Icmp6Key&) const override { return Handle(); }
+  auto operator()(const ConnectionTracker::Ip4TcpKey&) const -> std::unique_ptr<ConnectionMark> override { return Handle(); }
+  auto operator()(const ConnectionTracker::Ip6TcpKey&) const -> std::unique_ptr<ConnectionMark> override { return Handle(); }
+  auto operator()(const ConnectionTracker::Ip4UdpKey&) const -> std::unique_ptr<ConnectionMark> override { return Handle(); }
+  auto operator()(const ConnectionTracker::Ip6UdpKey&) const -> std::unique_ptr<ConnectionMark> override { return Handle(); }
+  auto operator()(const ConnectionTracker::IcmpKey&) const -> std::unique_ptr<ConnectionMark> override { return Handle(); }
+  auto operator()(const ConnectionTracker::Icmp6Key&) const -> std::unique_ptr<ConnectionMark> override { return Handle(); }
 
 private:
-  std::unique_ptr<ConnectionMark> Handle() const {
+  auto Handle() const -> std::unique_ptr<ConnectionMark> {
     _SelectorCalls++;
     if (_ResolvedSession) {
       return std::make_unique<VpnClientMultiChannel::Mark>(_ResolvedSession);
@@ -762,7 +762,7 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
   EXPECT_TRUE(testPassed);
 }
 
-int main(int argc, char* argv[]) {
+auto main(int argc, char* argv[]) -> int {
   if (std::getenv("OMNI_TIMETRAVEL_IS_CHILD")) {
     std::cout << "[Child] Running Google Test suite..." << std::endl;
     testing::InitGoogleTest(&argc, argv);

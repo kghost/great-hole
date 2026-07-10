@@ -18,7 +18,7 @@ class Input : public EndpointInput {
 public:
   explicit Input(boost::asio::any_io_executor executor, FileHandleType::native_handle_type f) : _S(executor, f) {}
 
-  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override {
+  auto Read(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> override {
     auto [err, bytes_transferred] =
         co_await _S.async_read_some(p.operator boost::asio::mutable_buffer(), Omni::Fiber::AsioUseFiber);
     if (err) {
@@ -36,7 +36,7 @@ class Output : public EndpointOutput {
 public:
   explicit Output(boost::asio::any_io_executor executor, FileHandleType::native_handle_type f) : _S(executor, f) {}
 
-  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel& c) override {
+  auto Write(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> override {
     std::size_t sent = 0;
     while (sent < p._Length) {
       auto [err, bytes_transferred] =
@@ -57,7 +57,7 @@ static std::weak_ptr<EndpointInput> _In;
 static std::weak_ptr<EndpointOutput> _Out;
 static std::weak_ptr<EndpointOutput> _Err;
 
-std::shared_ptr<EndpointInput> GetCin(boost::asio::any_io_executor executor) {
+auto GetCin(boost::asio::any_io_executor executor) -> std::shared_ptr<EndpointInput> {
   auto p = _In.lock();
   if (p) {
     return p;
@@ -72,7 +72,7 @@ std::shared_ptr<EndpointInput> GetCin(boost::asio::any_io_executor executor) {
   }
 }
 
-std::shared_ptr<EndpointOutput> GetCout(boost::asio::any_io_executor executor) {
+auto GetCout(boost::asio::any_io_executor executor) -> std::shared_ptr<EndpointOutput> {
   auto p = _Out.lock();
   if (p) {
     return p;
@@ -87,7 +87,7 @@ std::shared_ptr<EndpointOutput> GetCout(boost::asio::any_io_executor executor) {
   }
 }
 
-std::shared_ptr<EndpointOutput> GetCerr(boost::asio::any_io_executor executor) {
+auto GetCerr(boost::asio::any_io_executor executor) -> std::shared_ptr<EndpointOutput> {
   auto p = _Err.lock();
   if (p) {
     return p;

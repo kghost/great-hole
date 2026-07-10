@@ -22,7 +22,7 @@ namespace fs = std::filesystem;
 
 using namespace gh;
 
-int main(int ac, char** av) {
+auto main(int ac, char** av) -> int {
   po::options_description desc("Options");
   desc.add_options()("help", "print this message")("startlua", po::value<std::string>(), "the lua script run at start");
 

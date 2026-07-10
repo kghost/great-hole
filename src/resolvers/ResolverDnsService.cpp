@@ -11,7 +11,7 @@ namespace gh {
 ResolverDnsService::ResolverDnsService(const std::string& serviceName, ResolveFor& target)
     : _ServiceName(serviceName), _Target(target) {}
 
-boost::asio::ip::udp::endpoint ResolverDnsService::GetResolverResult() const {
+auto ResolverDnsService::GetResolverResult() const -> boost::asio::ip::udp::endpoint {
   if (_Endpoints.empty()) {
     return boost::asio::ip::udp::endpoint{};
   }
@@ -21,9 +21,9 @@ boost::asio::ip::udp::endpoint ResolverDnsService::GetResolverResult() const {
   return _Endpoints[dis(gen)];
 }
 
-Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoStart() { co_return ErrorCode{}; }
+auto ResolverDnsService::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
-Omni::Fiber::Coroutine<void> ResolverDnsService::DoWork() {
+auto ResolverDnsService::DoWork() -> Omni::Fiber::Coroutine<void> {
   auto executor = _Target.GetExecutor();
   auto srvResult = co_await AresResolver::ResolveSrv(executor, _ServiceName, _Service.value()._Stop);
   if (!srvResult.has_value()) {
@@ -54,6 +54,6 @@ Omni::Fiber::Coroutine<void> ResolverDnsService::DoWork() {
   _ResolveError = ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<ErrorCode> ResolverDnsService::DoGracefulStop() { co_return ErrorCode{}; }
+auto ResolverDnsService::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
 } // namespace gh

@@ -26,7 +26,7 @@ public:
   MockFilter(int& counter) : _Counter(counter) {}
   ~MockFilter() override = default;
 
-  Omni::Fiber::Coroutine<boost::system::error_code> Pipe(Packet& /*p*/, Cancel& /*c*/) override {
+  auto Pipe(Packet& /*p*/, Cancel& /*c*/) -> Omni::Fiber::Coroutine<boost::system::error_code> override {
     _Counter++;
     co_return boost::system::error_code{};
   }
@@ -87,8 +87,8 @@ TEST(VpnServerTest, ConstructorStoresFiltersAndAppliesThem) {
   EXPECT_TRUE(testPassed);
 }
 
-Packet CreateIPv6Packet(const boost::asio::ip::address_v6& src, const boost::asio::ip::address_v6& dest,
-                        const std::string& payload) {
+auto CreateIPv6Packet(const boost::asio::ip::address_v6& src, const boost::asio::ip::address_v6& dest,
+                        const std::string& payload) -> Packet {
   std::size_t totalLen = 40 + payload.size();
   Packet p(totalLen);
   auto data = p.Data();
@@ -107,8 +107,8 @@ Packet CreateIPv6Packet(const boost::asio::ip::address_v6& src, const boost::asi
   return p;
 }
 
-Packet CreateIPv4Packet(const boost::asio::ip::address_v4& src, const boost::asio::ip::address_v4& dest,
-                        const std::string& payload) {
+auto CreateIPv4Packet(const boost::asio::ip::address_v4& src, const boost::asio::ip::address_v4& dest,
+                        const std::string& payload) -> Packet {
   std::size_t totalLen = 20 + payload.size();
   Packet p(totalLen);
   auto data = p.Data();

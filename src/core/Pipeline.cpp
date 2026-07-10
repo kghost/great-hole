@@ -18,7 +18,7 @@ Pipeline::Pipeline(std::shared_ptr<Endpoint> ep1, const std::vector<std::shared_
                    std::shared_ptr<Endpoint> ep2)
     : _Ep1(ep1), _Ep2(ep2), _Filters(filters) {}
 
-Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start() {
+auto Pipeline::Start() -> Omni::Fiber::Coroutine<ErrorCode> {
   auto me = std::static_pointer_cast<Pipeline>(shared_from_this());
   auto& fiber = co_await Omni::Fiber::GetCurrentOmniFiber();
 
@@ -33,8 +33,8 @@ Omni::Fiber::Coroutine<ErrorCode> Pipeline::Start() {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<void> Pipeline::RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoint> out,
-                                                    Pipeline::Direction direction) {
+auto Pipeline::RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoint> out,
+                                                    Pipeline::Direction direction) -> Omni::Fiber::Coroutine<void> {
   BOOST_LOG_TRIVIAL(info) << std::format("{} direction started", GetNameWithDirection(direction));
   struct ActivePipelineGuard {
     PipielineUsageCounter& In;
@@ -111,7 +111,7 @@ Omni::Fiber::Coroutine<void> Pipeline::RunDirection(std::shared_ptr<Endpoint> in
   co_return;
 }
 
-Omni::Fiber::Coroutine<ErrorCode> Pipeline::Stop() {
+auto Pipeline::Stop() -> Omni::Fiber::Coroutine<ErrorCode> {
   _Stop.Trigger();
   auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
   if (_Fiber1) {
@@ -125,7 +125,7 @@ Omni::Fiber::Coroutine<ErrorCode> Pipeline::Stop() {
   co_return ErrorCode{};
 }
 
-bool Pipeline::IsCritical(const ErrorCode& ec) {
+auto Pipeline::IsCritical(const ErrorCode& ec) -> bool {
   if (!ec) {
     return false;
   } else if (ec.category() == boost::system::system_category()) {

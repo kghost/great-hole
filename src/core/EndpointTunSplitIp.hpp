@@ -27,26 +27,26 @@ public:
   ~EndpointTunSplitIp() override;
 
   EndpointTunSplitIp(const EndpointTunSplitIp&) = delete;
-  EndpointTunSplitIp& operator=(const EndpointTunSplitIp&) = delete;
+  auto operator=(const EndpointTunSplitIp&) -> EndpointTunSplitIp& = delete;
   EndpointTunSplitIp(EndpointTunSplitIp&&) = delete;
-  EndpointTunSplitIp& operator=(EndpointTunSplitIp&&) = delete;
+  auto operator=(EndpointTunSplitIp&&) -> EndpointTunSplitIp& = delete;
 
-  Omni::Fiber::Coroutine<std::shared_ptr<Channel>> CreateChannel(const std::vector<boost::asio::ip::address_v6>& ips);
-  Omni::Fiber::Coroutine<void> RemoveChannel(std::shared_ptr<Channel> channel);
+  auto CreateChannel(const std::vector<boost::asio::ip::address_v6>& ips) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>>;
+  auto RemoveChannel(std::shared_ptr<Channel> channel) -> Omni::Fiber::Coroutine<void>;
 
-  std::string GetName() const override;
+  auto GetName() const -> std::string override;
 
 protected:
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<void> DoWork() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoWork() -> Omni::Fiber::Coroutine<void> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
-  Omni::Fiber::Coroutine<void> ReadLoop();
-  Omni::Fiber::Coroutine<ErrorCode> WriteToTun(Packet& p, Cancel& c);
+  auto ReadLoop() -> Omni::Fiber::Coroutine<void>;
+  auto WriteToTun(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode>;
 
-  static std::optional<boost::asio::ip::address_v6> GetSourceAddress(const Packet& p);
-  static std::optional<boost::asio::ip::address_v6> GetDestAddress(const Packet& p);
+  static auto GetSourceAddress(const Packet& p) -> std::optional<boost::asio::ip::address_v6>;
+  static auto GetDestAddress(const Packet& p) -> std::optional<boost::asio::ip::address_v6>;
 
   boost::asio::posix::stream_descriptor _TunFileDescriptor;
   const std::string _TunName;
@@ -61,24 +61,24 @@ public:
   ~Channel() override;
 
   Channel(const Channel&) = delete;
-  Channel& operator=(const Channel&) = delete;
+  auto operator=(const Channel&) -> Channel& = delete;
   Channel(Channel&&) = delete;
-  Channel& operator=(Channel&&) = delete;
+  auto operator=(Channel&&) -> Channel& = delete;
 
-  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel& c) override;
-  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel& c) override;
+  auto Read(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto Write(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> override;
 
-  std::string GetName() const override;
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto GetName() const -> std::string override;
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 public:
   template <typename... Args>
-  Omni::Fiber::Coroutine<std::expected<void, Omni::Fiber::PipeClosed>> Send(Args&&... args) {
+  auto Send(Args&&... args) -> Omni::Fiber::Coroutine<std::expected<void, Omni::Fiber::PipeClosed>> {
     co_return co_await _Pipe.GetProducer().Put(std::forward<Args>(args)...);
   }
 
-  const std::vector<boost::asio::ip::address_v6>& GetIps() const { return _Ips; }
+  auto GetIps() const -> const std::vector<boost::asio::ip::address_v6>& { return _Ips; }
 
 private:
   EndpointTunSplitIp& _Parent;

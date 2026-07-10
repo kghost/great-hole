@@ -7,17 +7,17 @@ namespace gh {
 
 ResolverNumberPort::ResolverNumberPort(uint16_t port) : _Port(port) {}
 
-std::string ResolverNumberPort::GetName() const {
+auto ResolverNumberPort::GetName() const -> std::string {
   return "ResolverNumberPort:" + boost::lexical_cast<std::string>(_Port);
 }
 
-uint16_t ResolverNumberPort::GetResolverResult() const { return _Port; }
+auto ResolverNumberPort::GetResolverResult() const -> uint16_t { return _Port; }
 
-Omni::Fiber::Coroutine<ErrorCode> ResolverNumberPort::DoStart() { co_return ErrorCode{}; }
-Omni::Fiber::Coroutine<void> ResolverNumberPort::DoWork() {
+auto ResolverNumberPort::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
+auto ResolverNumberPort::DoWork() -> Omni::Fiber::Coroutine<void> {
   _ResolveError = ErrorCode{};
   co_return;
 }
-Omni::Fiber::Coroutine<ErrorCode> ResolverNumberPort::DoGracefulStop() { co_return ErrorCode{}; }
+auto ResolverNumberPort::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
 } // namespace gh

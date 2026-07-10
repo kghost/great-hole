@@ -17,21 +17,21 @@ public:
 
   explicit GeneratorHelper(Generator generator) : _Generator(std::move(generator)), _Iterator(_Generator.begin()) {}
 
-  ValueType operator()() {
+  auto operator()() -> ValueType {
     auto value = std::move(*_Iterator);
     ++_Iterator;
     return value;
   }
-  bool hasNext() const { return _Iterator != _Generator.end(); }
+  auto hasNext() const -> bool { return _Iterator != _Generator.end(); }
 
 private:
   Generator _Generator;
   IteratorType _Iterator;
 };
 
-GeneratorHelper<std::generator<std::chrono::milliseconds>> BackoffTimerDuration(int randomnessPercent,
+auto BackoffTimerDuration(int randomnessPercent,
                                                                                 std::chrono::milliseconds current,
                                                                                 std::chrono::milliseconds step,
-                                                                                std::chrono::milliseconds maximum);
+                                                                                std::chrono::milliseconds maximum) -> GeneratorHelper<std::generator<std::chrono::milliseconds>>;
 
 } // namespace gh

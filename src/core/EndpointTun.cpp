@@ -17,12 +17,12 @@ Tun::Tun(boost::asio::any_io_executor executor, std::string const& name, int fd)
   _TunFileDescriptor.non_blocking(true);
 }
 
-std::string Tun::GetName() const {
+auto Tun::GetName() const -> std::string {
   return std::format("Tun:{}[{}]", _Name,
                      const_cast<boost::asio::posix::stream_descriptor&>(_TunFileDescriptor).native_handle());
 }
 
-Omni::Fiber::Coroutine<ErrorCode> Tun::DoStart() {
+auto Tun::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   if (_TunFileDescriptor.is_open()) {
     co_return ErrorCode{};
   }
@@ -45,13 +45,13 @@ Omni::Fiber::Coroutine<ErrorCode> Tun::DoStart() {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<ErrorCode> Tun::DoGracefulStop() {
+auto Tun::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   co_await _PipielineUsageCounter.WaitAll();
   _TunFileDescriptor.close();
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<ErrorCode> Tun::Read(Packet& p, Cancel& c) {
+auto Tun::Read(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   if (c.IsTriggered()) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
@@ -61,7 +61,7 @@ Omni::Fiber::Coroutine<ErrorCode> Tun::Read(Packet& p, Cancel& c) {
   co_return err;
 }
 
-Omni::Fiber::Coroutine<ErrorCode> Tun::Write(Packet& p, Cancel& c) {
+auto Tun::Write(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   if (c.IsTriggered()) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }

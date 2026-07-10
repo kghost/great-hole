@@ -11,17 +11,17 @@ namespace gh {
 class LuaEngine {
 public:
   LuaEngine(boost::asio::any_io_executor executor, Cancel& stopApplication)
-      : _Interface(executor, stopApplication), _LuaState(luaL_newstate(), [](lua_State* L) { lua_close(L); }) {
+      : _Interface(executor, stopApplication), _LuaState(luaL_newstate(), [](lua_State* L) -> void { lua_close(L); }) {
     luaL_openlibs(_LuaState.get());
   }
 
-  Omni::Fiber::Coroutine<void> DoFile(const std::string& filename);
+  auto DoFile(const std::string& filename) -> Omni::Fiber::Coroutine<void>;
 
 private:
   LuaInterface _Interface;
   std::unique_ptr<lua_State, void (*)(lua_State* L)> _LuaState;
 
-  Omni::Fiber::Coroutine<void> RunLoop(lua_State* co);
+  auto RunLoop(lua_State* co) -> Omni::Fiber::Coroutine<void>;
 };
 
 } // namespace gh

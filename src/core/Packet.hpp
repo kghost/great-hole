@@ -112,7 +112,7 @@ public:
     return ArchEndian(*reinterpret_cast<T*>(PopBack<sizeof(T)>().data()));
   }
 
-  template <size_t Size> std::span<uint8_t, Size> PopBack() {
+  template <size_t Size> auto PopBack() -> std::span<uint8_t, Size> {
     assert(DataSize() >= Size);
     _Length -= Size;
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)

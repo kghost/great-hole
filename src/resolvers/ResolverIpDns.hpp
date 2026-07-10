@@ -17,17 +17,17 @@ public:
   ~ResolverIpDns() override = default;
 
   ResolverIpDns(const ResolverIpDns&) = delete;
-  ResolverIpDns& operator=(const ResolverIpDns&) = delete;
+  auto operator=(const ResolverIpDns&) -> ResolverIpDns& = delete;
   ResolverIpDns(ResolverIpDns&&) = delete;
-  ResolverIpDns& operator=(ResolverIpDns&&) = delete;
+  auto operator=(ResolverIpDns&&) -> ResolverIpDns& = delete;
 
-  boost::asio::ip::address_v6 GetResolverResult() const override;
+  auto GetResolverResult() const -> boost::asio::ip::address_v6 override;
 
 protected:
-  std::string GetName() const override;
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<void> DoWork() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto GetName() const -> std::string override;
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoWork() -> Omni::Fiber::Coroutine<void> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
   boost::asio::any_io_executor _Executor;

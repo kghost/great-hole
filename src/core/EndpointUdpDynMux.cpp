@@ -42,13 +42,13 @@ UdpDynMux::Channel::Channel(UdpDynMux& parent, const UdpDynMux::PskType& psk, ui
 
 UdpDynMux::Channel::~Channel() {}
 
-std::string UdpDynMux::Channel::GetName() const {
+auto UdpDynMux::Channel::GetName() const -> std::string {
   return std::format("UdpDynMuxChannel:{}:[psk_hash:{:02x}]", _Parent.GetName(), _Psk[0]);
 }
 
-Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::DoStart() { co_return ErrorCode{}; }
+auto UdpDynMux::Channel::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
-Omni::Fiber::Coroutine<void> UdpDynMux::Channel::DoWork() {
+auto UdpDynMux::Channel::DoWork() -> Omni::Fiber::Coroutine<void> {
   auto lastState = _State;
   while (!_Service.value()._Stop.IsTriggered()) {
     switch (_State) {
@@ -84,7 +84,7 @@ Omni::Fiber::Coroutine<void> UdpDynMux::Channel::DoWork() {
   _State = State::kStopping;
 }
 
-Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNegotiating() {
+auto UdpDynMux::Channel::DoWorkNegotiating() -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
   auto duration = BackoffTimerDuration(50, std::chrono::milliseconds(1000), std::chrono::milliseconds(2000),
                                        std::chrono::milliseconds(30000));
   while (!_Service.value()._Stop.IsTriggered()) {
@@ -95,8 +95,9 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNego
       boost::asio::steady_timer timer(_Parent._Socket.get_executor());
       timer.expires_after(duration());
       auto [stopped, state, ec] = co_await Omni::Fiber::Select(
-          Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(),
-                                  [&]() { return ErrorCode{AppErrorCategory::kOperationAborted, kAppError}; }),
+          Omni::Fiber::SelectPair(
+              _Service.value()._Stop.GetFiberCancelEvent(),
+              [&]() -> ErrorCode { return ErrorCode{AppErrorCategory::kOperationAborted, kAppError}; }),
           Omni::Fiber::SelectPair(_ControlPacket.GetConsumer(),
                                   [&](auto info) -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                                     assert(info.has_value() && "Pipe should never ends");
@@ -105,7 +106,7 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNego
                                     co_return co_await HandleControlPacket(peer, packet);
                                   }),
           Omni::Fiber::SelectPair(timer.async_wait(_Service.value()._Stop.AsioSlot()()),
-                                  Omni::Fiber::AsioApply([](auto ec) { return ec; })));
+                                  Omni::Fiber::AsioApply([](auto ec) -> auto { return ec; })));
       if (state.has_value()) {
         if (state.value() != State::kNegotiating) {
           co_return state.value();
@@ -125,8 +126,9 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNego
     } else {
       BOOST_LOG_TRIVIAL(info) << GetName() << " negotiating waiting for peer endpoint initiate";
       auto [stopped, state] = co_await Omni::Fiber::Select(
-          Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(),
-                                  [&]() { return ErrorCode{AppErrorCategory::kOperationAborted, kAppError}; }),
+          Omni::Fiber::SelectPair(
+              _Service.value()._Stop.GetFiberCancelEvent(),
+              [&]() -> ErrorCode { return ErrorCode{AppErrorCategory::kOperationAborted, kAppError}; }),
           Omni::Fiber::SelectPair(_ControlPacket.GetConsumer(),
                                   [&](auto info) -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                                     assert(info.has_value() && "Pipe should never ends");
@@ -144,7 +146,7 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkNego
   co_return State::kStopping;
 }
 
-Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkRunning() {
+auto UdpDynMux::Channel::DoWorkRunning() -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
   while (!_Service.value()._Stop.IsTriggered()) {
     auto now = std::chrono::steady_clock::now();
     if (now - _LastSeen > KeepaliveTimeout) {
@@ -163,8 +165,9 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkRunn
     timer.expires_at(_NextKeepaliveTime);
 
     auto [stopped, state, ec] = co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(),
-                                [&]() { return ErrorCode{AppErrorCategory::kOperationAborted, kAppError}; }),
+        Omni::Fiber::SelectPair(
+            _Service.value()._Stop.GetFiberCancelEvent(),
+            [&]() -> ErrorCode { return ErrorCode{AppErrorCategory::kOperationAborted, kAppError}; }),
         Omni::Fiber::SelectPair(_ControlPacket.GetConsumer(),
                                 [&](auto info) -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                                   assert(info.has_value() && "Pipe should never ends");
@@ -173,7 +176,7 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkRunn
                                   co_return co_await HandleControlPacket(peer, packet);
                                 }),
         Omni::Fiber::SelectPair(timer.async_wait(_Service.value()._Stop.AsioSlot()()),
-                                Omni::Fiber::AsioApply([](auto ec) { return ec; })));
+                                Omni::Fiber::AsioApply([](auto ec) -> auto { return ec; })));
     if (state.has_value() && state.value() != State::kRunning) {
       co_return state.value();
     }
@@ -182,16 +185,16 @@ Omni::Fiber::Coroutine<UdpDynMux::Channel::State> UdpDynMux::Channel::DoWorkRunn
   co_return State::kStopping;
 }
 
-Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::DoGracefulStop() {
+auto UdpDynMux::Channel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   co_await _PipielineUsageCounter.WaitAll();
   _DataPacket.GetConsumer().DiscardAndClose();
   _ControlPacket.GetConsumer().DiscardAndClose();
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::Read(Packet& p, Cancel& c) {
+auto UdpDynMux::Channel::Read(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   auto [stopped, err] =
-      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}),
+      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] -> void {}),
                                    Omni::Fiber::SelectPair(_DataPacket.GetConsumer(), [&](auto data) -> ErrorCode {
                                      if (data.has_value()) {
                                        _LastSeen = std::chrono::steady_clock::now();
@@ -212,7 +215,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::Read(Packet& p, Cancel& c)
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::Write(Packet& p, Cancel& c) {
+auto UdpDynMux::Channel::Write(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   if (c.IsTriggered() || ServiceBase::_State != ServiceBase::State::kRunning) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
@@ -234,8 +237,8 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::Channel::Write(Packet& p, Cancel& c
   co_return co_await _Parent.WriteTo(_Peer.value(), p, c);
 }
 
-Omni::Fiber::Coroutine<UdpDynMux::Channel::State>
-UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Packet& packet) {
+auto UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Packet& packet)
+    -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
   auto now = std::chrono::steady_clock::now();
   if (!PacketUdpDynMux::Validate(packet.Data())) {
     co_return _State;
@@ -243,10 +246,10 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
   auto action =
       PacketParser<std::function<Omni::Fiber::Coroutine<UdpDynMux::Channel::State>()>, PacketUdpDynMux, 0>{
           packet.Data()}(Overload{
-          [&](C<EnumChannel::kControlChannel>) {
+          [&](C<EnumChannel::kControlChannel>) -> auto {
             return Overload{
-                [&](C<MsgType::kInitiate>) {
-                  return [&](auto pskSpan, auto rxId, auto peerRxId, auto major, auto minor, auto patch) {
+                [&](C<MsgType::kInitiate>) -> auto {
+                  return [&](auto pskSpan, auto rxId, auto peerRxId, auto major, auto minor, auto patch) -> auto {
                     UdpDynMux::PskType psk;
                     std::copy(pskSpan.begin(), pskSpan.end(), psk.begin());
                     return [this, now, &peer, psk, rxId, peerRxId, major, minor,
@@ -286,8 +289,8 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
                     };
                   };
                 },
-                [&](C<MsgType::kInitiateFail>) {
-                  return [&](auto psk, auto major, auto minor, auto patch) {
+                [&](C<MsgType::kInitiateFail>) -> auto {
+                  return [&](auto psk, auto major, auto minor, auto patch) -> auto {
                     return [this, &peer, major, minor, patch] -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                       BOOST_LOG_TRIVIAL(warning)
                           << std::format("{} received INITIATE_FAIL from peer {} version {}.{}.{}, closing channel",
@@ -296,8 +299,8 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
                     };
                   };
                 },
-                [&](C<MsgType::kKeepalive>) {
-                  return [&](auto psk, auto flag) {
+                [&](C<MsgType::kKeepalive>) -> auto {
+                  return [&](auto psk, auto flag) -> auto {
                     return [this, now, &peer, flag] -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                       if (_Peer == peer) {
                         _LastSeen = now;
@@ -322,8 +325,8 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
                     };
                   };
                 },
-                [&](C<MsgType::kInvalidPsk>) {
-                  return [&](auto psk) {
+                [&](C<MsgType::kInvalidPsk>) -> auto {
+                  return [&](auto psk) -> auto {
                     return [this] -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                       BOOST_LOG_TRIVIAL(warning) << GetName() << " received INVALID_PSK, restart channel";
                       _Peer = std::nullopt;
@@ -332,8 +335,8 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
                     };
                   };
                 },
-                [&](C<MsgType::kInvalidAddress>) {
-                  return [&](auto channel) {
+                [&](C<MsgType::kInvalidAddress>) -> auto {
+                  return [&](auto channel) -> auto {
                     return [this, &peer, channel] -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                       if (_Peer == peer && _RemoteRxId == channel) {
                         BOOST_LOG_TRIVIAL(warning)
@@ -346,8 +349,8 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
                     };
                   };
                 },
-                [&](C<MsgType::kInvalidChannel>) {
-                  return [&](auto channel) {
+                [&](C<MsgType::kInvalidChannel>) -> auto {
+                  return [&](auto channel) -> auto {
                     return [this, &peer, channel] -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                       if (_Peer == peer && _RemoteRxId == channel) {
                         BOOST_LOG_TRIVIAL(warning)
@@ -360,7 +363,7 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
                     };
                   };
                 },
-                [&](MsgType value) {
+                [&](MsgType value) -> auto {
                   return [this, value] -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                     BOOST_LOG_TRIVIAL(warning)
                         << GetName() << " received Invalid msg type: " << std::to_underlying(value) << " from peer "
@@ -370,7 +373,7 @@ UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer, Pac
                 },
             };
           },
-          [&](EnumChannel _) {
+          [&](EnumChannel _) -> auto {
             return [this] -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
               assert(false && "Should not receive invalid channel value in HandleControlMessage");
               co_return _State;
@@ -398,9 +401,9 @@ UdpDynMux::UdpDynMux(boost::asio::any_io_executor executor, boost::asio::ip::udp
 
 UdpDynMux::~UdpDynMux() { assert(_Channels.empty()); }
 
-std::string UdpDynMux::GetName() const { return "UdpDynMux:" + boost::lexical_cast<std::string>(_Local); }
+auto UdpDynMux::GetName() const -> std::string { return "UdpDynMux:" + boost::lexical_cast<std::string>(_Local); }
 
-Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoStart() {
+auto UdpDynMux::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   ErrorCode ec;
   try {
     _Socket.open(boost::asio::ip::udp::v6());
@@ -420,7 +423,7 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoStart() {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<void> UdpDynMux::DoWork() {
+auto UdpDynMux::DoWork() -> Omni::Fiber::Coroutine<void> {
   auto& currentFiber = co_await Omni::Fiber::GetCurrentOmniFiber();
   _ReadLoopFiber = currentFiber.Spawn(GetName() + " ReadLoop", [this]() -> Omni::Fiber::Coroutine<void> {
     co_await ReadLoop();
@@ -430,7 +433,7 @@ Omni::Fiber::Coroutine<void> UdpDynMux::DoWork() {
   bool stopped = false;
   while (!stopped) {
     auto [stopResult, rpcResult] = co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] {}),
+        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] -> void {}),
         Omni::Fiber::SelectPair(_ChannelRpc.GetServiceAwaitor(), Omni::Fiber::RemoteCall::HandleRequest));
     if (stopResult) {
       stopped = true;
@@ -441,7 +444,7 @@ Omni::Fiber::Coroutine<void> UdpDynMux::DoWork() {
   }
 }
 
-Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoGracefulStop() {
+auto UdpDynMux::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   _ChannelRpc.DiscardAndClose();
   for (auto& [psk, channel] : std::exchange(_Channels, {})) {
     co_await channel->Stop();
@@ -455,12 +458,13 @@ Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::DoGracefulStop() {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<std::shared_ptr<UdpDynMux::Channel>> UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk) {
+auto UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk)
+    -> Omni::Fiber::Coroutine<std::shared_ptr<UdpDynMux::Channel>> {
   co_return co_await CreateChannel(psk, nullptr);
 }
 
-Omni::Fiber::Coroutine<std::shared_ptr<UdpDynMux::Channel>>
-UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver) {
+auto UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver)
+    -> Omni::Fiber::Coroutine<std::shared_ptr<UdpDynMux::Channel>> {
   auto reply = co_await _ChannelRpc.Call(
       [&udp = *this, psk, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
         auto now = std::chrono::steady_clock::now();
@@ -487,7 +491,7 @@ UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, std::shared_ptr<Resolver
   co_return reply.value();
 }
 
-Omni::Fiber::Coroutine<void> UdpDynMux::RemoveChannel(const UdpDynMux::PskType& psk) {
+auto UdpDynMux::RemoveChannel(const UdpDynMux::PskType& psk) -> Omni::Fiber::Coroutine<void> {
   auto result = co_await _ChannelRpc.Call([this, psk]() -> Omni::Fiber::Coroutine<void> {
     auto it = _Channels.find(psk);
     if (it != _Channels.end()) {
@@ -502,7 +506,7 @@ Omni::Fiber::Coroutine<void> UdpDynMux::RemoveChannel(const UdpDynMux::PskType& 
   }
 }
 
-Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
+auto UdpDynMux::ReadLoop() -> Omni::Fiber::Coroutine<void> {
   while (!_Service.value()._Stop.IsTriggered()) {
     Packet packet;
     boost::asio::ip::udp::endpoint peer;
@@ -537,52 +541,52 @@ Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
         auto lookup =
             PacketParser<std::variant<UdpDynMux::PskType, uint16_t, std::monostate>, PacketUdpDynMux, 0>{packet.Data()}(
                 Overload{
-                    [&](C<EnumChannel::kControlChannel>) {
+                    [&](C<EnumChannel::kControlChannel>) -> auto {
                       return Overload{
-                          [&](C<MsgType::kInitiate>) {
-                            return [&](auto psk, auto rxId, auto peerRxId, auto major, auto minor, auto patch) {
+                          [&](C<MsgType::kInitiate>) -> auto {
+                            return [&](auto psk, auto rxId, auto peerRxId, auto major, auto minor, auto patch) -> auto {
                               UdpDynMux::PskType pskArr;
                               std::copy(psk.begin(), psk.end(), pskArr.begin());
                               return std::variant<UdpDynMux::PskType, uint16_t, std::monostate>{pskArr};
                             };
                           },
-                          [&](C<MsgType::kInitiateFail>) {
-                            return [&](auto psk, auto major, auto minor, auto patch) {
+                          [&](C<MsgType::kInitiateFail>) -> auto {
+                            return [&](auto psk, auto major, auto minor, auto patch) -> auto {
                               UdpDynMux::PskType pskArr;
                               std::copy(psk.begin(), psk.end(), pskArr.begin());
                               return std::variant<UdpDynMux::PskType, uint16_t, std::monostate>{pskArr};
                             };
                           },
-                          [&](C<MsgType::kKeepalive>) {
-                            return [&](auto psk, auto flag) {
+                          [&](C<MsgType::kKeepalive>) -> auto {
+                            return [&](auto psk, auto flag) -> auto {
                               UdpDynMux::PskType pskArr;
                               std::copy(psk.begin(), psk.end(), pskArr.begin());
                               return std::variant<UdpDynMux::PskType, uint16_t, std::monostate>{pskArr};
                             };
                           },
-                          [&](C<MsgType::kInvalidPsk>) {
-                            return [&](auto psk) {
+                          [&](C<MsgType::kInvalidPsk>) -> auto {
+                            return [&](auto psk) -> auto {
                               UdpDynMux::PskType pskArr;
                               std::copy(psk.begin(), psk.end(), pskArr.begin());
                               return std::variant<UdpDynMux::PskType, uint16_t, std::monostate>{pskArr};
                             };
                           },
-                          [&](C<MsgType::kInvalidAddress>) {
-                            return [&](auto channel) {
+                          [&](C<MsgType::kInvalidAddress>) -> auto {
+                            return [&](auto channel) -> auto {
                               return std::variant<UdpDynMux::PskType, uint16_t, std::monostate>{channel};
                             };
                           },
-                          [&](C<MsgType::kInvalidChannel>) {
-                            return [&](auto channel) {
+                          [&](C<MsgType::kInvalidChannel>) -> auto {
+                            return [&](auto channel) -> auto {
                               return std::variant<UdpDynMux::PskType, uint16_t, std::monostate>{channel};
                             };
                           },
-                          [&](MsgType value) {
+                          [&](MsgType value) -> std::variant<UdpDynMux::PskType, uint16_t, std::monostate> {
                             return std::variant<UdpDynMux::PskType, uint16_t, std::monostate>{std::monostate{}};
                           },
                       };
                     },
-                    [&](EnumChannel value) {
+                    [&](EnumChannel value) -> std::variant<UdpDynMux::PskType, uint16_t, std::monostate> {
                       return std::variant<UdpDynMux::PskType, uint16_t, std::monostate>{std::monostate{}};
                     },
                 })
@@ -635,15 +639,17 @@ Omni::Fiber::Coroutine<void> UdpDynMux::ReadLoop() {
   }
 }
 
-Omni::Fiber::Coroutine<ErrorCode> UdpDynMux::WriteTo(boost::asio::ip::udp::endpoint peer, Packet& p, Cancel& c) {
+auto UdpDynMux::WriteTo(boost::asio::ip::udp::endpoint peer, Packet& p, Cancel& c)
+    -> Omni::Fiber::Coroutine<ErrorCode> {
   auto [err, bytes_transferred] = co_await _Socket.async_send_to(boost::asio::const_buffer(p), peer, c.AsioSlot()());
   assert(err || bytes_transferred == p._Length);
   co_return err;
 }
 
-bool UdpDynMux::CheckRateLimit(const boost::asio::ip::udp::endpoint& peer) {
+auto UdpDynMux::CheckRateLimit(const boost::asio::ip::udp::endpoint& peer) -> bool {
   auto now = std::chrono::steady_clock::now();
-  std::erase_if(_LastErrorSent, [&](const auto& entry) { return now - entry.second > std::chrono::seconds(10); });
+  std::erase_if(_LastErrorSent,
+                [&](const auto& entry) -> auto { return now - entry.second > std::chrono::seconds(10); });
   if (auto it = _LastErrorSent.find(peer); it != _LastErrorSent.end() && now - it->second < std::chrono::seconds(1)) {
     return false;
   }
@@ -651,9 +657,8 @@ bool UdpDynMux::CheckRateLimit(const boost::asio::ip::udp::endpoint& peer) {
   return true;
 }
 
-Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInitiate(const boost::asio::ip::udp::endpoint& peer,
-                                                            const UdpDynMux::PskType& psk, uint16_t rxId,
-                                                            uint16_t peerRxId) {
+auto UdpDynMux::SendControlInitiate(const boost::asio::ip::udp::endpoint& peer, const UdpDynMux::PskType& psk,
+                                    uint16_t rxId, uint16_t peerRxId) -> Omni::Fiber::Coroutine<void> {
   constexpr size_t kSize = 27; // 2 + 1 + 16 + 2 + 2 + 1 + 1 + 2
   auto buf = std::make_shared<std::array<uint8_t, kSize>>();
   PacketBuilder<PacketUdpDynMux, 0> builder(*buf);
@@ -662,8 +667,8 @@ Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInitiate(const boost::asio::i
   co_await _Socket.async_send_to(boost::asio::buffer(*buf), peer, Omni::Fiber::AsioUseFiber);
 }
 
-Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInitiateFail(const boost::asio::ip::udp::endpoint& peer,
-                                                                const UdpDynMux::PskType& psk) {
+auto UdpDynMux::SendControlInitiateFail(const boost::asio::ip::udp::endpoint& peer, const UdpDynMux::PskType& psk)
+    -> Omni::Fiber::Coroutine<void> {
   constexpr size_t kSize = 23; // 2 + 1 + 16 + 1 + 1 + 2
   auto buf = std::make_shared<std::array<uint8_t, kSize>>();
   PacketBuilder<PacketUdpDynMux, 0> builder(*buf);
@@ -672,8 +677,8 @@ Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInitiateFail(const boost::asi
   co_await _Socket.async_send_to(boost::asio::buffer(*buf), peer, Omni::Fiber::AsioUseFiber);
 }
 
-Omni::Fiber::Coroutine<void> UdpDynMux::SendControlKeepalive(const boost::asio::ip::udp::endpoint& peer,
-                                                             const UdpDynMux::PskType& psk, uint8_t flags) {
+auto UdpDynMux::SendControlKeepalive(const boost::asio::ip::udp::endpoint& peer, const UdpDynMux::PskType& psk,
+                                     uint8_t flags) -> Omni::Fiber::Coroutine<void> {
   constexpr size_t kSize = 20; // 2 + 1 + 16 + 1
   auto buf = std::make_shared<std::array<uint8_t, kSize>>();
   PacketBuilder<PacketUdpDynMux, 0> builder(*buf);
@@ -681,8 +686,8 @@ Omni::Fiber::Coroutine<void> UdpDynMux::SendControlKeepalive(const boost::asio::
   co_await _Socket.async_send_to(boost::asio::buffer(*buf), peer, Omni::Fiber::AsioUseFiber);
 }
 
-Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInvalidPsk(const boost::asio::ip::udp::endpoint& peer,
-                                                              const UdpDynMux::PskType& psk) {
+auto UdpDynMux::SendControlInvalidPsk(const boost::asio::ip::udp::endpoint& peer, const UdpDynMux::PskType& psk)
+    -> Omni::Fiber::Coroutine<void> {
   if (!CheckRateLimit(peer)) {
     co_return;
   }
@@ -693,8 +698,8 @@ Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInvalidPsk(const boost::asio:
   co_await _Socket.async_send_to(boost::asio::buffer(*buf), peer, Omni::Fiber::AsioUseFiber);
 }
 
-Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInvalidChannel(const boost::asio::ip::udp::endpoint& peer,
-                                                                  uint16_t channelId) {
+auto UdpDynMux::SendControlInvalidChannel(const boost::asio::ip::udp::endpoint& peer, uint16_t channelId)
+    -> Omni::Fiber::Coroutine<void> {
   if (!CheckRateLimit(peer)) {
     co_return;
   }
@@ -705,8 +710,8 @@ Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInvalidChannel(const boost::a
   co_await _Socket.async_send_to(boost::asio::buffer(*buf), peer, Omni::Fiber::AsioUseFiber);
 }
 
-Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInvalidAddress(const boost::asio::ip::udp::endpoint& peer,
-                                                                  uint16_t channelId) {
+auto UdpDynMux::SendControlInvalidAddress(const boost::asio::ip::udp::endpoint& peer, uint16_t channelId)
+    -> Omni::Fiber::Coroutine<void> {
   if (!CheckRateLimit(peer)) {
     co_return;
   }
@@ -717,7 +722,7 @@ Omni::Fiber::Coroutine<void> UdpDynMux::SendControlInvalidAddress(const boost::a
   co_await _Socket.async_send_to(boost::asio::buffer(*buf), peer, Omni::Fiber::AsioUseFiber);
 }
 
-uint16_t UdpDynMux::AllocateUniqueRxId() {
+auto UdpDynMux::AllocateUniqueRxId() -> uint16_t {
   std::uniform_int_distribution<uint16_t> dist(1, 65535);
   while (true) {
     uint16_t candidate = dist(_Prng);

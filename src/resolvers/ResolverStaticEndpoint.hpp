@@ -14,17 +14,17 @@ public:
   ~ResolverStaticEndpoint() override = default;
 
   ResolverStaticEndpoint(const ResolverStaticEndpoint&) = delete;
-  ResolverStaticEndpoint& operator=(const ResolverStaticEndpoint&) = delete;
+  auto operator=(const ResolverStaticEndpoint&) -> ResolverStaticEndpoint& = delete;
   ResolverStaticEndpoint(ResolverStaticEndpoint&&) = delete;
-  ResolverStaticEndpoint& operator=(ResolverStaticEndpoint&&) = delete;
+  auto operator=(ResolverStaticEndpoint&&) -> ResolverStaticEndpoint& = delete;
 
-  boost::asio::ip::udp::endpoint GetResolverResult() const override;
+  auto GetResolverResult() const -> boost::asio::ip::udp::endpoint override;
 
 protected:
-  std::string GetName() const override;
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<void> DoWork() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto GetName() const -> std::string override;
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoWork() -> Omni::Fiber::Coroutine<void> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
   boost::asio::ip::udp::endpoint _Endpoint;

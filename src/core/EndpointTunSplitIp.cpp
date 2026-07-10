@@ -42,9 +42,9 @@ EndpointTunSplitIp::EndpointTunSplitIp(boost::asio::any_io_executor executor, co
 
 EndpointTunSplitIp::~EndpointTunSplitIp() { assert(_Channels.empty()); }
 
-std::string EndpointTunSplitIp::GetName() const { return "TunSplitIp:" + _TunName; }
+auto EndpointTunSplitIp::GetName() const -> std::string { return "TunSplitIp:" + _TunName; }
 
-Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::DoStart() {
+auto EndpointTunSplitIp::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   if (!_TunFileDescriptor.is_open()) {
     int fd = ::open("/dev/net/tun", O_RDWR);
     if (fd < 0) {
@@ -67,7 +67,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::DoStart() {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<void> EndpointTunSplitIp::DoWork() {
+auto EndpointTunSplitIp::DoWork() -> Omni::Fiber::Coroutine<void> {
   _ReadLoopFiber =
       (co_await Omni::Fiber::GetCurrentOmniFiber())
           .Spawn("EndpointTunSplitIp ReadLoop:" + _TunName + "@" + std::to_string(reinterpret_cast<uintptr_t>(this)),
@@ -79,7 +79,7 @@ Omni::Fiber::Coroutine<void> EndpointTunSplitIp::DoWork() {
   bool stopped = false;
   while (!stopped) {
     auto [stopResult, rpcResult] = co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] {}),
+        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] -> void {}),
         Omni::Fiber::SelectPair(_ChannelRpc.GetServiceAwaitor(), _ChannelRpc.HandleRequest));
     if (stopResult) {
       stopped = true;
@@ -90,7 +90,7 @@ Omni::Fiber::Coroutine<void> EndpointTunSplitIp::DoWork() {
   }
 }
 
-Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::DoGracefulStop() {
+auto EndpointTunSplitIp::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   _ChannelRpc.DiscardAndClose();
   for (auto& channel : std::exchange(_Channels, {}) | std::ranges::views::values | std::ranges::to<std::set>()) {
     co_await channel->Stop();
@@ -103,8 +103,8 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::DoGracefulStop() {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<std::shared_ptr<EndpointTunSplitIp::Channel>>
-EndpointTunSplitIp::CreateChannel(const std::vector<boost::asio::ip::address_v6>& ips) {
+auto
+EndpointTunSplitIp::CreateChannel(const std::vector<boost::asio::ip::address_v6>& ips) -> Omni::Fiber::Coroutine<std::shared_ptr<EndpointTunSplitIp::Channel>> {
   assert(!ips.empty());
   if (ips.empty()) {
     co_return nullptr;
@@ -134,7 +134,7 @@ EndpointTunSplitIp::CreateChannel(const std::vector<boost::asio::ip::address_v6>
   co_return reply.value();
 }
 
-Omni::Fiber::Coroutine<void> EndpointTunSplitIp::RemoveChannel(std::shared_ptr<EndpointTunSplitIp::Channel> channel) {
+auto EndpointTunSplitIp::RemoveChannel(std::shared_ptr<EndpointTunSplitIp::Channel> channel) -> Omni::Fiber::Coroutine<void> {
   if (!channel) {
     co_return;
   }
@@ -146,7 +146,7 @@ Omni::Fiber::Coroutine<void> EndpointTunSplitIp::RemoveChannel(std::shared_ptr<E
   });
 }
 
-Omni::Fiber::Coroutine<void> EndpointTunSplitIp::ReadLoop() {
+auto EndpointTunSplitIp::ReadLoop() -> Omni::Fiber::Coroutine<void> {
   while (!_Service.value()._Stop.IsTriggered()) {
     Packet p;
 
@@ -189,7 +189,7 @@ Omni::Fiber::Coroutine<void> EndpointTunSplitIp::ReadLoop() {
   }
 }
 
-Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::WriteToTun(Packet& p, Cancel& c) {
+auto EndpointTunSplitIp::WriteToTun(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   if (c.IsTriggered()) {
     co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
   }
@@ -200,7 +200,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::WriteToTun(Packet& p, Canc
   co_return err;
 }
 
-std::optional<boost::asio::ip::address_v6> EndpointTunSplitIp::GetSourceAddress(const Packet& p) {
+auto EndpointTunSplitIp::GetSourceAddress(const Packet& p) -> std::optional<boost::asio::ip::address_v6> {
   if (p.DataSize() < 20) {
     return std::nullopt;
   }
@@ -220,7 +220,7 @@ std::optional<boost::asio::ip::address_v6> EndpointTunSplitIp::GetSourceAddress(
   return std::nullopt;
 }
 
-std::optional<boost::asio::ip::address_v6> EndpointTunSplitIp::GetDestAddress(const Packet& p) {
+auto EndpointTunSplitIp::GetDestAddress(const Packet& p) -> std::optional<boost::asio::ip::address_v6> {
   if (p.DataSize() < 20) {
     return std::nullopt;
   }
@@ -246,22 +246,22 @@ EndpointTunSplitIp::Channel::Channel(EndpointTunSplitIp& parent, const std::vect
 
 EndpointTunSplitIp::Channel::~Channel() {}
 
-std::string EndpointTunSplitIp::Channel::GetName() const {
+auto EndpointTunSplitIp::Channel::GetName() const -> std::string {
   return std::format("TunSplitIpChannel:[{}]", _Ips.front().to_string());
 }
 
-Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::Channel::DoStart() { co_return ErrorCode{}; }
+auto EndpointTunSplitIp::Channel::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
-Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::Channel::DoGracefulStop() {
+auto EndpointTunSplitIp::Channel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   co_await _PipielineUsageCounter.WaitAll();
   _Pipe.GetConsumer().DiscardAndClose();
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::Channel::Read(Packet& p, Cancel& c) {
+auto EndpointTunSplitIp::Channel::Read(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   auto [stopResult, pipeResult] =
-      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] {}),
-                                   Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&](auto data) {
+      co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(c.GetFiberCancelEvent(), [] -> void {}),
+                                   Omni::Fiber::SelectPair(_Pipe.GetConsumer(), [&](auto data) -> auto {
                                      if (data.has_value()) {
                                        auto& inner = data.value();
                                        if (inner.has_value()) {
@@ -285,7 +285,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::Channel::Read(Packet& p, C
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<ErrorCode> EndpointTunSplitIp::Channel::Write(Packet& p, Cancel& c) {
+auto EndpointTunSplitIp::Channel::Write(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   auto srcIpOpt = GetSourceAddress(p);
   if (!std::binary_search(_Ips.begin(), _Ips.end(), srcIpOpt)) {
     BOOST_LOG_TRIVIAL(warning) << "Channel " << GetName() << " drop packet: source IP "

@@ -44,17 +44,17 @@ public:
            std::shared_ptr<Endpoint> ep2);
   ~Pipeline() override {}
 
-  std::string GetName() { return std::format("Pipeline[{}:{}]", _Ep1->GetName(), _Ep2->GetName()); }
-  Omni::Fiber::Coroutine<ErrorCode> Start() override;
-  Omni::Fiber::Coroutine<ErrorCode> Stop() override;
+  auto GetName() -> std::string { return std::format("Pipeline[{}:{}]", _Ep1->GetName(), _Ep2->GetName()); }
+  auto Start() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto Stop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
-  TrafficStats GetTrafficStats() const { return _TrafficStats; }
+  auto GetTrafficStats() const -> TrafficStats { return _TrafficStats; }
 
 private:
-  bool IsCritical(const ErrorCode& ec);
-  Omni::Fiber::Coroutine<void> RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoint> out,
-                                            Direction direction);
-  std::string GetNameWithDirection(Direction direction) {
+  auto IsCritical(const ErrorCode& ec) -> bool;
+  auto RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoint> out,
+                                            Direction direction) -> Omni::Fiber::Coroutine<void>;
+  auto GetNameWithDirection(Direction direction) -> std::string {
     if (direction == Direction::Forward) {
       return std::format("Pipeline[F] {}->{}", _Ep1->GetName(), _Ep2->GetName());
     } else {

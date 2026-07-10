@@ -86,7 +86,7 @@ static void UdpDynMuxStart(lua_State* L) {
   });
 }
 
-static int UdpDynMuxSetChannelNotification(lua_State* L) {
+static auto UdpDynMuxSetChannelNotification(lua_State* L) -> int {
   auto& u = *LuaUdpDynMux::Get(L, 1);
   auto& notification = **LuaChannelNotification::Get(L, 2);
   u->SetChannelNotification(notification);
@@ -101,7 +101,7 @@ static const struct luaL_Reg kUdpDynMuxMetatable[] = {
     {"stop", SafeYield<UdpDynMuxStop>},
     {nullptr, nullptr}};
 
-static int UdpDynMuxNew(lua_State* L) {
+static auto UdpDynMuxNew(lua_State* L) -> int {
   auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
   std::optional<int> port;
 

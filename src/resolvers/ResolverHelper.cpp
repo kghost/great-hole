@@ -17,16 +17,16 @@ namespace gh {
 
 namespace {
 
-bool IsNumeric(std::string const& str) {
+auto IsNumeric(std::string const& str) -> bool {
   if (str.empty()) {
     return false;
   }
-  return std::all_of(str.begin(), str.end(), [](unsigned char c) { return std::isdigit(c); });
+  return std::all_of(str.begin(), str.end(), [](unsigned char c) -> int { return std::isdigit(c); });
 }
 
 } // namespace
 
-std::shared_ptr<ResolverIp> FindResolverIp(const std::string& input, ResolveFor& target) {
+auto FindResolverIp(const std::string& input, ResolveFor& target) -> std::shared_ptr<ResolverIp> {
   std::string stripped = input;
   if (!stripped.empty() && stripped.front() == '[' && stripped.back() == ']') {
     stripped = stripped.substr(1, stripped.size() - 2);
@@ -42,7 +42,7 @@ std::shared_ptr<ResolverIp> FindResolverIp(const std::string& input, ResolveFor&
   }
 }
 
-std::shared_ptr<ResolverPort> FindResolverPort(const std::string& input, ResolveFor& target) {
+auto FindResolverPort(const std::string& input, ResolveFor& target) -> std::shared_ptr<ResolverPort> {
   if (IsNumeric(input)) {
     int port = boost::lexical_cast<int>(input);
     if (port < 0 || port > 65535) {
@@ -54,7 +54,7 @@ std::shared_ptr<ResolverPort> FindResolverPort(const std::string& input, Resolve
   }
 }
 
-std::shared_ptr<ResolverEndpoint> FindResolverEndpoint(const std::string& input, ResolveFor& target) {
+auto FindResolverEndpoint(const std::string& input, ResolveFor& target) -> std::shared_ptr<ResolverEndpoint> {
   size_t lastColon = input.find_last_of(':');
   if (lastColon != std::string::npos) {
     size_t rightBracket = input.find(']');

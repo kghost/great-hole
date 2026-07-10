@@ -4,10 +4,10 @@
 
 namespace gh {
 
-GeneratorHelper<std::generator<std::chrono::milliseconds>> BackoffTimerDuration(int randomnessPercent,
+auto BackoffTimerDuration(int randomnessPercent,
                                                                                 std::chrono::milliseconds current,
                                                                                 std::chrono::milliseconds step,
-                                                                                std::chrono::milliseconds maximum) {
+                                                                                std::chrono::milliseconds maximum) -> GeneratorHelper<std::generator<std::chrono::milliseconds>> {
   return GeneratorHelper(([](int randomnessPercent, std::chrono::milliseconds current, std::chrono::milliseconds step,
                              std::chrono::milliseconds maximum) -> std::generator<std::chrono::milliseconds> {
     std::mt19937 gen(std::random_device{}());

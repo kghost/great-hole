@@ -9,7 +9,7 @@ extern const char _binary_init_lua_end[];
 
 namespace gh {
 
-Omni::Fiber::Coroutine<void> LuaEngine::RunLoop(lua_State* co) {
+auto LuaEngine::RunLoop(lua_State* co) -> Omni::Fiber::Coroutine<void> {
   int nres = 0;
   int status = lua_resume(co, _LuaState.get(), 0, &nres);
   while (true) {
@@ -28,7 +28,7 @@ Omni::Fiber::Coroutine<void> LuaEngine::RunLoop(lua_State* co) {
   }
 }
 
-Omni::Fiber::Coroutine<void> LuaEngine::DoFile(const std::string& filename) {
+auto LuaEngine::DoFile(const std::string& filename) -> Omni::Fiber::Coroutine<void> {
   luaL_openlibs(_LuaState.get());
 
   lua_State* co = lua_newthread(_LuaState.get());
