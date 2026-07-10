@@ -195,8 +195,8 @@ auto ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> packet, Pack
                 });
           },
           [&](std::span<const uint8_t> ip6span, const IPv6Header* ip6) -> ReturnType {
-            auto srcAddr = boost::asio::ip::make_address_v6(std::to_array(ip6->SrcIp));
-            auto dstAddr = boost::asio::ip::make_address_v6(std::to_array(ip6->DestIp));
+            auto srcAddr = boost::asio::ip::make_address_v6(ip6->SrcIp);
+            auto dstAddr = boost::asio::ip::make_address_v6(ip6->DestIp);
             return ip6->Next(
                 ip6span, type != PacketType::kRealPacket,
                 Overload{

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <format>
 #include <span>
@@ -9,6 +10,10 @@
 #include "Utils/Endian.hpp"
 
 namespace gh {
+
+// NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
+// NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
+// NOLINTBEGIN(cppcoreguidelines-pro-type-union-access)
 
 // Enforce strict 1-byte alignment across all compilers to prevent padding
 #pragma pack(push, 1)
@@ -43,12 +48,12 @@ enum class IPProtocol : uint8_t {
 // 0. ETHERNET II HEADER (14 Bytes Fixed)
 // ============================================================================
 struct EthernetHeader {
-  uint8_t DestMac[6];
-  uint8_t SrcMac[6];
+  std::array<uint8_t, 6> DestMac;
+  std::array<uint8_t, 6> SrcMac;
   uint16_t Type;
 
   // Getters with automated Endian Conversion
-  [[nodiscard]] inline EtherType GetEtherType() const noexcept { return static_cast<EtherType>(ArchEndian(Type)); }
+  [[nodiscard]] auto GetEtherType() const noexcept -> EtherType { return static_cast<EtherType>(ArchEndian(Type)); }
 };
 static_assert(std::is_trivially_copyable_v<EthernetHeader>);
 static_assert(sizeof(EthernetHeader) == 14);
@@ -59,11 +64,11 @@ static_assert(sizeof(EthernetHeader) == 14);
 struct IPHeader {
   uint8_t VerIhl; // Combined Version (4 bits) + IHL (4 bits)
 
-  [[nodiscard]] inline uint8_t GetVersion() const noexcept { return (VerIhl >> 4) & 0x0F; }
-  [[nodiscard]] inline uint8_t GetIhl() const noexcept { return VerIhl & 0x0F; }
+  [[nodiscard]] auto GetVersion() const noexcept -> uint8_t { return (VerIhl >> 4) & 0x0F; }
+  [[nodiscard]] auto GetIhl() const noexcept -> uint8_t { return VerIhl & 0x0F; }
 
   template <typename Overload>
-  decltype(auto) As(std::span<const uint8_t> self, bool truncated, Overload&& overload) const;
+  auto As(std::span<const uint8_t> self, bool truncated, Overload&& overload) const -> decltype(auto);
 };
 static_assert(std::is_trivially_copyable_v<IPHeader>);
 
@@ -83,30 +88,28 @@ struct IPv4Header {
   uint32_t DestIp;         // Destination IP Address
 
   // Raw Field Getters with automated Endian Conversion
-  [[nodiscard]] inline uint16_t GetTotalLength() const noexcept { return ArchEndian(TotalLength); }
-  [[nodiscard]] inline uint16_t GetId() const noexcept { return ArchEndian(Id); }
-  [[nodiscard]] inline uint16_t GetFlagsAndFragmentOffset() const noexcept { return ArchEndian(FragmentOffset); }
-  [[nodiscard]] inline uint16_t GetChecksum() const noexcept { return ArchEndian(Checksum); }
-  [[nodiscard]] inline uint32_t GetSrcIp() const noexcept { return ArchEndian(SrcIp); }
-  [[nodiscard]] inline uint32_t GetDestIp() const noexcept { return ArchEndian(DestIp); }
-  [[nodiscard]] inline IPProtocol GetProtocol() const noexcept { return static_cast<IPProtocol>(Protocol); }
+  [[nodiscard]] auto GetTotalLength() const noexcept -> uint16_t { return ArchEndian(TotalLength); }
+  [[nodiscard]] auto GetId() const noexcept -> uint16_t { return ArchEndian(Id); }
+  [[nodiscard]] auto GetFlagsAndFragmentOffset() const noexcept -> uint16_t { return ArchEndian(FragmentOffset); }
+  [[nodiscard]] auto GetChecksum() const noexcept -> uint16_t { return ArchEndian(Checksum); }
+  [[nodiscard]] auto GetSrcIp() const noexcept -> uint32_t { return ArchEndian(SrcIp); }
+  [[nodiscard]] auto GetDestIp() const noexcept -> uint32_t { return ArchEndian(DestIp); }
+  [[nodiscard]] auto GetProtocol() const noexcept -> IPProtocol { return static_cast<IPProtocol>(Protocol); }
 
   // Sub-byte Field Getters (safe against bit-ordering rules)
-  [[nodiscard]] inline uint8_t GetVersion() const noexcept { return (VerIhl >> 4) & 0x0F; }
-  [[nodiscard]] inline uint8_t GetIhl() const noexcept { return VerIhl & 0x0F; }
-  [[nodiscard]] inline uint8_t GetFlags() const noexcept { return (GetFlagsAndFragmentOffset() & 0xE000) >> 13; }
-  [[nodiscard]] inline uint16_t GetFragmentOffset() const noexcept { return GetFlagsAndFragmentOffset() & 0x1FFF; }
+  [[nodiscard]] auto GetVersion() const noexcept -> uint8_t { return (VerIhl >> 4) & 0x0F; }
+  [[nodiscard]] auto GetIhl() const noexcept -> uint8_t { return VerIhl & 0x0F; }
+  [[nodiscard]] auto GetFlags() const noexcept -> uint8_t { return (GetFlagsAndFragmentOffset() & 0xE000) >> 13; }
+  [[nodiscard]] auto GetFragmentOffset() const noexcept -> uint16_t { return GetFlagsAndFragmentOffset() & 0x1FFF; }
 
-  template <typename Overload>
-  decltype(auto) As(std::span<const uint8_t> self, bool truncated, Overload&& overload) const {
-    auto valid = self.size() >= GetIhl() * 4 && (truncated || self.size() == GetTotalLength());
+  auto As(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto) {
+    auto valid = self.size() >= static_cast<size_t>(GetIhl()) * 4 && (truncated || self.size() == GetTotalLength());
     return valid ? overload(self, this)
                  : overload(self, std::format("Invalid IP Header: size = {}, ihl = {}, total_length = {}", self.size(),
                                               GetIhl(), GetTotalLength()));
   }
 
-  template <typename Overload>
-  decltype(auto) Next(std::span<const uint8_t> self, bool truncated, Overload&& overload) const;
+  auto Next(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto);
 };
 static_assert(std::is_trivially_copyable_v<IPv4Header>);
 static_assert(sizeof(IPv4Header) == 20);
@@ -115,26 +118,25 @@ static_assert(sizeof(IPv4Header) == 20);
 // 2. IPv6 HEADER (40 Bytes Fixed)
 // ============================================================================
 struct IPv6Header {
-  uint32_t VTcFl;         // Version (4b), Traffic Class (8b), Flow Label (20b)
-  uint16_t PayloadLength; // Payload Length
-  uint8_t NextHeader;     // Next Header protocol type
-  uint8_t HopLimit;       // Hop Limit (TTL replacement)
-  uint8_t SrcIp[16];      // 128-bit Source Address (Byte arrays are inherently endian-neutral)
-  uint8_t DestIp[16];     // 128-bit Destination Address
+  uint32_t VTcFl;                 // Version (4b), Traffic Class (8b), Flow Label (20b)
+  uint16_t PayloadLength;         // Payload Length
+  uint8_t NextHeader;             // Next Header protocol type
+  uint8_t HopLimit;               // Hop Limit (TTL replacement)
+  std::array<uint8_t, 16> SrcIp;  // 128-bit Source Address (Byte arrays are inherently endian-neutral)
+  std::array<uint8_t, 16> DestIp; // 128-bit Destination Address
 
   // Raw Field Getters with automated Endian Conversion
-  [[nodiscard]] inline uint32_t GetVTcFl() const noexcept { return ArchEndian(VTcFl); }
-  [[nodiscard]] inline uint16_t GetPayloadLength() const noexcept { return ArchEndian(PayloadLength); }
-  [[nodiscard]] inline IPProtocol GetNextHeader() const noexcept { return static_cast<IPProtocol>(NextHeader); }
+  [[nodiscard]] auto GetVTcFl() const noexcept -> uint32_t { return ArchEndian(VTcFl); }
+  [[nodiscard]] auto GetPayloadLength() const noexcept -> uint16_t { return ArchEndian(PayloadLength); }
+  [[nodiscard]] auto GetNextHeader() const noexcept -> IPProtocol { return static_cast<IPProtocol>(NextHeader); }
 
   // Portable Version extraction: Convert first, then parse.
   // This makes it completely platform-agnostic and immune to host endianness.
-  [[nodiscard]] inline uint8_t GetVersion() const noexcept { return (GetVTcFl() >> 28) & 0x0F; }
-  [[nodiscard]] inline uint8_t GetTrafficClass() const noexcept { return (GetVTcFl() >> 20) & 0xFF; }
-  [[nodiscard]] inline uint32_t GetFlowLabel() const noexcept { return GetVTcFl() & 0x000FFFFF; }
+  [[nodiscard]] auto GetVersion() const noexcept -> uint8_t { return (GetVTcFl() >> 28) & 0x0F; }
+  [[nodiscard]] auto GetTrafficClass() const noexcept -> uint8_t { return (GetVTcFl() >> 20) & 0xFF; }
+  [[nodiscard]] auto GetFlowLabel() const noexcept -> uint32_t { return GetVTcFl() & 0x000FFFFF; }
 
-  template <typename Overload>
-  decltype(auto) As(std::span<const uint8_t> self, bool truncated, Overload&& overload) const {
+  auto As(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto) {
     auto valid =
         self.size() >= sizeof(IPv6Header) && (truncated || self.size() == sizeof(IPv6Header) + GetPayloadLength());
     return valid ? overload(self, this)
@@ -142,12 +144,11 @@ struct IPv6Header {
                                               GetPayloadLength()));
   }
 
-  template <typename Overload>
-  static decltype(auto) Next(IPProtocol protocol, std::span<const uint8_t> self, bool truncated, Overload&& overload);
-  template <typename Overload>
-  decltype(auto) Next(std::span<const uint8_t> self, bool truncated, Overload&& overload) const {
+  static auto Next(IPProtocol protocol, std::span<const uint8_t> next, bool truncated, auto&& overload)
+      -> decltype(auto);
+  auto Next(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto) {
     return Next(GetNextHeader(), self.template subspan<sizeof(IPv6Header)>(), truncated,
-                std::forward<Overload>(overload));
+                std::forward<decltype(overload)>(overload));
   }
 };
 static_assert(std::is_trivially_copyable_v<IPv6Header>);
@@ -168,28 +169,27 @@ struct TCPHeader {
   uint16_t UrgPtr;               // Urgent Pointer
 
   // Raw Field Getters with automated Endian Conversion
-  [[nodiscard]] inline uint16_t GetSrcPort() const noexcept { return ArchEndian(SrcPort); }
-  [[nodiscard]] inline uint16_t GetDestPort() const noexcept { return ArchEndian(DestPort); }
-  [[nodiscard]] inline uint32_t GetSeqNum() const noexcept { return ArchEndian(SeqNum); }
-  [[nodiscard]] inline uint32_t GetAckNum() const noexcept { return ArchEndian(AckNum); }
-  [[nodiscard]] inline uint16_t GetWindowSize() const noexcept { return ArchEndian(WindowSize); }
-  [[nodiscard]] inline uint16_t GetChecksum() const noexcept { return ArchEndian(Checksum); }
-  [[nodiscard]] inline uint16_t GetUrgPtr() const noexcept { return ArchEndian(UrgPtr); }
+  [[nodiscard]] auto GetSrcPort() const noexcept -> uint16_t { return ArchEndian(SrcPort); }
+  [[nodiscard]] auto GetDestPort() const noexcept -> uint16_t { return ArchEndian(DestPort); }
+  [[nodiscard]] auto GetSeqNum() const noexcept -> uint32_t { return ArchEndian(SeqNum); }
+  [[nodiscard]] auto GetAckNum() const noexcept -> uint32_t { return ArchEndian(AckNum); }
+  [[nodiscard]] auto GetWindowSize() const noexcept -> uint16_t { return ArchEndian(WindowSize); }
+  [[nodiscard]] auto GetChecksum() const noexcept -> uint16_t { return ArchEndian(Checksum); }
+  [[nodiscard]] auto GetUrgPtr() const noexcept -> uint16_t { return ArchEndian(UrgPtr); }
 
   // Sub-byte / Flag Field Getters
-  [[nodiscard]] inline uint8_t GetDataOffset() const noexcept { return (DataOffsetAndReserved >> 4) & 0x0F; }
-  [[nodiscard]] inline bool IsFin() const noexcept { return (Flags & 0x01) != 0; }
-  [[nodiscard]] inline bool IsSyn() const noexcept { return (Flags & 0x02) != 0; }
-  [[nodiscard]] inline bool IsRst() const noexcept { return (Flags & 0x04) != 0; }
-  [[nodiscard]] inline bool IsPsh() const noexcept { return (Flags & 0x08) != 0; }
-  [[nodiscard]] inline bool IsAck() const noexcept { return (Flags & 0x10) != 0; }
-  [[nodiscard]] inline bool IsUrg() const noexcept { return (Flags & 0x20) != 0; }
-  [[nodiscard]] inline bool IsEce() const noexcept { return (Flags & 0x40) != 0; }
-  [[nodiscard]] inline bool IsCwr() const noexcept { return (Flags & 0x80) != 0; }
+  [[nodiscard]] auto GetDataOffset() const noexcept -> uint8_t { return (DataOffsetAndReserved >> 4) & 0x0F; }
+  [[nodiscard]] auto IsFin() const noexcept -> bool { return (Flags & 0x01) != 0; }
+  [[nodiscard]] auto IsSyn() const noexcept -> bool { return (Flags & 0x02) != 0; }
+  [[nodiscard]] auto IsRst() const noexcept -> bool { return (Flags & 0x04) != 0; }
+  [[nodiscard]] auto IsPsh() const noexcept -> bool { return (Flags & 0x08) != 0; }
+  [[nodiscard]] auto IsAck() const noexcept -> bool { return (Flags & 0x10) != 0; }
+  [[nodiscard]] auto IsUrg() const noexcept -> bool { return (Flags & 0x20) != 0; }
+  [[nodiscard]] auto IsEce() const noexcept -> bool { return (Flags & 0x40) != 0; }
+  [[nodiscard]] auto IsCwr() const noexcept -> bool { return (Flags & 0x80) != 0; }
 
-  template <typename Overload>
-  decltype(auto) As(std::span<const uint8_t> self, bool truncated, Overload&& overload) const {
-    auto valid = self.size() >= GetDataOffset() * 4;
+  auto As(std::span<const uint8_t> self, bool /*truncated*/, auto&& overload) const -> decltype(auto) {
+    auto valid = self.size() >= static_cast<size_t>(GetDataOffset()) * 4;
     return valid ? overload(self, this)
                  : overload(self, std::format("Invalid TCP Header: size = {}, data_offset = {}", self.size(),
                                               GetDataOffset()));
@@ -208,13 +208,12 @@ struct UDPHeader {
   uint16_t Checksum;
 
   // Raw Field Getters with automated Endian Conversion
-  [[nodiscard]] inline uint16_t GetSrcPort() const noexcept { return ArchEndian(SrcPort); }
-  [[nodiscard]] inline uint16_t GetDestPort() const noexcept { return ArchEndian(DestPort); }
-  [[nodiscard]] inline uint16_t GetLength() const noexcept { return ArchEndian(Length); }
-  [[nodiscard]] inline uint16_t GetChecksum() const noexcept { return ArchEndian(Checksum); }
+  [[nodiscard]] auto GetSrcPort() const noexcept -> uint16_t { return ArchEndian(SrcPort); }
+  [[nodiscard]] auto GetDestPort() const noexcept -> uint16_t { return ArchEndian(DestPort); }
+  [[nodiscard]] auto GetLength() const noexcept -> uint16_t { return ArchEndian(Length); }
+  [[nodiscard]] auto GetChecksum() const noexcept -> uint16_t { return ArchEndian(Checksum); }
 
-  template <typename Overload>
-  decltype(auto) As(std::span<const uint8_t> self, bool truncated, Overload&& overload) const {
+  auto As(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto) {
     auto valid = self.size() >= sizeof(UDPHeader) && (truncated || self.size() == GetLength());
     return valid ? overload(self, this)
                  : overload(self, std::format("Invalid UDP Header: size = {}, length = {}", self.size(), GetLength()));
@@ -293,15 +292,14 @@ struct ICMPv4Header {
     uint8_t Raw;
   };
 
-  [[nodiscard]] inline IcmpType GetType() const noexcept { return static_cast<IcmpType>(Type); }
-  [[nodiscard]] inline IcmpCode GetCode() const noexcept { return IcmpCode{.Raw = Code}; }
-  [[nodiscard]] inline uint16_t GetChecksum() const noexcept { return ArchEndian(Checksum); }
-  [[nodiscard]] inline uint16_t GetEchoId() const noexcept { return ArchEndian(Body.Echo.Id); }
-  [[nodiscard]] inline uint16_t GetEchoSequence() const noexcept { return ArchEndian(Body.Echo.Sequence); }
-  [[nodiscard]] inline uint32_t GetGatewayIp() const noexcept { return ArchEndian(Body.GatewayIp); }
+  [[nodiscard]] auto GetType() const noexcept -> IcmpType { return static_cast<IcmpType>(Type); }
+  [[nodiscard]] auto GetCode() const noexcept -> IcmpCode { return IcmpCode{.Raw = Code}; }
+  [[nodiscard]] auto GetChecksum() const noexcept -> uint16_t { return ArchEndian(Checksum); }
+  [[nodiscard]] auto GetEchoId() const noexcept -> uint16_t { return ArchEndian(Body.Echo.Id); }
+  [[nodiscard]] auto GetEchoSequence() const noexcept -> uint16_t { return ArchEndian(Body.Echo.Sequence); }
+  [[nodiscard]] auto GetGatewayIp() const noexcept -> uint32_t { return ArchEndian(Body.GatewayIp); }
 
-  template <typename Overload>
-  decltype(auto) As(std::span<const uint8_t> self, bool truncated, Overload&& overload) const {
+  auto As(std::span<const uint8_t> self, bool /*truncated*/, auto&& overload) const -> decltype(auto) {
     auto valid = self.size() >= sizeof(ICMPv4Header);
     return valid ? overload(self, this)
                  : overload(self, std::format("Invalid ICMPv4 Header: size = {}, expected = {}", self.size(),
@@ -387,16 +385,15 @@ struct ICMPv6Header {
   };
 
   // Raw Field Getters with automated Endian Conversion
-  [[nodiscard]] inline Icmp6Type GetType() const noexcept { return static_cast<Icmp6Type>(Type); }
-  [[nodiscard]] inline Icmp6Code GetCode() const noexcept { return Icmp6Code{.Raw = Code}; }
-  [[nodiscard]] inline uint16_t GetChecksum() const noexcept { return ArchEndian(Checksum); }
-  [[nodiscard]] inline uint16_t GetEchoId() const noexcept { return ArchEndian(Body.Echo.Id); }
-  [[nodiscard]] inline uint16_t GetEchoSequence() const noexcept { return ArchEndian(Body.Echo.Sequence); }
-  [[nodiscard]] inline uint32_t GetMtu() const noexcept { return ArchEndian(Body.Mtu); }
-  [[nodiscard]] inline uint32_t GetPointer() const noexcept { return ArchEndian(Body.Pointer); }
+  [[nodiscard]] auto GetType() const noexcept -> Icmp6Type { return static_cast<Icmp6Type>(Type); }
+  [[nodiscard]] auto GetCode() const noexcept -> Icmp6Code { return Icmp6Code{.Raw = Code}; }
+  [[nodiscard]] auto GetChecksum() const noexcept -> uint16_t { return ArchEndian(Checksum); }
+  [[nodiscard]] auto GetEchoId() const noexcept -> uint16_t { return ArchEndian(Body.Echo.Id); }
+  [[nodiscard]] auto GetEchoSequence() const noexcept -> uint16_t { return ArchEndian(Body.Echo.Sequence); }
+  [[nodiscard]] auto GetMtu() const noexcept -> uint32_t { return ArchEndian(Body.Mtu); }
+  [[nodiscard]] auto GetPointer() const noexcept -> uint32_t { return ArchEndian(Body.Pointer); }
 
-  template <typename Overload>
-  decltype(auto) As(std::span<const uint8_t> self, bool truncated, Overload&& overload) const {
+  auto As(std::span<const uint8_t> self, bool /*truncated*/, auto&& overload) const -> decltype(auto) {
     auto valid = self.size() >= sizeof(ICMPv6Header);
     return valid ? overload(self, this)
                  : overload(self, std::format("Invalid ICMPv6 Header: size = {}, expected = {}", self.size(),
@@ -413,25 +410,24 @@ static_assert(sizeof(ICMPv6Header) == 8);
 struct IPv6HopByHopHeader {
   uint8_t NextHeader;
   uint8_t HeaderExtLen;
-  uint8_t Reserved[6];
+  std::array<uint8_t, 6> Reserved;
 
   // Raw Field Getters with automated Endian Conversion
-  [[nodiscard]] inline IPProtocol GetNextHeader() const noexcept { return static_cast<IPProtocol>(NextHeader); }
-  [[nodiscard]] inline uint8_t GetHeaderExtLen() const noexcept { return HeaderExtLen; }
-  [[nodiscard]] inline const uint8_t* GetReserved() const noexcept { return Reserved; }
+  [[nodiscard]] auto GetNextHeader() const noexcept -> IPProtocol { return static_cast<IPProtocol>(NextHeader); }
+  [[nodiscard]] auto GetHeaderExtLen() const noexcept -> uint8_t { return HeaderExtLen; }
+  [[nodiscard]] auto GetReserved() const noexcept -> std::span<const uint8_t, 6> { return Reserved; }
 
-  template <typename Overload>
-  decltype(auto) As(std::span<const uint8_t> self, bool truncated, Overload&& overload) const {
-    auto valid = self.size() >= sizeof(IPv6HopByHopHeader) + GetHeaderExtLen() * 8;
+  auto As(std::span<const uint8_t> self, bool /*truncated*/, auto&& overload) const -> decltype(auto) {
+    auto valid = self.size() >= sizeof(IPv6HopByHopHeader) + (static_cast<size_t>(GetHeaderExtLen()) * 8);
     return valid ? overload(self, this)
                  : overload(self, std::format("Invalid IPv6 HopByHop Header: size = {}, header_ext_len = {}",
                                               self.size(), GetHeaderExtLen()));
   }
 
-  template <typename Overload>
-  decltype(auto) Next(std::span<const uint8_t> self, bool truncated, Overload&& overload) const {
-    return IPv6Header::Next(GetNextHeader(), self.subspan(sizeof(IPv6HopByHopHeader) + GetHeaderExtLen() * 8),
-                            truncated, std::forward<Overload>(overload));
+  auto Next(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto) {
+    return IPv6Header::Next(GetNextHeader(),
+                            self.subspan(sizeof(IPv6HopByHopHeader) + (static_cast<size_t>(GetHeaderExtLen()) * 8)),
+                            truncated, std::forward<decltype(overload)>(overload));
   }
 };
 static_assert(std::is_trivially_copyable_v<IPv6HopByHopHeader>);
@@ -440,8 +436,7 @@ static_assert(sizeof(IPv6HopByHopHeader) == 8);
 // ============================================================================
 // IPHeader::As Implementation
 // ============================================================================
-template <typename Overload>
-decltype(auto) IPHeader::As(std::span<const uint8_t> self, bool truncated, Overload&& overload) const {
+auto IPHeader::As(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto) {
   if (GetVersion() == 4 && self.size() >= sizeof(IPv4Header)) {
     return reinterpret_cast<const IPv4Header*>(this)->As(self, truncated, overload);
   } else if (GetVersion() == 6 && self.size() >= sizeof(IPv6Header)) {
@@ -454,9 +449,8 @@ decltype(auto) IPHeader::As(std::span<const uint8_t> self, bool truncated, Overl
 // ============================================================================
 // IPv4Header::Next Implementation
 // ============================================================================
-template <typename Overload>
-decltype(auto) IPv4Header::Next(std::span<const uint8_t> self, bool truncated, Overload&& overload) const {
-  auto next = self.subspan(GetIhl() * 4);
+auto IPv4Header::Next(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto) {
+  auto next = self.subspan(static_cast<size_t>(GetIhl()) * 4);
   if (GetProtocol() == IPProtocol::TCP && next.size() >= sizeof(TCPHeader)) {
     return reinterpret_cast<const TCPHeader*>(next.data())->As(next, truncated, overload);
   } else if (GetProtocol() == IPProtocol::UDP && next.size() >= sizeof(UDPHeader)) {
@@ -471,9 +465,8 @@ decltype(auto) IPv4Header::Next(std::span<const uint8_t> self, bool truncated, O
 // ============================================================================
 // IPv6Header::Next Implementation
 // ============================================================================
-template <typename Overload>
-decltype(auto) IPv6Header::Next(IPProtocol protocol, std::span<const uint8_t> next, bool truncated,
-                                Overload&& overload) {
+auto IPv6Header::Next(IPProtocol protocol, std::span<const uint8_t> next, bool truncated, auto&& overload)
+    -> decltype(auto) {
   switch (protocol) {
   case IPProtocol::TCP:
     if (next.size() >= sizeof(TCPHeader)) {
@@ -496,9 +489,7 @@ decltype(auto) IPv6Header::Next(IPProtocol protocol, std::span<const uint8_t> ne
     }
     break;
   case IPProtocol::IPv6Opts:
-    break;
   case IPProtocol::IPv6Frag:
-    break;
   // Add other ICMPv6 message types or extension headers here if needed
   default:
     break;
@@ -507,5 +498,9 @@ decltype(auto) IPv6Header::Next(IPProtocol protocol, std::span<const uint8_t> ne
 }
 
 #pragma pack(pop)
+
+// NOLINTEND(cppcoreguidelines-pro-type-union-access)
+// NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+// NOLINTEND(cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers)
 
 } // namespace gh

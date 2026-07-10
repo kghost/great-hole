@@ -1,7 +1,7 @@
 ---
 Checks: |
   bugprone-*, concurrency-*, cppcoreguidelines-*, misc-*, modernize-*, performance-*, portability-*, readability-*,
-  -bugprone-reserved-identifier,
+  -bugprone-reserved-identifier, -bugprone-easily-swappable-parameters,
   -readability-else-after-return, -readability-function-cognitive-complexity,
   -misc-non-private-member-variables-in-classes, -misc-use-internal-linkage, -misc-no-recursion,
   -cppcoreguidelines-avoid-reference-coroutine-parameters, -cppcoreguidelines-avoid-capturing-lambda-coroutines,

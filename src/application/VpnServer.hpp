@@ -24,23 +24,23 @@ public:
   ~VpnServer() override;
 
   VpnServer(const VpnServer&) = delete;
-  VpnServer& operator=(const VpnServer&) = delete;
+  auto operator=(const VpnServer&) -> VpnServer& = delete;
   VpnServer(VpnServer&&) = delete;
-  VpnServer& operator=(VpnServer&&) = delete;
+  auto operator=(VpnServer&&) -> VpnServer& = delete;
 
-  std::string GetName() const override;
+  auto GetName() const -> std::string override;
 
-  Omni::Fiber::Coroutine<void> RegisterPeer(const UdpDynMux::PskType& psk,
-                                            const std::vector<boost::asio::ip::address_v6>& ips);
-  Omni::Fiber::Coroutine<void> UnregisterPeer(const UdpDynMux::PskType& psk);
+  auto RegisterPeer(const UdpDynMux::PskType& psk, const std::vector<boost::asio::ip::address_v6>& ips)
+      -> Omni::Fiber::Coroutine<void>;
+  auto UnregisterPeer(const UdpDynMux::PskType& psk) -> Omni::Fiber::Coroutine<void>;
 
 protected:
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<void> DoWork() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoWork() -> Omni::Fiber::Coroutine<void> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
-  Omni::Fiber::Coroutine<void> OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) override;
-  Omni::Fiber::Coroutine<void> OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) override;
+  auto OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override;
+  auto OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override;
 
 private:
   struct Session {

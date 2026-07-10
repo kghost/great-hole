@@ -18,8 +18,7 @@
 
 namespace gh {
 
-// NOLINTNEXTLINE(performance-enum-size)
-enum class TunnelState : int { Starting = 0, Running = 1, Stopping = 2, Stopped = 3, Failed = 4 };
+enum class TunnelState : std::uint8_t { Starting = 0, Running = 1, Stopping = 2, Stopped = 3, Failed = 4 };
 
 class DataPlaneCallbacks {
 public:
@@ -32,7 +31,8 @@ public:
   auto operator=(DataPlaneCallbacks&&) -> DataPlaneCallbacks& = delete;
 
   virtual void OnVpnStateChanged(TunnelState state, const std::string& message) = 0;
-  virtual void OnTunnelStateChanged(int64_t endpointHandle, int state, const std::string& error) = 0;
+  virtual void OnTunnelStateChanged(const std::shared_ptr<VpnClientMultiChannel::Session>& session, TunnelState state,
+                                    const std::string& error) = 0;
 };
 
 class TunnelDataPlane : public VpnClientMultiChannel::SessionStateListener {
@@ -41,31 +41,33 @@ public:
                   DataPlaneCallbacks& callbacks);
   ~TunnelDataPlane();
 
-  void OnSessionStarting(std::shared_ptr<VpnClientMultiChannel::Session> session) override;
-  void OnSessionRunning(std::shared_ptr<VpnClientMultiChannel::Session> session) override;
-  void OnSessionStopping(std::shared_ptr<VpnClientMultiChannel::Session> session) override;
-  void OnSessionStopped(std::shared_ptr<VpnClientMultiChannel::Session> session) override;
-  void OnSessionFailed(std::shared_ptr<VpnClientMultiChannel::Session> session, const std::string& error) override;
+  void OnSessionStarting(const std::shared_ptr<VpnClientMultiChannel::Session>& session) override;
+  void OnSessionRunning(const std::shared_ptr<VpnClientMultiChannel::Session>& session) override;
+  void OnSessionStopping(const std::shared_ptr<VpnClientMultiChannel::Session>& session) override;
+  void OnSessionStopped(const std::shared_ptr<VpnClientMultiChannel::Session>& session) override;
+  void OnSessionFailed(const std::shared_ptr<VpnClientMultiChannel::Session>& session,
+                       const std::string& error) override;
 
   TunnelDataPlane(const TunnelDataPlane&) = delete;
-  TunnelDataPlane& operator=(const TunnelDataPlane&) = delete;
+  auto operator=(const TunnelDataPlane&) -> TunnelDataPlane& = delete;
   TunnelDataPlane(TunnelDataPlane&&) = delete;
-  TunnelDataPlane& operator=(TunnelDataPlane&&) = delete;
+  auto operator=(TunnelDataPlane&&) -> TunnelDataPlane& = delete;
 
 #if defined(_WIN32)
-  Omni::Fiber::Coroutine<void> Start(int mtu, std::vector<char> encryptionKey);
+  auto Start(int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void>;
 #else
-  Omni::Fiber::Coroutine<void> Start(int tunFd, int mtu, std::vector<char> encryptionKey);
-  Omni::Fiber::Coroutine<void> MigrateTun(int tunFd);
+  auto Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void>;
+  auto MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void>;
 #endif
-  Omni::Fiber::Coroutine<void> Stop();
-  Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>> AddEndpoint(const UdpDynMux::PskType& psk,
-                                                                                      const std::string& address);
-  Omni::Fiber::Coroutine<void> RemoveEndpoint(std::shared_ptr<VpnClientMultiChannel::Session> handle);
+  auto Stop() -> Omni::Fiber::Coroutine<void>;
+  auto AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address)
+      -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>>;
+  auto RemoveEndpoint(std::shared_ptr<VpnClientMultiChannel::Session> session) -> Omni::Fiber::Coroutine<void>;
 
-  std::shared_ptr<VpnClientMultiChannel::Session> FindSessionByHandle(VpnClientMultiChannel::Session* session);
+  auto FindSessionByHandle(VpnClientMultiChannel::Session* session) -> std::shared_ptr<VpnClientMultiChannel::Session>;
 
-  std::optional<VpnTrafficStats> GetTrafficStats(std::shared_ptr<VpnClientMultiChannel::Session> session);
+  static auto GetTrafficStats(const std::shared_ptr<VpnClientMultiChannel::Session>& session)
+      -> std::optional<VpnTrafficStats>;
 
 private:
   boost::asio::any_io_executor _Executor;

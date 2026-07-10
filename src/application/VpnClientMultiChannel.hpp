@@ -83,11 +83,11 @@ public:
     SessionStateListener(SessionStateListener&&) = delete;
     auto operator=(SessionStateListener&&) -> SessionStateListener& = delete;
 
-    virtual void OnSessionStarting(std::shared_ptr<Session> session) = 0;
-    virtual void OnSessionRunning(std::shared_ptr<Session> session) = 0;
-    virtual void OnSessionStopping(std::shared_ptr<Session> session) = 0;
-    virtual void OnSessionStopped(std::shared_ptr<Session> session) = 0;
-    virtual void OnSessionFailed(std::shared_ptr<Session> session, const std::string& error) = 0;
+    virtual void OnSessionStarting(const std::shared_ptr<Session>& session) = 0;
+    virtual void OnSessionRunning(const std::shared_ptr<Session>& session) = 0;
+    virtual void OnSessionStopping(const std::shared_ptr<Session>& session) = 0;
+    virtual void OnSessionStopped(const std::shared_ptr<Session>& session) = 0;
+    virtual void OnSessionFailed(const std::shared_ptr<Session>& session, const std::string& error) = 0;
   };
 
   class NoopSessionStateListener : public SessionStateListener {
@@ -100,11 +100,11 @@ public:
     NoopSessionStateListener(NoopSessionStateListener&&) = delete;
     auto operator=(NoopSessionStateListener&&) -> NoopSessionStateListener& = delete;
 
-    void OnSessionStarting(std::shared_ptr<Session> /*session*/) override {}
-    void OnSessionRunning(std::shared_ptr<Session> /*session*/) override {}
-    void OnSessionStopping(std::shared_ptr<Session> /*session*/) override {}
-    void OnSessionStopped(std::shared_ptr<Session> /*session*/) override {}
-    void OnSessionFailed(std::shared_ptr<Session> /*session*/, const std::string& /*error*/) override {}
+    void OnSessionStarting(const std::shared_ptr<Session>& /*session*/) override {}
+    void OnSessionRunning(const std::shared_ptr<Session>& /*session*/) override {}
+    void OnSessionStopping(const std::shared_ptr<Session>& /*session*/) override {}
+    void OnSessionStopped(const std::shared_ptr<Session>& /*session*/) override {}
+    void OnSessionFailed(const std::shared_ptr<Session>& /*session*/, const std::string& /*error*/) override {}
   };
   static NoopSessionStateListener _NoopSessionStateListener;
 

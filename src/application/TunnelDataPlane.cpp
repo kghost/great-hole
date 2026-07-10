@@ -28,15 +28,15 @@ namespace gh {
 
 TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
                                  DataPlaneCallbacks& callbacks)
-    : _Executor(executor), _Selector(selector), _Callbacks(callbacks) {}
+    : _Executor(std::move(executor)), _Selector(selector), _Callbacks(callbacks) {}
 
 TunnelDataPlane::~TunnelDataPlane() { assert(!_Running); }
 
-Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(
+auto TunnelDataPlane::Start(
 #if !defined(_WIN32)
     int tunFd,
 #endif
-    int mtu, std::vector<char> encryptionKey) {
+    int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void> {
   if (_Running) {
     co_return;
   }
@@ -55,24 +55,24 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(
   _Client = std::make_shared<VpnClientMultiChannel>(_Executor, _Tun, _UdpDynMux, tracker, _Selector,
                                                     std::vector<std::shared_ptr<Filter>>{filter}, *this);
 
-  auto ec = co_await _Tun->Start();
-  if (ec) {
-    BOOST_LOG_TRIVIAL(error) << "Failed to start Tun: " << ec.message();
-    _Callbacks.OnVpnStateChanged(TunnelState::Failed, ec.message().c_str());
+  auto err = co_await _Tun->Start();
+  if (err) {
+    BOOST_LOG_TRIVIAL(error) << "Failed to start Tun: " << err.message();
+    _Callbacks.OnVpnStateChanged(TunnelState::Failed, err.message());
     co_return;
   }
 
-  ec = co_await _UdpDynMux->Start();
-  if (ec) {
-    BOOST_LOG_TRIVIAL(error) << "Failed to start UdpDynMux: " << ec.message();
-    _Callbacks.OnVpnStateChanged(TunnelState::Failed, ec.message().c_str());
+  err = co_await _UdpDynMux->Start();
+  if (err) {
+    BOOST_LOG_TRIVIAL(error) << "Failed to start UdpDynMux: " << err.message();
+    _Callbacks.OnVpnStateChanged(TunnelState::Failed, err.message());
     co_return;
   }
 
-  ec = co_await _Client->Start();
-  if (ec) {
-    BOOST_LOG_TRIVIAL(error) << "Failed to start VpnClientMultiChannel: " << ec.message();
-    _Callbacks.OnVpnStateChanged(TunnelState::Failed, ec.message().c_str());
+  err = co_await _Client->Start();
+  if (err) {
+    BOOST_LOG_TRIVIAL(error) << "Failed to start VpnClientMultiChannel: " << err.message();
+    _Callbacks.OnVpnStateChanged(TunnelState::Failed, err.message());
     co_return;
   }
 
@@ -80,19 +80,19 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Start(
 }
 
 #if !defined(_WIN32)
-Omni::Fiber::Coroutine<void> TunnelDataPlane::MigrateTun(int tunFd) {
+auto TunnelDataPlane::MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void> {
   if (_Running && _Client) {
     auto newTun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
-    auto ec = co_await newTun->Start();
-    if (ec) {
-      BOOST_LOG_TRIVIAL(error) << "Failed to start new Tun during migration: " << ec.message();
+    auto err = co_await newTun->Start();
+    if (err) {
+      BOOST_LOG_TRIVIAL(error) << "Failed to start new Tun during migration: " << err.message();
       ::close(tunFd);
       co_return;
     }
 
-    ec = co_await _Client->MigrateTun(newTun);
-    if (ec) {
-      BOOST_LOG_TRIVIAL(error) << "Failed to migrate Tun in VpnClientMultiChannel: " << ec.message();
+    err = co_await _Client->MigrateTun(newTun);
+    if (err) {
+      BOOST_LOG_TRIVIAL(error) << "Failed to migrate Tun in VpnClientMultiChannel: " << err.message();
       co_await newTun->Stop();
       co_return;
     }
@@ -108,7 +108,7 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::MigrateTun(int tunFd) {
 }
 #endif
 
-Omni::Fiber::Coroutine<void> TunnelDataPlane::Stop() {
+auto TunnelDataPlane::Stop() -> Omni::Fiber::Coroutine<void> {
   if (!_Running) {
     co_return;
   }
@@ -134,8 +134,8 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Stop() {
   _Callbacks.OnVpnStateChanged(TunnelState::Stopped, "VPN tunnel stopped");
 }
 
-Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>>
-TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address) {
+auto TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address)
+    -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>> {
   std::shared_ptr<ResolverEndpoint> resolver;
   if (_UdpDynMux) {
     resolver = FindResolverEndpoint(address, *_UdpDynMux);
@@ -148,51 +148,47 @@ TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& a
   co_return nullptr;
 }
 
-Omni::Fiber::Coroutine<void> TunnelDataPlane::RemoveEndpoint(std::shared_ptr<VpnClientMultiChannel::Session> session) {
+auto TunnelDataPlane::RemoveEndpoint(std::shared_ptr<VpnClientMultiChannel::Session> session)
+    -> Omni::Fiber::Coroutine<void> {
   _Endpoints.erase(session);
   if (_Client) {
     co_await _Client->UnregisterChannel(session);
   }
 }
 
-std::shared_ptr<VpnClientMultiChannel::Session>
-TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannel::Session* session) {
-  auto it = _Endpoints.find(session);
-  if (it != _Endpoints.end()) {
-    return *it;
+auto TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannel::Session* session)
+    -> std::shared_ptr<VpnClientMultiChannel::Session> {
+  auto iterator = _Endpoints.find(session);
+  if (iterator != _Endpoints.end()) {
+    return *iterator;
   }
   return nullptr;
 }
 
-std::optional<VpnTrafficStats>
-TunnelDataPlane::GetTrafficStats(std::shared_ptr<VpnClientMultiChannel::Session> session) {
-  return _Client->GetStats(session);
+auto TunnelDataPlane::GetTrafficStats(const std::shared_ptr<VpnClientMultiChannel::Session>& session)
+    -> std::optional<VpnTrafficStats> {
+  return VpnClientMultiChannel::GetStats(session);
 }
 
-void TunnelDataPlane::OnSessionStarting(std::shared_ptr<VpnClientMultiChannel::Session> session) {
-  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(session.get()), std::to_underlying(TunnelState::Starting),
-                                  "");
+void TunnelDataPlane::OnSessionStarting(const std::shared_ptr<VpnClientMultiChannel::Session>& session) {
+  _Callbacks.OnTunnelStateChanged(session, TunnelState::Starting, "");
 }
 
-void TunnelDataPlane::OnSessionRunning(std::shared_ptr<VpnClientMultiChannel::Session> session) {
-  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(session.get()), std::to_underlying(TunnelState::Running),
-                                  "");
+void TunnelDataPlane::OnSessionRunning(const std::shared_ptr<VpnClientMultiChannel::Session>& session) {
+  _Callbacks.OnTunnelStateChanged(session, TunnelState::Running, "");
 }
 
-void TunnelDataPlane::OnSessionStopping(std::shared_ptr<VpnClientMultiChannel::Session> session) {
-  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(session.get()), std::to_underlying(TunnelState::Stopping),
-                                  "");
+void TunnelDataPlane::OnSessionStopping(const std::shared_ptr<VpnClientMultiChannel::Session>& session) {
+  _Callbacks.OnTunnelStateChanged(session, TunnelState::Stopping, "");
 }
 
-void TunnelDataPlane::OnSessionStopped(std::shared_ptr<VpnClientMultiChannel::Session> session) {
-  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(session.get()), std::to_underlying(TunnelState::Stopped),
-                                  "");
+void TunnelDataPlane::OnSessionStopped(const std::shared_ptr<VpnClientMultiChannel::Session>& session) {
+  _Callbacks.OnTunnelStateChanged(session, TunnelState::Stopped, "");
 }
 
-void TunnelDataPlane::OnSessionFailed(std::shared_ptr<VpnClientMultiChannel::Session> session,
+void TunnelDataPlane::OnSessionFailed(const std::shared_ptr<VpnClientMultiChannel::Session>& session,
                                       const std::string& error) {
-  _Callbacks.OnTunnelStateChanged(reinterpret_cast<int64_t>(session.get()), std::to_underlying(TunnelState::Failed),
-                                  error);
+  _Callbacks.OnTunnelStateChanged(session, TunnelState::Failed, error);
 }
 
 } // namespace gh

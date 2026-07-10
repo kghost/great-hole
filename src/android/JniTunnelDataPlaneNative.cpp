@@ -75,7 +75,8 @@ public:
 
   bool ProtectSocket(int fd);
   void OnVpnStateChanged(TunnelState state, const std::string& message) override;
-  void OnTunnelStateChanged(int64_t endpointHandle, int state, const std::string& error) override;
+  void OnTunnelStateChanged(const std::shared_ptr<VpnClientMultiChannel::Session>& session, TunnelState state,
+                            const std::string& error) override;
   std::optional<VpnTrafficStats> GetTrafficStats(jlong endpointHandle);
 
   template <typename Func> void PostTask(Func&& func) {
@@ -347,7 +348,8 @@ void JniSession::OnVpnStateChanged(TunnelState state, const std::string& message
   }
 }
 
-void JniSession::OnTunnelStateChanged(int64_t endpointHandle, int state, const std::string& error) {
+void JniSession::OnTunnelStateChanged(const std::shared_ptr<VpnClientMultiChannel::Session>& session, TunnelState state,
+                                      const std::string& error) {
   if (!_Callbacks) {
     return;
   }
@@ -357,8 +359,8 @@ void JniSession::OnTunnelStateChanged(int64_t endpointHandle, int state, const s
     BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnTunnelStateChanged (NewStringUTF)";
     env->ExceptionClear();
   }
-  env->CallVoidMethod(_Callbacks, g_MidOnTunnelStateChanged, static_cast<jlong>(endpointHandle),
-                      static_cast<jint>(state), errStr);
+  env->CallVoidMethod(_Callbacks, g_MidOnTunnelStateChanged, reinterpret_cast<jlong>(session.get()),
+                      static_cast<jint>(std::to_underlying(state)), errStr);
   if (env->ExceptionCheck()) {
     BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnTunnelStateChanged (onTunnelStateChanged)";
     env->ExceptionDescribe();
