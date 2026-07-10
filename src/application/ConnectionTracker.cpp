@@ -1,16 +1,20 @@
 #include "ConnectionTracker.hpp"
 
 #include <array>
+#include <boost/asio/any_io_executor.hpp>
+#include <boost/asio/ip/address_v6.hpp>
+#include <boost/asio/steady_timer.hpp>
 #include <chrono>
 #include <cstdint>
 #include <functional>
 #include <optional>
-
-#include <boost/asio/ip/address_v6.hpp>
-#include <boost/asio/steady_timer.hpp>
+#include <type_traits>
 #include <utility>
 
+#include "Asio.hpp"
+#include "Coroutine.hpp"
 #include "ErrorCode.hpp"
+#include "Packet.hpp"
 #include "PacketHeader.hpp"
 #include "Select.hpp"
 #include "SelectPair.hpp"
@@ -26,10 +30,10 @@ auto ConnectionTracker::DoWork() -> Omni::Fiber::Coroutine<void> {
   boost::asio::steady_timer timer(_Executor);
   timer.expires_after(ConnectionEntry::ProneInterval);
   while (_State == State::kRunning && !_Service.value()._Stop.IsTriggered()) {
-    auto [stop, timerFired] =
-        co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] {}),
-                                     Omni::Fiber::SelectPair(timer.async_wait(_Service.value()._Stop.AsioSlot()()),
-                                                             Omni::Fiber::AsioApply([](auto err) { return err; })));
+    auto [stop, timerFired] = co_await Omni::Fiber::Select(
+        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] {}),
+        Omni::Fiber::SelectPair(timer.async_wait(_Service.value()._Stop.AsioSlot()()),
+                                Omni::Fiber::AsioApply([](auto err) -> auto { return err; })));
 
     if (stop) {
       break;

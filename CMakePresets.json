@@ -8,6 +8,12 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "CMAKE_C_COMPILER": "clang", "CMAKE_CXX_COMPILER": "clang++" }
     },
     {
+      "name": "debug-tidy",
+      "inherits": "debug",
+      "binaryDir": "${sourceDir}/build-tidy",
+      "cacheVariables": { "BUILD_WITH_CLANG_TIDY": "ON" }
+    },
+    {
       "name": "debug-msvc",
       "binaryDir": "${sourceDir}/build-msvc",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" },
@@ -59,6 +65,7 @@
   ],
   "buildPresets": [
     { "name": "build-debug", "configurePreset": "debug", "jobs": 16 },
+    { "name": "build-debug-tidy", "configurePreset": "debug-tidy", "jobs": 16 },
     { "name": "build-debug-msvc", "configurePreset": "debug-msvc", "configuration": "Debug", "jobs": 8 },
     { "name": "build-debug-msvc-ninja", "configurePreset": "debug-msvc-ninja", "jobs": 8 },
     { "name": "build-debug-gcc-14", "configurePreset": "debug-gcc-14", "jobs": 8 },

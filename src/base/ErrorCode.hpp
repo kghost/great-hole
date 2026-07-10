@@ -15,8 +15,16 @@ using boost::system::system_category;
 
 class AppErrorCategory : public ErrorCategory {
 public:
-  const char* name() const noexcept override { return "great-hole error"; }
-  std::string message(int ev) const override { return _Errs[ev]; }
+  explicit AppErrorCategory() = default;
+  virtual ~AppErrorCategory() = default;
+
+  AppErrorCategory(const AppErrorCategory&) = delete;
+  auto operator=(const AppErrorCategory&) -> AppErrorCategory& = delete;
+  AppErrorCategory(AppErrorCategory&&) = delete;
+  auto operator=(AppErrorCategory&&) -> AppErrorCategory& = delete;
+
+  auto name() const noexcept -> const char* override { return "great-hole error"; }
+  auto message(int code) const -> std::string override { return _Errs.at(code); }
 
   enum Codes {
     kNoError = 0,
@@ -42,8 +50,16 @@ private:
 
 class AppMinorErrorCategory : public ErrorCategory {
 public:
-  const char* name() const noexcept override { return "great-hole minor error"; }
-  std::string message(int ev) const override { return _Errs[ev]; }
+  explicit AppMinorErrorCategory() = default;
+  virtual ~AppMinorErrorCategory() = default;
+
+  AppMinorErrorCategory(const AppMinorErrorCategory&) = delete;
+  auto operator=(const AppMinorErrorCategory&) -> AppMinorErrorCategory& = delete;
+  AppMinorErrorCategory(AppMinorErrorCategory&&) = delete;
+  auto operator=(AppMinorErrorCategory&&) -> AppMinorErrorCategory& = delete;
+
+  auto name() const noexcept -> const char* override { return "great-hole minor error"; }
+  auto message(int code) const -> std::string override { return _Errs.at(code); }
 
   enum Codes {
     kNoError = 0,
@@ -63,7 +79,7 @@ private:
   });
 };
 
-extern AppErrorCategory kAppError;
-extern AppMinorErrorCategory kAppMinorError;
+extern const AppErrorCategory kAppError;
+extern const AppMinorErrorCategory kAppMinorError;
 
 } // namespace gh

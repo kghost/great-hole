@@ -1,8 +1,10 @@
 #include "VpnServer.hpp"
 
 #include <format>
+#include <memory>
 #include <utility>
 
+#include <boost/asio/ip/address_v6.hpp>
 #include <boost/log/trivial.hpp>
 
 #include "Select.hpp"
@@ -13,7 +15,7 @@ namespace gh {
 VpnServer::VpnServer(std::shared_ptr<EndpointTunSplitIp> tunSplit, std::shared_ptr<UdpDynMux> udpDynMux,
                      std::vector<std::shared_ptr<Filter>> filters)
     : _TunSplit(std::move(tunSplit)), _UdpDynMux(std::move(udpDynMux)), _Filters(std::move(filters)) {
-  udpDynMux->SetChannelNotification(*this);
+  _UdpDynMux->SetChannelNotification(*this);
 }
 
 VpnServer::~VpnServer() {}

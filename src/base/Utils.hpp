@@ -10,15 +10,15 @@ template <typename T>
   requires(!std::is_pointer_v<T> && !std::is_reference_v<T>)
 struct Less {
   using is_transparent = void;
-  bool operator()(const T& lhs, const T& rhs) const { return &lhs < &rhs; }
-  bool operator()(std::reference_wrapper<T> lhs, std::reference_wrapper<T> rhs) const {
+  auto operator()(const T& lhs, const T& rhs) const -> bool { return &lhs < &rhs; }
+  auto operator()(std::reference_wrapper<T> lhs, std::reference_wrapper<T> rhs) const -> bool {
     return &lhs.get() < &rhs.get();
   }
-  bool operator()(std::reference_wrapper<T> lhs, const T& rhs) const { return &lhs.get() < &rhs; }
-  bool operator()(const T& lhs, std::reference_wrapper<T> rhs) const { return &lhs < &rhs.get(); }
+  auto operator()(std::reference_wrapper<T> lhs, const T& rhs) const -> bool { return &lhs.get() < &rhs; }
+  auto operator()(const T& lhs, std::reference_wrapper<T> rhs) const -> bool { return &lhs < &rhs.get(); }
 };
 
-inline boost::asio::ip::address_v6 MapToV6(const boost::asio::ip::address& address) {
+inline auto MapToV6(const boost::asio::ip::address& address) -> boost::asio::ip::address_v6 {
   if (address.is_v6()) {
     return address.to_v6();
   } else {

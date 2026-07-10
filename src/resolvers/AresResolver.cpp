@@ -136,7 +136,7 @@ Omni::Fiber::Coroutine<ErrorCode> RunChannel(boost::asio::any_io_executor execut
     tracker.WritableInterest = writable;
   };
 
-  struct ares_options options;
+  struct ares_options options{};
   int optmask = 0;
   options.sock_state_cb = LambdaBridge<decltype(OnSocketStateChange), ares_socket_t, int, int>;
   options.sock_state_cb_data = &OnSocketStateChange;

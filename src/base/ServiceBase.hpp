@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 
 #include <boost/log/trivial.hpp>
@@ -15,15 +16,21 @@ namespace gh {
 
 class ServiceBase : public std::enable_shared_from_this<ServiceBase>, virtual public Service {
 public:
-  virtual ~ServiceBase() = default;
+  explicit ServiceBase() = default;
+  ~ServiceBase() override = default;
 
-  Omni::Fiber::Coroutine<ErrorCode> Start() override;
-  Omni::Fiber::Coroutine<ErrorCode> Stop() override;
+  ServiceBase(const ServiceBase&) = delete;
+  auto operator=(const ServiceBase&) -> ServiceBase& = delete;
+  ServiceBase(ServiceBase&&) = delete;
+  auto operator=(ServiceBase&&) -> ServiceBase& = delete;
 
-  virtual std::string GetName() const = 0;
+  auto Start() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto Stop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
-  enum class State { kNone, kPreStart, kStarting, kRunning, kStopping, kFinished, kError };
-  State GetState() const { return _State; }
+  virtual auto GetName() const -> std::string = 0;
+
+  enum class State : uint8_t { kNone, kPreStart, kStarting, kRunning, kStopping, kFinished, kError };
+  auto GetState() const -> State { return _State; }
 
 protected:
   struct Context {
@@ -35,9 +42,9 @@ protected:
   State _State = State::kNone;
   std::optional<Context> _Service;
 
-  virtual Omni::Fiber::Coroutine<ErrorCode> DoStart() = 0;
-  virtual Omni::Fiber::Coroutine<void> DoWork();
-  virtual Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() = 0;
+  virtual auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> = 0;
+  virtual auto DoWork() -> Omni::Fiber::Coroutine<void>;
+  virtual auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> = 0;
 };
 
 } // namespace gh

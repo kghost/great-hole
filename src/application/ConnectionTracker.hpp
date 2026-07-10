@@ -108,12 +108,12 @@ public:
     Selector(Selector&&) = delete;
     auto operator=(Selector&&) -> Selector& = delete;
 
-    virtual std::unique_ptr<ConnectionMark> operator()(const Ip4TcpKey&) const = 0;
-    virtual std::unique_ptr<ConnectionMark> operator()(const Ip6TcpKey&) const = 0;
-    virtual std::unique_ptr<ConnectionMark> operator()(const Ip4UdpKey&) const = 0;
-    virtual std::unique_ptr<ConnectionMark> operator()(const Ip6UdpKey&) const = 0;
-    virtual std::unique_ptr<ConnectionMark> operator()(const IcmpKey&) const = 0;
-    virtual std::unique_ptr<ConnectionMark> operator()(const Icmp6Key&) const = 0;
+    virtual auto operator()(const Ip4TcpKey&) const -> std::unique_ptr<ConnectionMark> = 0;
+    virtual auto operator()(const Ip6TcpKey&) const -> std::unique_ptr<ConnectionMark> = 0;
+    virtual auto operator()(const Ip4UdpKey&) const -> std::unique_ptr<ConnectionMark> = 0;
+    virtual auto operator()(const Ip6UdpKey&) const -> std::unique_ptr<ConnectionMark> = 0;
+    virtual auto operator()(const IcmpKey&) const -> std::unique_ptr<ConnectionMark> = 0;
+    virtual auto operator()(const Icmp6Key&) const -> std::unique_ptr<ConnectionMark> = 0;
   };
 
   explicit ConnectionTracker(boost::asio::any_io_executor executor);
@@ -163,13 +163,13 @@ private:
   };
 
   struct TcpEntry : public ConnectionEntry {
-    enum TcpFlags : uint8_t {
-      kFin = 0x01,
-      kSyn = 0x02,
-      kRst = 0x04,
-      kPsh = 0x08,
-      kAck = 0x10,
-      kUrg = 0x20,
+    struct TcpFlags {
+      static constexpr uint8_t kFin = 0x01;
+      static constexpr uint8_t kSyn = 0x02;
+      static constexpr uint8_t kRst = 0x04;
+      static constexpr uint8_t kPsh = 0x08;
+      static constexpr uint8_t kAck = 0x10;
+      static constexpr uint8_t kUrg = 0x20;
     };
 
     struct TcpExtraKey {
@@ -186,11 +186,11 @@ private:
       static constexpr std::chrono::seconds EstablishedTimeout = std::chrono::seconds(1200);
       static constexpr std::chrono::seconds FinTimeout = std::chrono::seconds(30);
 
-      auto IsClosing() const -> bool {
+      [[nodiscard]] auto IsClosing() const -> bool {
         return State == State::kFinSent || State == State::kFinAcked || State == State::kClosed;
       }
 
-      auto IsEstablished() const -> bool { return State == State::kSynAcked; }
+      [[nodiscard]] auto IsEstablished() const -> bool { return State == State::kSynAcked; }
 
       auto HandleThisDirectionPacket(TcpExtraKey extra) -> bool {
         if ((extra.Flags & TcpFlags::kRst) != 0) {
@@ -260,7 +260,7 @@ private:
       UpdateState<Direction>(extra);
     }
 
-    auto GetTimeout() const -> std::chrono::seconds {
+    [[nodiscard]] auto GetTimeout() const -> std::chrono::seconds {
       if (OutputDirection.IsClosing() || InputDirection.IsClosing()) {
         return OneDirectionState::FinTimeout;
       }

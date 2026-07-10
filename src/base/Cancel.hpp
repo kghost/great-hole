@@ -18,20 +18,20 @@ public:
   ~Cancel() = default;
 
   Cancel(const Cancel&) = delete;
-  Cancel& operator=(const Cancel&) = delete;
+  auto operator=(const Cancel&) -> Cancel& = delete;
   Cancel(Cancel&&) = delete;
-  Cancel& operator=(Cancel&&) = delete;
+  auto operator=(Cancel&&) -> Cancel& = delete;
 
-  bool IsTriggered() const { return _CancelEvent.IsFired(); }
+  [[nodiscard]] auto IsTriggered() const -> bool { return _CancelEvent.IsFired(); }
 
   void Trigger() {
     _CancelEvent.Fire();
-    for (auto& tracker : _Trackers) {
+    for (const auto& tracker : _Trackers) {
       tracker.get().Emit();
     }
   }
 
-  Omni::Fiber::Event<void>& GetFiberCancelEvent() { return _CancelEvent; }
+  auto GetFiberCancelEvent() -> Omni::Fiber::Event<void>& { return _CancelEvent; }
 
   class SlotTracker {
   public:
@@ -39,11 +39,11 @@ public:
     ~SlotTracker() { _Parent.Unregister(*this); }
 
     SlotTracker(const SlotTracker&) = delete;
-    SlotTracker& operator=(const SlotTracker&) = delete;
+    auto operator=(const SlotTracker&) -> SlotTracker& = delete;
     SlotTracker(SlotTracker&&) = delete;
-    SlotTracker& operator=(SlotTracker&&) = delete;
+    auto operator=(SlotTracker&&) -> SlotTracker& = delete;
 
-    decltype(auto) operator()() {
+    auto operator()() -> decltype(auto) {
       return boost::asio::bind_cancellation_slot(_Signal.slot(), Omni::Fiber::AsioUseFiber);
     }
 
@@ -54,7 +54,7 @@ public:
     boost::asio::cancellation_signal _Signal;
   };
 
-  SlotTracker AsioSlot() { return SlotTracker(*this); }
+  auto AsioSlot() -> SlotTracker { return SlotTracker(*this); }
 
 private:
   void Register(SlotTracker& tracker) {
