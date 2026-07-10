@@ -135,11 +135,10 @@ Omni::Fiber::Coroutine<void> TunnelDataPlane::Stop() {
 }
 
 Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>>
-TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& host, int port) {
+TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address) {
   std::shared_ptr<ResolverEndpoint> resolver;
   if (_UdpDynMux) {
-    std::string addrStr = host + ":" + std::to_string(port);
-    resolver = FindResolverEndpoint(addrStr, *_UdpDynMux);
+    resolver = FindResolverEndpoint(address, *_UdpDynMux);
   }
   if (_Client) {
     auto session = co_await _Client->RegisterChannel(psk, resolver);

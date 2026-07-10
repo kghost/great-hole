@@ -18,11 +18,19 @@
 
 namespace gh {
 
+// NOLINTNEXTLINE(performance-enum-size)
 enum class TunnelState : int { Starting = 0, Running = 1, Stopping = 2, Stopped = 3, Failed = 4 };
 
 class DataPlaneCallbacks {
 public:
+  explicit DataPlaneCallbacks() = default;
   virtual ~DataPlaneCallbacks() = default;
+
+  DataPlaneCallbacks(const DataPlaneCallbacks&) = delete;
+  auto operator=(const DataPlaneCallbacks&) -> DataPlaneCallbacks& = delete;
+  DataPlaneCallbacks(DataPlaneCallbacks&&) = delete;
+  auto operator=(DataPlaneCallbacks&&) -> DataPlaneCallbacks& = delete;
+
   virtual void OnVpnStateChanged(TunnelState state, const std::string& message) = 0;
   virtual void OnTunnelStateChanged(int64_t endpointHandle, int state, const std::string& error) = 0;
 };
@@ -51,8 +59,8 @@ public:
   Omni::Fiber::Coroutine<void> MigrateTun(int tunFd);
 #endif
   Omni::Fiber::Coroutine<void> Stop();
-  Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>>
-  AddEndpoint(const UdpDynMux::PskType& psk, const std::string& host, int port);
+  Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>> AddEndpoint(const UdpDynMux::PskType& psk,
+                                                                                      const std::string& address);
   Omni::Fiber::Coroutine<void> RemoveEndpoint(std::shared_ptr<VpnClientMultiChannel::Session> handle);
 
   std::shared_ptr<VpnClientMultiChannel::Session> FindSessionByHandle(VpnClientMultiChannel::Session* session);

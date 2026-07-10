@@ -39,14 +39,13 @@ static jmethodID g_MidOnVpnStateChanged = nullptr;
 
 namespace gh {
 
-class JniSession;
 class JniSelector;
 
 class JniSession : public DataPlaneCallbacks {
 public:
   using Task = Omni::Fiber::move_only_function<Omni::Fiber::Coroutine<void>(TunnelDataPlane&, bool&)>;
 
-  JniSession(JNIEnv* env, jobject callbacks, jobject connectivityManager);
+  explicit JniSession(JNIEnv* env, jobject callbacks, jobject connectivityManager);
   ~JniSession() override;
 
   JniSession(const JniSession&) = delete;
@@ -66,7 +65,7 @@ public:
   void Start(int tunFd, int mtu, std::vector<char> encryptionKey);
   void MigrateTun(int tunFd);
   void Stop();
-  jlong AddEndpoint(const UdpDynMux::PskType& psk, const std::string& host, int port);
+  jlong AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address);
   void RemoveEndpoint(jlong handle);
   void StartEndpoint(jlong handle);
   void StopEndpoint(jlong handle);
@@ -293,12 +292,12 @@ void JniSession::Stop() {
   }
 }
 
-jlong JniSession::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& host, int port) {
+jlong JniSession::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address) {
   std::promise<jlong> promise;
   auto future = promise.get_future();
 
-  PostTask([&promise, psk, host, port](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
-    auto session = co_await dp.AddEndpoint(psk, host, port);
+  PostTask([&promise, psk, address](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    auto session = co_await dp.AddEndpoint(psk, address);
     promise.set_value(reinterpret_cast<jlong>(session.get()));
     co_return;
   });
@@ -499,7 +498,7 @@ JNIEXPORT void JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDat
 }
 
 JNIEXPORT jlong JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDataPlaneNative_nativeAddEndpoint(
-    JNIEnv* env, jclass clazz, jlong sessionHandle, jbyteArray psk, jstring host, jint port) {
+    JNIEnv* env, jclass clazz, jlong sessionHandle, jbyteArray psk, jstring address) {
   auto session = GetSession(sessionHandle);
   if (session) {
     if (!psk) {
@@ -516,11 +515,11 @@ JNIEXPORT jlong JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunnelDa
       return 0;
     }
 
-    const char* hostChars = env->GetStringUTFChars(host, nullptr);
-    std::string hostStr(hostChars);
-    env->ReleaseStringUTFChars(host, hostChars);
+    const char* addressChars = env->GetStringUTFChars(address, nullptr);
+    std::string addressStr(addressChars);
+    env->ReleaseStringUTFChars(address, addressChars);
 
-    return session->AddEndpoint(pskArray, hostStr, port);
+    return session->AddEndpoint(pskArray, addressStr);
   }
   return 0;
 }
