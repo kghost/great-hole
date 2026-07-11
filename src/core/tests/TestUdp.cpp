@@ -395,6 +395,21 @@ TEST(UdpFiberTest, MultiplePacketsPingPong) {
 }
 
 TEST(UdpFiberTest, CreateChannelFromResolverEndpoint) {
+  class MockResolveFor : public ResolveFor {
+  public:
+    MockResolveFor(boost::asio::any_io_executor executor, std::string service, Protocol protocol)
+        : _Executor(executor), _Service(service), _Protocol(protocol) {}
+    ~MockResolveFor() override = default;
+
+    auto GetExecutor() -> boost::asio::any_io_executor override { return _Executor; }
+    auto GetService() -> std::string override { return _Service; }
+    auto GetProtocol() -> Protocol override { return _Protocol; }
+
+    boost::asio::any_io_executor _Executor;
+    std::string _Service;
+    Protocol _Protocol;
+  };
+
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
@@ -423,21 +438,7 @@ TEST(UdpFiberTest, CreateChannelFromResolverEndpoint) {
     auto ep1 = udp1->LocalEndpoint();
     auto ep2 = udp2->LocalEndpoint();
 
-    class MockResolveeFor : public ResolveFor {
-    public:
-      MockResolveeFor(boost::asio::any_io_executor executor, std::string service, Protocol protocol)
-          : _Executor(executor), _Service(service), _Protocol(protocol) {}
-      ~MockResolveeFor() override = default;
-
-      auto GetExecutor() -> boost::asio::any_io_executor override { return _Executor; }
-      auto GetService() -> std::string override { return _Service; }
-      auto GetProtocol() -> Protocol override { return _Protocol; }
-
-      boost::asio::any_io_executor _Executor;
-      std::string _Service;
-      Protocol _Protocol;
-    };
-    auto mockedResolveFor = MockResolveeFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
+    auto mockedResolveFor = MockResolveFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
 
     // Create a dynamic ResolverEndpoint for the peer
     std::string resolverInput = "[::1]:" + std::to_string(ep2.port());

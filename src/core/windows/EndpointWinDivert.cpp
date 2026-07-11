@@ -3,20 +3,21 @@
 #include <format>
 
 #include <boost/log/trivial.hpp>
+#include <utility>
 #include <windivert.h>
 
 namespace gh {
 
-EndpointWinDivert::EndpointWinDivert(boost::asio::any_io_executor executor, std::string const& name)
-    : _Executor(executor), _Name(name), _WinDivertHandle(INVALID_HANDLE_VALUE) {}
+EndpointWinDivert::EndpointWinDivert(boost::asio::any_io_executor executor, std::string name)
+    : _Executor(std::move(executor)), _Name(std::move(name)), _WinDivertHandle(INVALID_HANDLE_VALUE) {}
 
 EndpointWinDivert::~EndpointWinDivert() { assert(_WinDivertHandle == INVALID_HANDLE_VALUE); }
 
-std::string EndpointWinDivert::GetName() const {
+auto EndpointWinDivert::GetName() const -> std::string {
   return std::format("EndpointWinDivert:{}[{}]", _Name, _WinDivertHandle);
 }
 
-Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::DoStart() {
+auto EndpointWinDivert::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   _WinDivertHandle = WinDivertOpen("outbound and !impostor and ip and !loopback", WINDIVERT_LAYER_NETWORK,
                                    0, // priority
                                    0  // flags
@@ -25,26 +26,26 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::DoStart() {
   if (_WinDivertHandle == INVALID_HANDLE_VALUE) {
     DWORD err = GetLastError();
     BOOST_LOG_TRIVIAL(error) << "EndpointWinDivert: WinDivertOpen failed: " << err;
-    co_return ErrorCode(err, system_category());
+    co_return SysError(err);
   }
 
   _ReadEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
   _WriteEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 
-  if (!_ReadEvent || !_WriteEvent) {
+  if ((_ReadEvent == nullptr) || (_WriteEvent == nullptr)) {
     DWORD err = GetLastError();
     BOOST_LOG_TRIVIAL(error) << "EndpointWinDivert: CreateEventW failed: " << err;
-    if (_ReadEvent) {
+    if (_ReadEvent != nullptr) {
       CloseHandle(_ReadEvent);
       _ReadEvent = nullptr;
     }
-    if (_WriteEvent) {
+    if (_WriteEvent != nullptr) {
       CloseHandle(_WriteEvent);
       _WriteEvent = nullptr;
     }
     WinDivertClose(_WinDivertHandle);
     _WinDivertHandle = INVALID_HANDLE_VALUE;
-    co_return ErrorCode(err, system_category());
+    co_return SysError(err);
   }
 
   _ReadObjectHandle.emplace(_Executor, _ReadEvent);
@@ -54,7 +55,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::DoStart() {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::DoGracefulStop() {
+auto EndpointWinDivert::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   BOOST_LOG_TRIVIAL(info) << "EndpointWinDivert: stopping";
 
   if (_WinDivertHandle != INVALID_HANDLE_VALUE) {
@@ -72,11 +73,11 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::DoGracefulStop() {
     _WriteObjectHandle.reset();
   }
 
-  if (_ReadEvent) {
+  if (_ReadEvent != nullptr) {
     CloseHandle(_ReadEvent);
     _ReadEvent = nullptr;
   }
-  if (_WriteEvent) {
+  if (_WriteEvent != nullptr) {
     CloseHandle(_WriteEvent);
     _WriteEvent = nullptr;
   }
@@ -90,8 +91,8 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::DoGracefulStop() {
   co_return ErrorCode{};
 }
 
-Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::Read(Packet& p, Cancel& c) {
-  if (c.IsTriggered()) {
+auto EndpointWinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> {
+  if (cancel.IsTriggered()) {
     co_return Error(AppErrorCategory::kOperationAborted);
   }
 
@@ -103,7 +104,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::Read(Packet& p, Cancel& c) 
   UINT recvLen = 0;
 
   while (true) {
-    if (c.IsTriggered()) {
+    if (cancel.IsTriggered()) {
       co_return Error(AppErrorCategory::kOperationAborted);
     }
 
@@ -111,41 +112,39 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::Read(Packet& p, Cancel& c) 
     addrLen = sizeof(addr);
     recvLen = 0;
 
-    BOOL ok =
-        WinDivertRecvEx(_WinDivertHandle, p.Data().data(), p.Data().size(), &recvLen, 0, &addr, &addrLen, &overlapped);
-
-    if (!ok) {
+    if (WinDivertRecvEx(_WinDivertHandle, packet.Data().data(), packet.Data().size(), &recvLen, 0, &addr, &addrLen,
+                        &overlapped) != TRUE) {
       DWORD err = GetLastError();
       if (err == ERROR_IO_PENDING) {
-        auto [ec] = co_await _ReadObjectHandle->async_wait(c.AsioSlot()());
-        if (ec) {
+        auto [err2] = co_await _ReadObjectHandle->async_wait(cancel.AsioSlot()());
+        if (err2) {
           CancelIoEx(_WinDivertHandle, &overlapped);
           DWORD transferred = 0;
           GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, TRUE);
-          co_return ec;
+          co_return err2;
         }
 
         DWORD transferred = 0;
-        if (GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, FALSE)) {
+        if (GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, FALSE) == TRUE) {
           recvLen = transferred;
         } else {
-          co_return ErrorCode(GetLastError(), system_category());
+          co_return SysError(GetLastError());
         }
       } else {
-        co_return ErrorCode(err, system_category());
+        co_return SysError(err);
       }
     }
 
-    _LastIfIdx.store(addr.Network.IfIdx);
-    _LastSubIfIdx.store(addr.Network.SubIfIdx);
+    _LastIfIdx.store(addr.Network.IfIdx);       // NOLINT(cppcoreguidelines-pro-type-union-access)
+    _LastSubIfIdx.store(addr.Network.SubIfIdx); // NOLINT(cppcoreguidelines-pro-type-union-access)
 
-    p._Length = recvLen;
+    packet._Length = recvLen;
     co_return ErrorCode{};
   }
 }
 
-Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::Write(Packet& p, Cancel& c) {
-  if (c.IsTriggered()) {
+auto EndpointWinDivert::Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> {
+  if (cancel.IsTriggered()) {
     co_return Error(AppErrorCategory::kOperationAborted);
   }
 
@@ -156,30 +155,29 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::Write(Packet& p, Cancel& c)
   WINDIVERT_ADDRESS addr = {};
   addr.Outbound = 0;
   addr.Layer = WINDIVERT_LAYER_NETWORK;
-  addr.Network.IfIdx = _LastIfIdx.load();
-  addr.Network.SubIfIdx = _LastSubIfIdx.load();
+  addr.Network.IfIdx = _LastIfIdx.load();       // NOLINT(cppcoreguidelines-pro-type-union-access)
+  addr.Network.SubIfIdx = _LastSubIfIdx.load(); // NOLINT(cppcoreguidelines-pro-type-union-access)
 
   UINT sendLen = 0;
-  BOOL ok = WinDivertSendEx(_WinDivertHandle, p.Data().data(), p.Data().size(), &sendLen, 0, &addr, sizeof(addr),
-                            &overlapped);
 
-  if (!ok) {
+  if (WinDivertSendEx(_WinDivertHandle, packet.Data().data(), packet.Data().size(), &sendLen, 0, &addr, sizeof(addr),
+                      &overlapped) != TRUE) {
     DWORD err = GetLastError();
     if (err == ERROR_IO_PENDING) {
-      auto [ec] = co_await _WriteObjectHandle->async_wait(c.AsioSlot()());
-      if (ec) {
+      auto [err2] = co_await _WriteObjectHandle->async_wait(cancel.AsioSlot()());
+      if (err2) {
         CancelIoEx(_WinDivertHandle, &overlapped);
         DWORD transferred = 0;
         GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, TRUE);
-        co_return ec;
+        co_return err2;
       }
 
       DWORD transferred = 0;
-      if (!GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, FALSE)) {
-        co_return ErrorCode(GetLastError(), system_category());
+      if (GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, FALSE) == 0) {
+        co_return SysError(GetLastError());
       }
     } else {
-      co_return ErrorCode(err, system_category());
+      co_return SysError(err);
     }
   }
 

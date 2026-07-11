@@ -13,21 +13,21 @@ namespace gh {
 
 class EndpointWinDivert : public Endpoint {
 public:
-  EndpointWinDivert(boost::asio::any_io_executor executor, std::string const& name);
+  EndpointWinDivert(boost::asio::any_io_executor executor, std::string name);
   ~EndpointWinDivert() override;
 
   EndpointWinDivert(const EndpointWinDivert&) = delete;
-  EndpointWinDivert& operator=(const EndpointWinDivert&) = delete;
+  auto operator=(const EndpointWinDivert&) -> EndpointWinDivert& = delete;
   EndpointWinDivert(EndpointWinDivert&&) = delete;
-  EndpointWinDivert& operator=(EndpointWinDivert&&) = delete;
+  auto operator=(EndpointWinDivert&&) -> EndpointWinDivert& = delete;
 
-  Omni::Fiber::Coroutine<ErrorCode> Read(Packet& p, Cancel&) override;
-  Omni::Fiber::Coroutine<ErrorCode> Write(Packet& p, Cancel&) override;
+  auto Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 protected:
-  std::string GetName() const override;
-  Omni::Fiber::Coroutine<ErrorCode> DoStart() override;
-  Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
+  auto GetName() const -> std::string override;
+  auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
   boost::asio::any_io_executor _Executor;

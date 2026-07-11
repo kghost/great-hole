@@ -22,11 +22,11 @@ using namespace gh;
 
 namespace {
 
-class MockResolveeFor : public ResolveFor {
+class MockResolveFor : public ResolveFor {
 public:
-  MockResolveeFor(boost::asio::any_io_executor executor, std::string service, Protocol protocol)
+  MockResolveFor(boost::asio::any_io_executor executor, std::string service, Protocol protocol)
       : _Executor(executor), _Service(service), _Protocol(protocol) {}
-  ~MockResolveeFor() override = default;
+  ~MockResolveFor() override = default;
 
   auto GetExecutor() -> boost::asio::any_io_executor override { return _Executor; }
   auto GetService() -> std::string override { return _Service; }
@@ -211,7 +211,7 @@ TEST(ResolverTest, DnsServiceResolverNonExistent) {
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
-    auto mockedResolveFor = MockResolveeFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
+    auto mockedResolveFor = MockResolveFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
 
     Cancel c;
     auto r = std::make_shared<ResolverDnsService>("_nonexistent_service._tcp.example.invalid", mockedResolveFor);
@@ -259,7 +259,7 @@ TEST(ResolverTest, ResolverCancellation) {
     co_await current.Join(resolveFiber);
     co_await current.Join(resolveFiberCancel);
 
-    auto mockedResolveFor = MockResolveeFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
+    auto mockedResolveFor = MockResolveFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
     // ResolverDnsService cancellation
     auto srvResolver = std::make_shared<ResolverDnsService>("_sip._udp.nonexistent.example.invalid", mockedResolveFor);
     Cancel srvCancel;
@@ -295,7 +295,7 @@ TEST(ResolverTest, ResolverHelperTest) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto mockedResolveFor = MockResolveeFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
+    auto mockedResolveFor = MockResolveFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
     Cancel c;
 
     // 1. Test FindResolverIp

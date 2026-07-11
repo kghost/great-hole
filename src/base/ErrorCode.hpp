@@ -4,6 +4,10 @@
 #include <boost/system/error_code.hpp>
 #include <boost/system/system_error.hpp>
 
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+
 namespace gh {
 
 using ErrorCode = boost::system::error_code;
@@ -92,5 +96,11 @@ template <> struct CategoryOfCode<AppMinorErrorCategory::Codes> {
 };
 
 auto Error(auto code) -> ErrorCode { return ErrorCode{code, CategoryOfCode<decltype(code)>::Category::kErrorCategory}; }
+
+#ifndef _WIN32
+inline auto SysError(int err) -> ErrorCode { return ErrorCode{err, system_category()}; }
+#else
+inline auto SysError(DWORD err) -> ErrorCode { return ErrorCode{static_cast<int>(err), system_category()}; }
+#endif
 
 } // namespace gh

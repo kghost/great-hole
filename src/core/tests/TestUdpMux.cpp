@@ -197,6 +197,21 @@ TEST(UdpMuxTest, WriteCancellation) {
 }
 
 TEST(UdpMuxTest, DirectServerToServerMux) {
+  class MockResolveFor : public ResolveFor {
+  public:
+    MockResolveFor(boost::asio::any_io_executor executor, std::string service, Protocol protocol)
+        : _Executor(executor), _Service(service), _Protocol(protocol) {}
+    ~MockResolveFor() override = default;
+
+    auto GetExecutor() -> boost::asio::any_io_executor override { return _Executor; }
+    auto GetService() -> std::string override { return _Service; }
+    auto GetProtocol() -> Protocol override { return _Protocol; }
+
+    boost::asio::any_io_executor _Executor;
+    std::string _Service;
+    Protocol _Protocol;
+  };
+
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
@@ -218,20 +233,6 @@ TEST(UdpMuxTest, DirectServerToServerMux) {
       co_return;
     }
 
-    class MockResolveFor : public ResolveFor {
-    public:
-      MockResolveFor(boost::asio::any_io_executor executor, std::string service, Protocol protocol)
-          : _Executor(executor), _Service(service), _Protocol(protocol) {}
-      ~MockResolveFor() override = default;
-
-      auto GetExecutor() -> boost::asio::any_io_executor override { return _Executor; }
-      auto GetService() -> std::string override { return _Service; }
-      auto GetProtocol() -> Protocol override { return _Protocol; }
-
-      boost::asio::any_io_executor _Executor;
-      std::string _Service;
-      Protocol _Protocol;
-    };
     auto mockedResolveFor = MockResolveFor(io.get_executor(), "", ResolveFor::Protocol::Udp);
 
     // Server A connects to Server B via resolver
