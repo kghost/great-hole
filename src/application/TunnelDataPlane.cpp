@@ -27,7 +27,13 @@ namespace gh {
 
 TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
                                  DataPlaneCallbacks& callbacks)
-    : _Executor(std::move(executor)), _Selector(selector), _Callbacks(callbacks) {}
+    : _Executor(std::move(executor)), _Selector(selector), _Callbacks(callbacks)
+#ifdef _WIN32
+      ,
+      _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor))
+#endif
+{
+}
 
 TunnelDataPlane::~TunnelDataPlane() { assert(!_Running); }
 
@@ -48,11 +54,16 @@ auto TunnelDataPlane::Start(
   auto tun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
 #endif
 
-  auto tracker = std::make_shared<ConnectionTracker>(_Executor);
   auto udpDynMux = std::make_shared<UdpDynMux>(_Executor);
   auto filter = std::make_shared<FilterXor>(std::move(encryptionKey));
+#ifdef _WIN32
+  _Client = std::make_shared<VpnClientMultiChannel>(_Executor, tun, udpDynMux, _ConnectionTracker, _Selector,
+                                                    std::vector<std::shared_ptr<Filter>>{filter}, *this);
+#else
+  auto tracker = std::make_shared<ConnectionTracker>(_Executor);
   _Client = std::make_shared<VpnClientMultiChannel>(_Executor, tun, udpDynMux, tracker, _Selector,
                                                     std::vector<std::shared_ptr<Filter>>{filter}, *this);
+#endif
 
   auto err = co_await _Client->Start();
   if (err) {
@@ -124,9 +135,19 @@ auto TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannel::Session* sessio
 }
 
 #ifdef _WIN32
-auto TunnelDataPlane::ByPass(Packet& packet) -> bool {
-  // TODO: implement this by looking up the conntrack and query the selector
-  return false;
+auto TunnelDataPlane::WinDivertShouldByPass(Packet& packet, const WINDIVERT_ADDRESS& addr) -> bool {
+  if (addr.Loopback || !addr.Outbound) {
+    return true;
+  }
+  auto result = _ConnectionTracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(packet, _Selector);
+  if (result.has_value()) {
+    auto& mark = dynamic_cast<VpnClientMultiChannel::Mark&>(result.value().get());
+    packet.SetMark(mark.ToPacketMark());
+    return mark.IsByPass();
+  } else {
+    BOOST_LOG_TRIVIAL(warning) << "WinDivert: LookupAndUpdate bypass failed: " << result.error().message();
+    return true;
+  }
 }
 #endif
 

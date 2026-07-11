@@ -40,7 +40,7 @@ public:
   Packet(Packet&&) = default;
   auto operator=(Packet&&) -> Packet& = default;
 
-  void SetMark(std::unique_ptr<PacketMark> mark) { _Mark = std::move(mark); }
+  void SetMark(std::unique_ptr<PacketMark> mark) const { _Mark = std::move(mark); }
   [[nodiscard]] auto HasMark() const -> bool { return _Mark != nullptr; }
   [[nodiscard]] auto GetMark() const -> PacketMark& { return *_Mark; }
 
@@ -127,7 +127,7 @@ public:
   std::vector<uint8_t> _Data;
   std::size_t _Offset;
   std::size_t _Length;
-  std::unique_ptr<PacketMark> _Mark = nullptr;
+  mutable std::unique_ptr<PacketMark> _Mark = nullptr;
 };
 
 } // namespace gh

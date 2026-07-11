@@ -1,11 +1,11 @@
 #pragma once
 
 #include <atomic>
+#include <boost/asio.hpp>
 #include <optional>
 #include <string>
+#include <windivert.h>
 #include <windows.h>
-
-#include <boost/asio.hpp>
 
 #include "Endpoint.hpp"
 
@@ -21,7 +21,7 @@ public:
   WinDivertFastByPassCallback(WinDivertFastByPassCallback&&) = delete;
   auto operator=(WinDivertFastByPassCallback&&) -> WinDivertFastByPassCallback& = delete;
 
-  virtual auto ByPass(Packet& packet) -> bool = 0;
+  virtual auto WinDivertShouldByPass(Packet& packet, const WINDIVERT_ADDRESS& addr) -> bool = 0;
 };
 
 class WinDivert : public Endpoint {

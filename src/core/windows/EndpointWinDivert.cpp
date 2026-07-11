@@ -15,7 +15,7 @@ WinDivert::~WinDivert() { assert(_WinDivertHandle == INVALID_HANDLE_VALUE); }
 auto WinDivert::GetName() const -> std::string { return std::format("WinDivert:{}[{}]", _Name, _WinDivertHandle); }
 
 auto WinDivert::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
-  _WinDivertHandle = WinDivertOpen("outbound and !impostor and ip and !loopback", WINDIVERT_LAYER_NETWORK,
+  _WinDivertHandle = WinDivertOpen("outbound and !impostor and !loopback and (ip or ipv6)", WINDIVERT_LAYER_NETWORK,
                                    0, // priority
                                    0  // flags
   );
@@ -136,10 +136,10 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
     _LastSubIfIdx.store(addr.Network.SubIfIdx); // NOLINT(cppcoreguidelines-pro-type-union-access)
 
     packet._Length = recvLen;
-    if (_FastByPassCallback.ByPass(packet)) {
+    if (_FastByPassCallback.WinDivertShouldByPass(packet, addr)) {
       UINT sendLen = 0;
-      if (WinDivertSendEx(_WinDivertHandle, packet.Data().data(), packet.Data().size(), &sendLen, 0, &addr, sizeof(addr),
-                          nullptr) != TRUE) {
+      if (WinDivertSendEx(_WinDivertHandle, packet.Data().data(), packet.Data().size(), &sendLen, 0, &addr,
+                          sizeof(addr), nullptr) != TRUE) {
         DWORD err = GetLastError();
         BOOST_LOG_TRIVIAL(warning) << "WinDivert: bypass send failed: " << err;
       }

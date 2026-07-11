@@ -6,6 +6,7 @@
 #include <expected>
 #include <functional>
 #include <map>
+#include <memory>
 #include <utility>
 
 #include <boost/asio/io_context.hpp>
@@ -30,6 +31,8 @@ public:
 
   [[nodiscard]] virtual auto GetDescription() const -> std::string = 0;
   [[nodiscard]] virtual auto Validate() const -> bool { return true; }
+
+  [[nodiscard]] virtual auto ToPacketMark() const -> std::unique_ptr<PacketMark> { return nullptr; }
 };
 
 class ConnectionTracker : public ServiceBase {
@@ -141,15 +144,15 @@ public:
     using OppositeDirection = ConnectionDirectionOutput;
   };
 
-  template <typename Direction>
-  auto LookupAndUpdate(const Packet& packet, Selector& selector)
-      -> std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>;
+  using Result = std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>;
+
+  template <typename Direction> auto LookupAndUpdate(const Packet& packet, Selector& selector) -> Result;
 
 private:
   struct ConnectionEntry {
     template <typename Self>
     auto Validate(this Self& self, std::chrono::time_point<std::chrono::steady_clock> now) -> bool {
-      return !self.IsExpired(now) && self.Result->Validate();
+      return !self.IsExpired(now) && self.ConnectionMark->Validate();
     }
 
     template <typename Self>
@@ -157,7 +160,7 @@ private:
       return now - self.LastActive > self.GetTimeout();
     }
 
-    std::unique_ptr<ConnectionMark> Result;
+    std::unique_ptr<ConnectionMark> ConnectionMark;
     std::chrono::steady_clock::time_point LastActive;
     static constexpr std::chrono::seconds ProneInterval = std::chrono::seconds(60);
   };
@@ -307,8 +310,7 @@ private:
   };
 
   template <typename KeyDirection>
-  static auto ParseConnectionKey(std::span<const uint8_t> packet, PacketType type, auto&& function)
-      -> std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>;
+  static auto ParseConnectionKey(std::span<const uint8_t> packet, PacketType type, auto&& function) -> Result;
 
   boost::asio::any_io_executor _Executor;
   std::map<Ip4TcpKey, TcpEntry> _Ip4TcpTable;

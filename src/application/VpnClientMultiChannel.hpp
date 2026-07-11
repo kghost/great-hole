@@ -1,12 +1,12 @@
 #pragma once
 
+#include <boost/asio.hpp>
 #include <boost/asio/any_io_executor.hpp>
 #include <functional>
 #include <map>
 #include <memory>
 #include <string>
-
-#include <boost/asio.hpp>
+#include <utility>
 
 #include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
@@ -58,6 +58,7 @@ public:
     explicit Mark(Bypass /*unused*/) : _Value(Bypass{}) {}
     explicit Mark(Discard /*unused*/) : _Value(Discard{}) {}
     explicit Mark(std::shared_ptr<Session> session) : _Value(std::move(session)) {}
+    explicit Mark(ValueType value) : _Value(std::move(value)) {}
     ~Mark() override = default;
 
     Mark(const Mark&) = delete;
@@ -68,6 +69,11 @@ public:
     [[nodiscard]] auto GetDescription() const -> std::string override;
     [[nodiscard]] auto Validate() const -> bool override;
     [[nodiscard]] auto GetValue() const -> const ValueType& { return _Value; }
+    [[nodiscard]] auto IsByPass() const -> bool { return std::holds_alternative<Bypass>(_Value); }
+
+    [[nodiscard]] auto ToPacketMark() const -> std::unique_ptr<PacketMark> override {
+      return std::make_unique<Mark>(_Value);
+    }
 
   private:
     ValueType _Value;

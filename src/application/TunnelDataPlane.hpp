@@ -62,7 +62,7 @@ public:
 
 #ifdef _WIN32
   auto Start(int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void>;
-  auto ByPass(Packet& packet) -> bool override;
+  auto WinDivertShouldByPass(Packet& packet, const WINDIVERT_ADDRESS& addr) -> bool override;
 #else
   auto Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void>;
   auto MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void>;
@@ -81,6 +81,9 @@ private:
   boost::asio::any_io_executor _Executor;
   ConnectionTracker::Selector& _Selector;
   DataPlaneCallbacks& _Callbacks;
+#ifdef _WIN32
+  std::shared_ptr<ConnectionTracker> _ConnectionTracker;
+#endif
 
   std::shared_ptr<VpnClientMultiChannel> _Client;
 
