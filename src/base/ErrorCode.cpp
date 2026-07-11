@@ -2,7 +2,7 @@
 
 namespace gh {
 
-const AppErrorCategory kAppError;
-const AppMinorErrorCategory kAppMinorError;
+const AppErrorCategory AppErrorCategory::kErrorCategory;
+const AppMinorErrorCategory AppMinorErrorCategory::kErrorCategory;
 
 } // namespace gh

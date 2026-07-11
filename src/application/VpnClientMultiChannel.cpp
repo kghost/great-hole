@@ -102,7 +102,7 @@ public:
 
   auto Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override {
     if (cancel.IsTriggered()) {
-      co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+      co_return Error(AppErrorCategory::kOperationAborted);
     }
     auto [cancelFired, queueFired] =
         co_await Omni::Fiber::Select(Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] -> void {}),
@@ -111,14 +111,14 @@ public:
                                          packet = std::move(pkt.value());
                                          return ErrorCode{};
                                        } else {
-                                         return ErrorCode{AppErrorCategory::kEndOfStream, kAppError};
+                                         return Error(AppErrorCategory::kEndOfStream);
                                        }
                                      }));
     if (queueFired.has_value()) {
       co_return queueFired.value();
     }
     if (cancelFired) {
-      co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+      co_return Error(AppErrorCategory::kOperationAborted);
     }
     assert(false && "should not reach here");
     co_return ErrorCode{};
@@ -171,7 +171,7 @@ public:
 
   auto Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override {
     if (cancel.IsTriggered()) {
-      co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+      co_return Error(AppErrorCategory::kOperationAborted);
     }
     auto [cancelFired, queueFired] = co_await Omni::Fiber::Select(
         Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] -> void {}),
@@ -187,14 +187,14 @@ public:
             }
             return ErrorCode{};
           } else {
-            return ErrorCode{AppErrorCategory::kEndOfStream, kAppError};
+            return Error(AppErrorCategory::kEndOfStream);
           }
         }));
     if (queueFired.has_value()) {
       co_return queueFired.value();
     }
     if (cancelFired) {
-      co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+      co_return Error(AppErrorCategory::kOperationAborted);
     }
     assert(false && "should not reach here");
     co_return ErrorCode{};
@@ -202,7 +202,7 @@ public:
 
   auto Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override {
     if (cancel.IsTriggered()) {
-      co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+      co_return Error(AppErrorCategory::kOperationAborted);
     }
 
     if (packet.HasMark()) {
@@ -267,12 +267,12 @@ private:
 auto VpnClientMultiChannel::ChannelSideEndpoint::Write(Packet& packet, Cancel& cancel)
     -> Omni::Fiber::Coroutine<ErrorCode> {
   if (cancel.IsTriggered()) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
   auto result = co_await _Parent._TunSide->PushIncoming(std::move(packet), _Session);
   if (!result.has_value()) {
     BOOST_LOG_TRIVIAL(info) << GetName() << " PushIncoming: TunSide is closed";
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
   co_return ErrorCode{};
 }
@@ -502,7 +502,7 @@ auto VpnClientMultiChannel::MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni
     co_return err.value();
   } else {
     BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to migrate TUN endpoint: _ChannelCall closed";
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
 }
 

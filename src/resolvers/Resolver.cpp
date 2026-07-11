@@ -27,7 +27,7 @@ auto ResolverBase::DoResolve(Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
     co_return _ResolveError;
   }
   if (cancelled) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
 
   co_return ErrorCode{};

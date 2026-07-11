@@ -247,7 +247,7 @@ TEST(ResolverTest, ResolverCancellation) {
       auto res = co_await dnsResolver->Resolve(dnsCancel);
       EXPECT_FALSE(res.has_value());
       if (!res.has_value()) {
-        auto err = ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+        auto err = Error(AppErrorCategory::kOperationAborted);
         EXPECT_EQ(res.error(), err);
       }
       co_return;
@@ -267,7 +267,7 @@ TEST(ResolverTest, ResolverCancellation) {
       auto res = co_await srvResolver->Resolve(srvCancel);
       EXPECT_FALSE(res.has_value());
       if (!res.has_value()) {
-        auto err = ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+        auto err = Error(AppErrorCategory::kOperationAborted);
         EXPECT_EQ(res.error(), err);
       }
       co_return;

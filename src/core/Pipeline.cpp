@@ -33,8 +33,8 @@ auto Pipeline::Start() -> Omni::Fiber::Coroutine<ErrorCode> {
   co_return ErrorCode{};
 }
 
-auto Pipeline::RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoint> out,
-                                                    Pipeline::Direction direction) -> Omni::Fiber::Coroutine<void> {
+auto Pipeline::RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoint> out, Pipeline::Direction direction)
+    -> Omni::Fiber::Coroutine<void> {
   BOOST_LOG_TRIVIAL(info) << std::format("{} direction started", GetNameWithDirection(direction));
   struct ActivePipelineGuard {
     PipielineUsageCounter& In;
@@ -54,10 +54,10 @@ auto Pipeline::RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoi
     Packet p;
     auto errRead = co_await in->Read(p, _Stop);
     if (errRead) {
-      if (errRead == ErrorCode{AppErrorCategory::kOperationAborted, kAppError}) {
+      if (errRead == Error(AppErrorCategory::kOperationAborted)) {
         BOOST_LOG_TRIVIAL(info) << std::format("{} read cancelled detected", GetNameWithDirection(direction));
         continue;
-      } else if (errRead == ErrorCode{AppErrorCategory::kEndOfStream, kAppError}) {
+      } else if (errRead == Error(AppErrorCategory::kEndOfStream)) {
         BOOST_LOG_TRIVIAL(info) << std::format("{} EoF detected", GetNameWithDirection(direction));
         break;
       } else if (IsCritical(errRead)) {
@@ -73,7 +73,7 @@ auto Pipeline::RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoi
       auto& i = _Filters[direction == Direction::Forward ? idx : (_Filters.size() - 1 - idx)];
       auto errPipe = co_await i->Pipe(p, _Stop);
       if (errPipe) {
-        if (errPipe == ErrorCode{AppErrorCategory::kOperationAborted, kAppError}) {
+        if (errPipe == Error(AppErrorCategory::kOperationAborted)) {
           BOOST_LOG_TRIVIAL(info) << std::format("{} filter cancelled detected", GetNameWithDirection(direction));
           continue;
         } else if (IsCritical(errPipe)) {
@@ -88,7 +88,7 @@ auto Pipeline::RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoi
     }
     auto errWrite = co_await out->Write(p, _Stop);
     if (errWrite) {
-      if (errWrite == ErrorCode{AppErrorCategory::kOperationAborted, kAppError}) {
+      if (errWrite == Error(AppErrorCategory::kOperationAborted)) {
         BOOST_LOG_TRIVIAL(info) << std::format("{} write cancelled detected", GetNameWithDirection(direction));
         continue;
       } else if (IsCritical(errWrite)) {
@@ -140,9 +140,7 @@ auto Pipeline::IsCritical(const ErrorCode& ec) -> bool {
     default:
       return true;
     }
-  } else if (ec.category() == kAppError) {
-    return true;
-  } else if (ec.category() == kAppMinorError) {
+  } else if (ec.category() == AppMinorErrorCategory::kErrorCategory) {
     return false;
   } else {
     return true;

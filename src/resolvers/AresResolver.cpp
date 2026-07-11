@@ -61,8 +61,8 @@ struct SocketTracker {
   SocketTracker(SocketTracker&&) = delete;
   auto operator=(SocketTracker&&) -> SocketTracker& = delete;
 
-  static auto
-  ToAsioSocket(boost::asio::any_io_executor executor, ares_socket_t fd) -> std::variant<boost::asio::ip::tcp::socket, boost::asio::ip::udp::socket> {
+  static auto ToAsioSocket(boost::asio::any_io_executor executor, ares_socket_t fd)
+      -> std::variant<boost::asio::ip::tcp::socket, boost::asio::ip::udp::socket> {
     int soType = 0;
     socklen_t soTypeLen = sizeof(soType);
 
@@ -108,10 +108,10 @@ struct SocketTracker {
 
 template <typename InitiateQuery>
   requires std::same_as<decltype(std::declval<InitiateQuery>()(std::declval<ares_channel_t*>())), ErrorCode>
-auto RunChannel(boost::asio::any_io_executor executor, InitiateQuery&& initiateQuery,
-                                             Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> {
+auto RunChannel(boost::asio::any_io_executor executor, InitiateQuery&& initiateQuery, Cancel& cancel)
+    -> Omni::Fiber::Coroutine<ErrorCode> {
   if (cancel.IsTriggered()) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
 
   std::unordered_map<ares_socket_t, SocketTracker> trackers;
@@ -217,7 +217,7 @@ auto RunChannel(boost::asio::any_io_executor executor, InitiateQuery&& initiateQ
     timer.cancel();
 
     if (cancelled) {
-      err = ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+      err = Error(AppErrorCategory::kOperationAborted);
     }
   }
 
@@ -227,8 +227,8 @@ auto RunChannel(boost::asio::any_io_executor executor, InitiateQuery&& initiateQ
 
 } // namespace
 
-auto
-AresResolver::ResolveIp(boost::asio::any_io_executor executor, const std::string& host, Cancel& cancel) -> Omni::Fiber::Coroutine<std::expected<std::vector<boost::asio::ip::address_v6>, ErrorCode>> {
+auto AresResolver::ResolveIp(boost::asio::any_io_executor executor, const std::string& host, Cancel& cancel)
+    -> Omni::Fiber::Coroutine<std::expected<std::vector<boost::asio::ip::address_v6>, ErrorCode>> {
   std::expected<std::vector<boost::asio::ip::address_v6>, ErrorCode> result;
 
   struct ares_addrinfo_hints hints;
@@ -284,8 +284,8 @@ AresResolver::ResolveIp(boost::asio::any_io_executor executor, const std::string
   co_return result;
 }
 
-auto
-AresResolver::ResolveSrv(boost::asio::any_io_executor executor, const std::string& serviceName, Cancel& cancel) -> Omni::Fiber::Coroutine<std::expected<std::vector<SrvResult>, ErrorCode>> {
+auto AresResolver::ResolveSrv(boost::asio::any_io_executor executor, const std::string& serviceName, Cancel& cancel)
+    -> Omni::Fiber::Coroutine<std::expected<std::vector<SrvResult>, ErrorCode>> {
   std::expected<std::vector<SrvResult>, ErrorCode> result;
   auto SrvCallback = [&result](ares_status_t status, size_t timeouts, const ares_dns_record_t* dnsrec) -> void {
     (void)timeouts;

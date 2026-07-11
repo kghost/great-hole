@@ -137,7 +137,7 @@ TEST(UdpMuxTest, ReadCancellation) {
     co_await current.Join(interrupterFiber);
 
     EXPECT_TRUE(readCompleted);
-    EXPECT_EQ(readErrResult, ErrorCode(AppErrorCategory::kOperationAborted, kAppError));
+    EXPECT_EQ(readErrResult, Error(AppErrorCategory::kOperationAborted));
 
     co_await server->Stop();
 
@@ -183,7 +183,7 @@ TEST(UdpMuxTest, WriteCancellation) {
     sendPacket._Length = testMsg.size();
 
     auto writeErr = co_await channel->Write(sendPacket, cancelObj);
-    EXPECT_EQ(writeErr, ErrorCode(AppErrorCategory::kOperationAborted, kAppError));
+    EXPECT_EQ(writeErr, Error(AppErrorCategory::kOperationAborted));
 
     co_await server->Stop();
 

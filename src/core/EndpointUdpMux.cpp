@@ -91,8 +91,8 @@ auto UdpMux::CreateChannel(uint8_t id) -> Omni::Fiber::Coroutine<std::shared_ptr
   co_return co_await CreateChannel(id, nullptr);
 }
 
-auto
-UdpMux::CreateChannel(uint8_t id, std::shared_ptr<ResolverEndpoint> resolver) -> Omni::Fiber::Coroutine<std::shared_ptr<UdpMux::Channel>> {
+auto UdpMux::CreateChannel(uint8_t id, std::shared_ptr<ResolverEndpoint> resolver)
+    -> Omni::Fiber::Coroutine<std::shared_ptr<UdpMux::Channel>> {
   auto reply = co_await _ChannelRpc.Call(
       [&udp = *this, id, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
         std::shared_ptr<Channel> channel;
@@ -189,16 +189,16 @@ auto UdpMux::ReadLoop() -> Omni::Fiber::Coroutine<void> {
 
 auto UdpMux::WriteTo(uint8_t id, Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   if (c.IsTriggered()) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
 
   auto it = _Channels.find(id);
   if (it == _Channels.end() || !it->second->GetPeer().has_value()) {
-    co_return ErrorCode{AppMinorErrorCategory::kInvalidPacketSession, kAppMinorError};
+    co_return Error(AppMinorErrorCategory::kInvalidPacketSession);
   }
 
   if (p.FrontSpace() < 1) {
-    co_return ErrorCode{AppErrorCategory::kInvalidPacketReserved, kAppError};
+    co_return Error(AppErrorCategory::kInvalidPacketReserved);
   }
 
   p.PushFront(id);
@@ -240,14 +240,14 @@ auto UdpMux::Channel::Read(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<Error
                                        }
                                      } else {
                                        p._Length = 0;
-                                       return ErrorCode{AppErrorCategory::kEndOfStream, kAppError};
+                                       return Error(AppErrorCategory::kEndOfStream);
                                      }
                                    }));
   if (pipeResult.has_value()) {
     co_return pipeResult.value();
   }
   if (stopResult) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
   assert(false && "should not reach here");
   co_return ErrorCode{};

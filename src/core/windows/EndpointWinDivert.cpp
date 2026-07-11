@@ -92,7 +92,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::DoGracefulStop() {
 
 Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::Read(Packet& p, Cancel& c) {
   if (c.IsTriggered()) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
 
   OVERLAPPED overlapped = {};
@@ -104,7 +104,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::Read(Packet& p, Cancel& c) 
 
   while (true) {
     if (c.IsTriggered()) {
-      co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+      co_return Error(AppErrorCategory::kOperationAborted);
     }
 
     ResetEvent(_ReadEvent);
@@ -146,7 +146,7 @@ Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::Read(Packet& p, Cancel& c) 
 
 Omni::Fiber::Coroutine<ErrorCode> EndpointWinDivert::Write(Packet& p, Cancel& c) {
   if (c.IsTriggered()) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
 
   OVERLAPPED overlapped = {};

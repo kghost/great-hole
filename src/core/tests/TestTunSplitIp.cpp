@@ -184,7 +184,7 @@ TEST(TunSplitIpTest, DispatchAndVerifyIP) {
     sendPacketInvalid.Data()[19] = 1;
 
     writeErr = co_await channel1->Write(sendPacketInvalid, cancelObj);
-    EXPECT_EQ(writeErr, ErrorCode(AppMinorErrorCategory::kSourceIpMismatch, kAppMinorError));
+    EXPECT_EQ(writeErr, Error(AppMinorErrorCategory::kSourceIpMismatch));
 
     // Cleanup channels
     co_await tunSplit->RemoveChannel(channel1);

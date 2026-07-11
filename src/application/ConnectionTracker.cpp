@@ -100,7 +100,7 @@ auto ConnectionTracker::LookupAndUpdate(const Packet& packet, ConnectionTracker:
           if (auto iterator = table.find(key); iterator != table.end() && iterator->second.Validate(now)) {
             return std::reference_wrapper<ConnectionMark>(*iterator->second.Result);
           }
-          return std::unexpected(ErrorCode{AppMinorErrorCategory::kUnsupportedPacket, kAppError});
+          return std::unexpected(Error(AppMinorErrorCategory::kUnsupportedPacket));
         }
       });
 }
@@ -189,12 +189,12 @@ auto ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> packet, Pack
                             icmpspan.template subspan<sizeof(ICMPv4Header)>(), PacketType::kIcmpInnerPacket,
                             std::forward<decltype(function)>(function));
                       }
-                      return std::unexpected(ErrorCode{AppMinorErrorCategory::kUnsupportedPacket, kAppError});
+                      return std::unexpected(Error(AppMinorErrorCategory::kUnsupportedPacket));
                     },
                     [&](std::span<const uint8_t> /*span*/, std::string err) -> ReturnType {
                       BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {} -> {} {}", srcAddr.to_string(),
                                                              dstAddr.to_string(), err);
-                      return std::unexpected(ErrorCode{AppMinorErrorCategory::kUnsupportedPacket, kAppError});
+                      return std::unexpected(Error(AppMinorErrorCategory::kUnsupportedPacket));
                     },
                 });
           },
@@ -258,18 +258,18 @@ auto ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> packet, Pack
                             icmp6span.template subspan<sizeof(ICMPv6Header)>(), PacketType::kIcmpInnerPacket,
                             std::forward<decltype(function)>(function));
                       }
-                      return std::unexpected(ErrorCode{AppMinorErrorCategory::kUnsupportedPacket, kAppError});
+                      return std::unexpected(Error(AppMinorErrorCategory::kUnsupportedPacket));
                     },
                     [&](std::span<const uint8_t> /*span*/, std::string err) -> ReturnType {
                       BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {} -> {} {}", srcAddr.to_string(),
                                                              dstAddr.to_string(), err);
-                      return std::unexpected(ErrorCode{AppMinorErrorCategory::kUnsupportedPacket, kAppError});
+                      return std::unexpected(Error(AppMinorErrorCategory::kUnsupportedPacket));
                     },
                 });
           },
           [&](std::span<const uint8_t> /*span*/, std::string err) -> ReturnType {
             BOOST_LOG_TRIVIAL(info) << std::format("ConnectionTracker: {}", err);
-            return std::unexpected(ErrorCode{AppMinorErrorCategory::kUnsupportedPacket, kAppError});
+            return std::unexpected(Error(AppMinorErrorCategory::kUnsupportedPacket));
           }});
 }
 

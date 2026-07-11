@@ -53,7 +53,7 @@ auto Tun::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
 
 auto Tun::Read(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   if (c.IsTriggered()) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
   auto [err, bytes_transferred] =
       co_await _TunFileDescriptor.async_read_some(boost::asio::mutable_buffer(p), c.AsioSlot()());
@@ -63,7 +63,7 @@ auto Tun::Read(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
 
 auto Tun::Write(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   if (c.IsTriggered()) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
   auto [err, bytes_transferred] =
       co_await _TunFileDescriptor.async_write_some(boost::asio::const_buffer(p), c.AsioSlot()());

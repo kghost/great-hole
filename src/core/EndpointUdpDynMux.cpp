@@ -95,9 +95,8 @@ auto UdpDynMux::Channel::DoWorkNegotiating() -> Omni::Fiber::Coroutine<UdpDynMux
       boost::asio::steady_timer timer(_Parent._Socket.get_executor());
       timer.expires_after(duration());
       auto [stopped, state, ec] = co_await Omni::Fiber::Select(
-          Omni::Fiber::SelectPair(
-              _Service.value()._Stop.GetFiberCancelEvent(),
-              [&]() -> ErrorCode { return ErrorCode{AppErrorCategory::kOperationAborted, kAppError}; }),
+          Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(),
+                                  [&]() -> ErrorCode { return Error(AppErrorCategory::kOperationAborted); }),
           Omni::Fiber::SelectPair(_ControlPacket.GetConsumer(),
                                   [&](auto info) -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                                     assert(info.has_value() && "Pipe should never ends");
@@ -126,9 +125,8 @@ auto UdpDynMux::Channel::DoWorkNegotiating() -> Omni::Fiber::Coroutine<UdpDynMux
     } else {
       BOOST_LOG_TRIVIAL(info) << GetName() << " negotiating waiting for peer endpoint initiate";
       auto [stopped, state] = co_await Omni::Fiber::Select(
-          Omni::Fiber::SelectPair(
-              _Service.value()._Stop.GetFiberCancelEvent(),
-              [&]() -> ErrorCode { return ErrorCode{AppErrorCategory::kOperationAborted, kAppError}; }),
+          Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(),
+                                  [&]() -> ErrorCode { return Error(AppErrorCategory::kOperationAborted); }),
           Omni::Fiber::SelectPair(_ControlPacket.GetConsumer(),
                                   [&](auto info) -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                                     assert(info.has_value() && "Pipe should never ends");
@@ -165,9 +163,8 @@ auto UdpDynMux::Channel::DoWorkRunning() -> Omni::Fiber::Coroutine<UdpDynMux::Ch
     timer.expires_at(_NextKeepaliveTime);
 
     auto [stopped, state, ec] = co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(
-            _Service.value()._Stop.GetFiberCancelEvent(),
-            [&]() -> ErrorCode { return ErrorCode{AppErrorCategory::kOperationAborted, kAppError}; }),
+        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(),
+                                [&]() -> ErrorCode { return Error(AppErrorCategory::kOperationAborted); }),
         Omni::Fiber::SelectPair(_ControlPacket.GetConsumer(),
                                 [&](auto info) -> Omni::Fiber::Coroutine<UdpDynMux::Channel::State> {
                                   assert(info.has_value() && "Pipe should never ends");
@@ -202,14 +199,14 @@ auto UdpDynMux::Channel::Read(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<Er
                                        return ErrorCode{};
                                      } else {
                                        p._Length = 0;
-                                       return ErrorCode{AppErrorCategory::kEndOfStream, kAppError};
+                                       return Error(AppErrorCategory::kEndOfStream);
                                      }
                                    }));
   if (err.has_value()) {
     co_return err.value();
   }
   if (stopped) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
   assert(false && "should not reach here");
   co_return ErrorCode{};
@@ -217,19 +214,19 @@ auto UdpDynMux::Channel::Read(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<Er
 
 auto UdpDynMux::Channel::Write(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   if (c.IsTriggered() || ServiceBase::_State != ServiceBase::State::kRunning) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
 
   if (_State != State::kRunning) {
-    co_return ErrorCode{AppMinorErrorCategory::kInvalidPacketSession, kAppMinorError};
+    co_return Error(AppMinorErrorCategory::kInvalidPacketSession);
   }
 
   if (!_Peer.has_value() || _RemoteRxId == 0) {
-    co_return ErrorCode{AppMinorErrorCategory::kInvalidPacketSession, kAppMinorError};
+    co_return Error(AppMinorErrorCategory::kInvalidPacketSession);
   }
 
   if (p._Offset < 2) {
-    co_return ErrorCode{AppErrorCategory::kInvalidPacketReserved, kAppError};
+    co_return Error(AppErrorCategory::kInvalidPacketReserved);
   }
 
   p.PushFront(_RemoteRxId);

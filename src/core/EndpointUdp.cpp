@@ -87,8 +87,8 @@ auto Udp::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   co_return ErrorCode{};
 }
 
-auto
-Udp::CreateChannel(std::shared_ptr<ResolverEndpoint> resolver) -> Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>> {
+auto Udp::CreateChannel(std::shared_ptr<ResolverEndpoint> resolver)
+    -> Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>> {
   auto result = co_await _ChannelRpc.Call(
       [&udp = *this, resolver](this auto self) -> Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>> {
         auto peer = co_await resolver->Resolve(udp._Service.value()._Stop);
@@ -109,8 +109,8 @@ Udp::CreateChannel(std::shared_ptr<ResolverEndpoint> resolver) -> Omni::Fiber::C
   co_return result.value();
 }
 
-auto
-Udp::CreateChannel(boost::asio::ip::udp::endpoint const& peer) -> Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>> {
+auto Udp::CreateChannel(boost::asio::ip::udp::endpoint const& peer)
+    -> Omni::Fiber::Coroutine<std::shared_ptr<Udp::UdpChannel>> {
   co_return co_await CreateChannel(std::make_shared<ResolverStaticEndpoint>(peer));
 }
 
@@ -165,9 +165,10 @@ auto Udp::ReadLoop() -> Omni::Fiber::Coroutine<void> {
   }
 }
 
-auto Udp::WriteTo(boost::asio::ip::udp::endpoint const& peer, Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
+auto Udp::WriteTo(boost::asio::ip::udp::endpoint const& peer, Packet& p, Cancel& c)
+    -> Omni::Fiber::Coroutine<ErrorCode> {
   if (c.IsTriggered()) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
   auto [err, bytes_transferred] = co_await _Socket.async_send_to(boost::asio::const_buffer(p), peer, c.AsioSlot()());
   assert(err || bytes_transferred == p._Length);
@@ -206,14 +207,14 @@ auto Udp::UdpChannel::Read(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<Error
                                        }
                                      } else {
                                        p._Length = 0;
-                                       return ErrorCode{AppErrorCategory::kEndOfStream, kAppError};
+                                       return Error(AppErrorCategory::kEndOfStream);
                                      }
                                    }));
   if (pipeResult.has_value()) {
     co_return pipeResult.value();
   }
   if (stopResult) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
   assert(false && "should not reach here");
   co_return ErrorCode{};

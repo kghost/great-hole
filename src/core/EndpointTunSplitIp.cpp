@@ -103,8 +103,8 @@ auto EndpointTunSplitIp::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   co_return ErrorCode{};
 }
 
-auto
-EndpointTunSplitIp::CreateChannel(const std::vector<boost::asio::ip::address_v6>& ips) -> Omni::Fiber::Coroutine<std::shared_ptr<EndpointTunSplitIp::Channel>> {
+auto EndpointTunSplitIp::CreateChannel(const std::vector<boost::asio::ip::address_v6>& ips)
+    -> Omni::Fiber::Coroutine<std::shared_ptr<EndpointTunSplitIp::Channel>> {
   assert(!ips.empty());
   if (ips.empty()) {
     co_return nullptr;
@@ -134,7 +134,8 @@ EndpointTunSplitIp::CreateChannel(const std::vector<boost::asio::ip::address_v6>
   co_return reply.value();
 }
 
-auto EndpointTunSplitIp::RemoveChannel(std::shared_ptr<EndpointTunSplitIp::Channel> channel) -> Omni::Fiber::Coroutine<void> {
+auto EndpointTunSplitIp::RemoveChannel(std::shared_ptr<EndpointTunSplitIp::Channel> channel)
+    -> Omni::Fiber::Coroutine<void> {
   if (!channel) {
     co_return;
   }
@@ -191,7 +192,7 @@ auto EndpointTunSplitIp::ReadLoop() -> Omni::Fiber::Coroutine<void> {
 
 auto EndpointTunSplitIp::WriteToTun(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> {
   if (c.IsTriggered()) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
 
   auto [err, bytesTransferred] =
@@ -272,14 +273,14 @@ auto EndpointTunSplitIp::Channel::Read(Packet& p, Cancel& c) -> Omni::Fiber::Cor
                                        }
                                      } else {
                                        p._Length = 0;
-                                       return ErrorCode{AppErrorCategory::kEndOfStream, kAppError};
+                                       return Error(AppErrorCategory::kEndOfStream);
                                      }
                                    }));
   if (pipeResult.has_value()) {
     co_return pipeResult.value();
   }
   if (stopResult) {
-    co_return ErrorCode{AppErrorCategory::kOperationAborted, kAppError};
+    co_return Error(AppErrorCategory::kOperationAborted);
   }
   assert(false && "should not reach here");
   co_return ErrorCode{};
@@ -291,7 +292,7 @@ auto EndpointTunSplitIp::Channel::Write(Packet& p, Cancel& c) -> Omni::Fiber::Co
     BOOST_LOG_TRIVIAL(warning) << "Channel " << GetName() << " drop packet: source IP "
                                << (srcIpOpt.has_value() ? srcIpOpt->to_string() : "invalid/unknown")
                                << " does not match channel IPs";
-    co_return ErrorCode(AppMinorErrorCategory::kSourceIpMismatch, kAppMinorError);
+    co_return Error(AppMinorErrorCategory::kSourceIpMismatch);
   }
   co_return co_await _Parent.WriteToTun(p, c);
 }

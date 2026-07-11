@@ -26,7 +26,7 @@ public:
   auto name() const noexcept -> const char* override { return "great-hole error"; }
   auto message(int code) const -> std::string override { return _Errs.at(code); }
 
-  enum Codes {
+  enum Codes : uint8_t {
     kNoError = 0,
     kEndOfStream = 1,
     kOperationAborted = 2,
@@ -35,6 +35,8 @@ public:
     kForkExecError = 5,
     kInvalidPacketReserved = 6,
   };
+
+  static const AppErrorCategory kErrorCategory;
 
 private:
   static constexpr auto _Errs = std::to_array({
@@ -61,13 +63,15 @@ public:
   auto name() const noexcept -> const char* override { return "great-hole minor error"; }
   auto message(int code) const -> std::string override { return _Errs.at(code); }
 
-  enum Codes {
+  enum Codes : uint8_t {
     kNoError = 0,
     kSourceIpMismatch = 1,
     kInvalidPacketSize = 2,
     kInvalidPacketSession = 3,
     kUnsupportedPacket = 4,
   };
+
+  static const AppMinorErrorCategory kErrorCategory;
 
 private:
   static constexpr auto _Errs = std::to_array({
@@ -79,7 +83,14 @@ private:
   });
 };
 
-extern const AppErrorCategory kAppError;
-extern const AppMinorErrorCategory kAppMinorError;
+template <typename ErrorCodes> struct CategoryOfCode;
+template <> struct CategoryOfCode<AppErrorCategory::Codes> {
+  using Category = AppErrorCategory;
+};
+template <> struct CategoryOfCode<AppMinorErrorCategory::Codes> {
+  using Category = AppMinorErrorCategory;
+};
+
+auto Error(auto code) -> ErrorCode { return ErrorCode{code, CategoryOfCode<decltype(code)>::Category::kErrorCategory}; }
 
 } // namespace gh
