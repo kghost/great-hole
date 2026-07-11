@@ -21,12 +21,7 @@ foreach(suffix "" "-asan")
     )
   endif()
 
-  if(WIN32 AND suffix STREQUAL "")
-    add_library(${target} SHARED ${app_sources})
-    target_compile_definitions(${target} PRIVATE GH_WINDOWS_EXPORT)
-  else()
-    add_library(${target} STATIC ${app_sources})
-  endif()
+  add_library(${target} STATIC ${app_sources})
 
   target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 

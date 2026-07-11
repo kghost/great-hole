@@ -121,7 +121,7 @@ public:
 
   auto GetName() const -> std::string override;
 
-  auto RegisterChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver)
+  auto RegisterChannel(const UdpDynMux::PskType& psk, const std::string& address)
       -> Omni::Fiber::Coroutine<std::shared_ptr<Session>>;
   auto UnregisterChannel(std::shared_ptr<Session> session) -> Omni::Fiber::Coroutine<void>;
   auto MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni::Fiber::Coroutine<ErrorCode>;

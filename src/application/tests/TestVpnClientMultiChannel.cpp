@@ -278,7 +278,6 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
     auto mockTun = std::make_shared<MockEndpoint>();
     auto udpServer = std::make_shared<UdpDynMux>(
         io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-    co_await udpServer->Start();
     auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker, selector,
                                                              std::vector<std::shared_ptr<Filter>>{});
     EXPECT_FALSE(co_await connTrack->Start());
@@ -362,7 +361,6 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
     }
 
     co_await connTrack->Stop();
-    co_await udpServer->Stop();
     testPassed = true;
     co_return;
   });
@@ -404,11 +402,10 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
 
     // Start all services
     EXPECT_FALSE(co_await udpClient->Start());
-    EXPECT_FALSE(co_await udpServer->Start());
     EXPECT_FALSE(co_await connTrack->Start());
 
     // Register channel on server side first so it can receive client initiates
-    auto session = (co_await connTrack->RegisterChannel(psk, nullptr));
+    auto session = (co_await connTrack->RegisterChannel(psk, ""));
     EXPECT_NE(session->Channel, nullptr);
     if (session->Channel == nullptr) {
       co_return;
@@ -515,7 +512,6 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     // Cleanup
     co_await connTrack->Stop();
     co_await udpClient->Stop();
-    co_await udpServer->Stop();
 
     co_await current.WaitAll();
     testPassed = true;
@@ -555,11 +551,10 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
 
     // Start all services
     EXPECT_FALSE(co_await udpClient->Start());
-    EXPECT_FALSE(co_await udpServer->Start());
     EXPECT_FALSE(co_await connTrack->Start());
 
     // Register channel
-    auto session = co_await connTrack->RegisterChannel(psk, nullptr);
+    auto session = co_await connTrack->RegisterChannel(psk, "");
     EXPECT_NE(session, nullptr);
     EXPECT_NE(session->Channel, nullptr);
     resolvedSession = session;
@@ -611,7 +606,6 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
     // Cleanup
     co_await connTrack->Stop();
     co_await udpClient->Stop();
-    co_await udpServer->Stop();
 
     co_await current.WaitAll();
     testPassed = true;
@@ -638,7 +632,6 @@ TEST(VpnClientMultiChannelTest, MigrateTun) {
     auto mockTun2 = std::make_shared<MockEndpoint>();
     auto udpServer = std::make_shared<UdpDynMux>(
         io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-    co_await udpServer->Start();
     auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun1, udpServer, tracker, selector,
                                                              std::vector<std::shared_ptr<Filter>>{});
     EXPECT_FALSE(co_await connTrack->Start());
@@ -692,7 +685,6 @@ TEST(VpnClientMultiChannelTest, MigrateTun) {
     }
 
     co_await connTrack->Stop();
-    co_await udpServer->Stop();
     testPassed = true;
     co_return;
   });
@@ -730,11 +722,10 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
 
     // Start all services
     EXPECT_FALSE(co_await udpClient->Start());
-    EXPECT_FALSE(co_await udpServer->Start());
     EXPECT_FALSE(co_await connTrack->Start());
 
     // Before session channel is established/registered, stats should be nullopt
-    auto session = co_await connTrack->RegisterChannel(psk, nullptr);
+    auto session = co_await connTrack->RegisterChannel(psk, "");
     EXPECT_NE(session, nullptr);
     EXPECT_NE(session->Channel, nullptr);
     resolvedSession = session;
@@ -764,7 +755,6 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
     // Cleanup
     co_await connTrack->Stop();
     co_await udpClient->Stop();
-    co_await udpServer->Stop();
 
     co_await current.WaitAll();
     testPassed = true;

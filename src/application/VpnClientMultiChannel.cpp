@@ -20,6 +20,7 @@
 #include "ErrorCode.hpp"
 #include "Packet.hpp"
 #include "Pipe.hpp"
+#include "ResolverHelper.hpp"
 #include "Select.hpp"
 #include "SelectPair.hpp"
 #include "ServiceBase.hpp"
@@ -300,13 +301,30 @@ auto VpnClientMultiChannel::GetName() const -> std::string {
 auto VpnClientMultiChannel::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   auto err = co_await _ConnectionTracker->Start();
   if (err) {
-    BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start ConnectionTracker";
+    BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start ConnectionTracker: " << err.message();
+    co_return err;
+  }
+
+  err = co_await _Tun->Start();
+  if (err) {
+    BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start Tun: " << err.message();
+    co_await _ConnectionTracker->Stop();
+    co_return err;
+  }
+
+  err = co_await _UdpDynMux->Start();
+  if (err) {
+    BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start UdpDynMux: " << err.message();
+    co_await _Tun->Stop();
+    co_await _ConnectionTracker->Stop();
     co_return err;
   }
 
   err = co_await _TunSide->Start();
   if (err) {
-    BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start TunSideEndpoint";
+    BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start TunSideEndpoint: " << err.message();
+    co_await _UdpDynMux->Stop();
+    co_await _Tun->Stop();
     co_await _ConnectionTracker->Stop();
     co_return err;
   }
@@ -314,8 +332,10 @@ auto VpnClientMultiChannel::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   _TunPipeline = std::make_shared<Pipeline>(_Tun, std::vector<std::shared_ptr<Filter>>{}, _TunSide);
   err = co_await _TunPipeline->Start();
   if (err) {
-    BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start TUN pipeline";
+    BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start TUN pipeline: " << err.message();
     co_await _TunSide->Stop();
+    co_await _UdpDynMux->Stop();
+    co_await _Tun->Stop();
     co_await _ConnectionTracker->Stop();
     co_return err;
   }
@@ -368,6 +388,8 @@ auto VpnClientMultiChannel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode
   }
   _Sessions.clear();
   co_await _TunSide->Stop();
+  co_await _UdpDynMux->Stop();
+  co_await _Tun->Stop();
   co_await _ConnectionTracker->Stop();
   _ChannelCall.DiscardAndClose();
 
@@ -375,7 +397,7 @@ auto VpnClientMultiChannel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode
   co_return ErrorCode{};
 }
 
-auto VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver)
+auto VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, const std::string& address)
     -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>> {
   auto [iterator, inserted] = _Sessions.emplace(psk, nullptr);
   if (inserted) {
@@ -384,6 +406,10 @@ auto VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, std::
     co_return iterator->second;
   }
   _StateListener.get().OnSessionStarting(iterator->second);
+  std::shared_ptr<ResolverEndpoint> resolver;
+  if (!address.empty()) {
+    resolver = FindResolverEndpoint(address, *_UdpDynMux);
+  }
   iterator->second->Channel = co_await _UdpDynMux->CreateChannel(psk, resolver);
   if (!iterator->second->Channel) {
     _StateListener.get().OnSessionFailed(iterator->second, "Failed to create channel");
@@ -487,13 +513,32 @@ auto VpnClientMultiChannel::OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> 
 auto VpnClientMultiChannel::MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni::Fiber::Coroutine<ErrorCode> {
   auto err = co_await _ChannelCall.Call([this, newTun]() -> Omni::Fiber::Coroutine<ErrorCode> {
     BOOST_LOG_TRIVIAL(info) << GetName() << ": migrating TUN endpoint";
+
+    auto err = co_await newTun->Start();
+    if (err) {
+      BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start new Tun during migration: " << err.message();
+      co_return err;
+    }
+
     if (_TunPipeline) {
       co_await _TunPipeline->Stop();
       _TunPipeline.reset();
     }
+
+    if (_Tun) {
+      co_await _Tun->Stop();
+    }
+
     _Tun = newTun;
     _TunPipeline = std::make_shared<Pipeline>(_Tun, std::vector<std::shared_ptr<Filter>>{}, _TunSide);
-    co_return co_await _TunPipeline->Start();
+    auto errPipeline = co_await _TunPipeline->Start();
+    if (errPipeline) {
+      BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start new TUN pipeline during migration: " << errPipeline.message();
+      co_await _Tun->Stop();
+      _Tun.reset();
+      co_return errPipeline;
+    }
+    co_return ErrorCode{};
   });
   if (err.has_value()) {
     if (err.value()) {

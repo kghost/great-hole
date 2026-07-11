@@ -11,7 +11,6 @@
 
 #include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
-#include "Endpoint.hpp"
 #include "EndpointUdpDynMux.hpp"
 #include "Utils/Comparator.hpp"
 #include "VpnClientMultiChannel.hpp"
@@ -83,8 +82,6 @@ private:
   ConnectionTracker::Selector& _Selector;
   DataPlaneCallbacks& _Callbacks;
 
-  std::shared_ptr<Endpoint> _Tun;
-  std::shared_ptr<UdpDynMux> _UdpDynMux;
   std::shared_ptr<VpnClientMultiChannel> _Client;
 
   std::set<std::shared_ptr<VpnClientMultiChannel::Session>, SharedPtrCompare> _Endpoints;

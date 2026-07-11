@@ -15,7 +15,6 @@
 #include "Coroutine.hpp"
 #include "EndpointUdpDynMux.hpp"
 #include "FilterXor.hpp"
-#include "ResolverHelper.hpp"
 #include "VpnClientMultiChannel.hpp"
 
 #ifdef _WIN32
@@ -44,32 +43,18 @@ auto TunnelDataPlane::Start(
   _Callbacks.OnVpnStateChanged(TunnelState::Starting, "VPN starting");
 
 #ifdef _WIN32
-  _Tun = std::make_shared<WinDivert>(_Executor, "WinDivert", *this);
+  auto tun = std::make_shared<WinDivert>(_Executor, "WinDivert", *this);
 #else
-  _Tun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
+  auto tun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
 #endif
 
   auto tracker = std::make_shared<ConnectionTracker>(_Executor);
-  _UdpDynMux = std::make_shared<UdpDynMux>(_Executor);
+  auto udpDynMux = std::make_shared<UdpDynMux>(_Executor);
   auto filter = std::make_shared<FilterXor>(std::move(encryptionKey));
-  _Client = std::make_shared<VpnClientMultiChannel>(_Executor, _Tun, _UdpDynMux, tracker, _Selector,
+  _Client = std::make_shared<VpnClientMultiChannel>(_Executor, tun, udpDynMux, tracker, _Selector,
                                                     std::vector<std::shared_ptr<Filter>>{filter}, *this);
 
-  auto err = co_await _Tun->Start();
-  if (err) {
-    BOOST_LOG_TRIVIAL(error) << "Failed to start Tun: " << err.message();
-    _Callbacks.OnVpnStateChanged(TunnelState::Failed, err.message());
-    co_return;
-  }
-
-  err = co_await _UdpDynMux->Start();
-  if (err) {
-    BOOST_LOG_TRIVIAL(error) << "Failed to start UdpDynMux: " << err.message();
-    _Callbacks.OnVpnStateChanged(TunnelState::Failed, err.message());
-    co_return;
-  }
-
-  err = co_await _Client->Start();
+  auto err = co_await _Client->Start();
   if (err) {
     BOOST_LOG_TRIVIAL(error) << "Failed to start VpnClientMultiChannel: " << err.message();
     _Callbacks.OnVpnStateChanged(TunnelState::Failed, err.message());
@@ -83,24 +68,11 @@ auto TunnelDataPlane::Start(
 auto TunnelDataPlane::MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void> {
   if (_Running && _Client) {
     auto newTun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
-    auto err = co_await newTun->Start();
-    if (err) {
-      BOOST_LOG_TRIVIAL(error) << "Failed to start new Tun during migration: " << err.message();
-      ::close(tunFd);
-      co_return;
-    }
-
-    err = co_await _Client->MigrateTun(newTun);
+    auto err = co_await _Client->MigrateTun(newTun);
     if (err) {
       BOOST_LOG_TRIVIAL(error) << "Failed to migrate Tun in VpnClientMultiChannel: " << err.message();
-      co_await newTun->Stop();
       co_return;
     }
-
-    if (_Tun) {
-      co_await _Tun->Stop();
-    }
-    _Tun = newTun;
   } else {
     ::close(tunFd);
   }
@@ -119,29 +91,15 @@ auto TunnelDataPlane::Stop() -> Omni::Fiber::Coroutine<void> {
     co_await _Client->Stop();
   }
 
-  if (_UdpDynMux) {
-    co_await _UdpDynMux->Stop();
-  }
-
-  if (_Tun) {
-    co_await _Tun->Stop();
-  }
-
   _Client.reset();
-  _UdpDynMux.reset();
-  _Tun.reset();
 
   _Callbacks.OnVpnStateChanged(TunnelState::Stopped, "VPN tunnel stopped");
 }
 
 auto TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address)
     -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>> {
-  std::shared_ptr<ResolverEndpoint> resolver;
-  if (_UdpDynMux) {
-    resolver = FindResolverEndpoint(address, *_UdpDynMux);
-  }
   if (_Client) {
-    auto session = co_await _Client->RegisterChannel(psk, resolver);
+    auto session = co_await _Client->RegisterChannel(psk, address);
     _Endpoints.insert(session);
     co_return session;
   }
@@ -166,7 +124,10 @@ auto TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannel::Session* sessio
 }
 
 #ifdef _WIN32
-auto TunnelDataPlane::ByPass(Packet& packet) -> bool { return false; }
+auto TunnelDataPlane::ByPass(Packet& packet) -> bool {
+  // TODO: implement this by looking up the conntrack and query the selector
+  return false;
+}
 #endif
 
 auto TunnelDataPlane::GetTrafficStats(const std::shared_ptr<VpnClientMultiChannel::Session>& session)
