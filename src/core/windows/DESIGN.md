@@ -48,11 +48,11 @@ outbound and !impostor and ip and !loopback
 
 #### Asynchronous I/O Integration
 Since Windows `HANDLE` objects returned by WinDivert are waitable asynchronous resources, we integrate them with `Boost.Asio` using `boost::asio::windows::object_handle`:
-- **Read Operations**: Intercepted using overlapping structures (`OVERLAPPED`) and waitable event handles. When a packet is captured, `WinDivertRecvEx` initiates the capture.
+- **Read Operations**: Intercepted using overlapping structures (`OVERLAPPED`) and waitable event handles. When a packet is captured, `WinDivertRecvEx` initiates the capture. If the packet matches the bypass rules determined by the queried `WinDivertFastByPassCallback`, it is synchronously re-injected back to its original path using `WinDivertSendEx`, and the read loop continues to capture the next packet.
 - **Write Operations**: Packets returning from the VPN channel are injected back into the Windows kernel via `WinDivertSendEx` with the appropriate interface index (`IfIdx` and `SubIfIdx`) cached from previous outgoing packets to ensure correct routing.
 
 #### Connection Tracking & Loop Prevention
-Each captured packet is evaluated through the `ConnectionTracker`:
+Each captured packet that is not bypassed by the fast bypass callback is evaluated through the `ConnectionTracker`:
 - If `RouteResult` is `Bypass`: The packet is immediately re-injected into the network stack via `WinDivertSend` to continue its normal path.
 - If `RouteResult` is `Discard`: The packet is dropped in user space.
 - Otherwise (routed via chosen VPN session): The packet is forwarded up through the VPN client pipeline to be transmitted to the remote server.

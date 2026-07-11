@@ -136,6 +136,16 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
     _LastSubIfIdx.store(addr.Network.SubIfIdx); // NOLINT(cppcoreguidelines-pro-type-union-access)
 
     packet._Length = recvLen;
+    if (_FastByPassCallback.ByPass(packet)) {
+      UINT sendLen = 0;
+      if (WinDivertSendEx(_WinDivertHandle, packet.Data().data(), packet.Data().size(), &sendLen, 0, &addr, sizeof(addr),
+                          nullptr) != TRUE) {
+        DWORD err = GetLastError();
+        BOOST_LOG_TRIVIAL(warning) << "WinDivert: bypass send failed: " << err;
+      }
+      packet._Length = packet._Data.size() - packet._Offset;
+      continue;
+    }
     co_return ErrorCode{};
   }
 }
