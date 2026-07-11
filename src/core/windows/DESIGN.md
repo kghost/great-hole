@@ -10,7 +10,7 @@ On Windows, virtual TUN/TAP network adapters are complex to install and require 
 graph TD
     subgraph User Mode
         VpnClient[VPN Client Multi-Channel]
-        EndpointWinDivert[EndpointWinDivert Endpoint]
+        WinDivert[WinDivert Endpoint]
         ConnTrack[ConnectionTracker]
     end
     subgraph Kernel Mode
@@ -19,11 +19,11 @@ graph TD
     end
     
     NetStack -->|Outbound IP Packets| WinDivertDriver
-    WinDivertDriver -->|Capture / Read| EndpointWinDivert
-    EndpointWinDivert -->|Route Lookup| ConnTrack
+    WinDivertDriver -->|Capture / Read| WinDivert
+    WinDivert -->|Route Lookup| ConnTrack
     
-    ConnTrack -->|Bypass| EndpointWinDivert
-    EndpointWinDivert -->|Re-inject / Send| WinDivertDriver
+    ConnTrack -->|Bypass| WinDivert
+    WinDivert -->|Re-inject / Send| WinDivertDriver
     WinDivertDriver -->|Pass-through| NetStack
     
     ConnTrack -->|Route Match| VpnClient
@@ -32,12 +32,12 @@ graph TD
 
 ## Internal Component Design
 
-### `gh::EndpointWinDivert`
+### `gh::WinDivert`
 
-The primary class [EndpointWinDivert](file:///q:/Projects/great-hole/src/core/windows/EndpointWinDivert.hpp) implements the virtual `gh::Endpoint` interfaces.
+The primary class [WinDivert](file:///q:/Projects/great-hole/src/core/windows/WinDivert.hpp) implements the virtual `gh::Endpoint` interfaces.
 
 #### Packet Redirection Filter
-When starting (`DoStart`), `EndpointWinDivert` requests packet capture via the WinDivert filter:
+When starting (`DoStart`), `WinDivert` requests packet capture via the WinDivert filter:
 ```
 outbound and !impostor and ip and !loopback
 ```

@@ -1,23 +1,20 @@
 #include "EndpointWinDivert.hpp"
 
-#include <format>
-
 #include <boost/log/trivial.hpp>
+#include <format>
 #include <utility>
 #include <windivert.h>
 
 namespace gh {
 
-EndpointWinDivert::EndpointWinDivert(boost::asio::any_io_executor executor, std::string name)
-    : _Executor(std::move(executor)), _Name(std::move(name)), _WinDivertHandle(INVALID_HANDLE_VALUE) {}
+WinDivert::WinDivert(boost::asio::any_io_executor executor, std::string name, WinDivertFastByPassCallback& callback)
+    : _Executor(std::move(executor)), _Name(std::move(name)), _FastByPassCallback(callback) {}
 
-EndpointWinDivert::~EndpointWinDivert() { assert(_WinDivertHandle == INVALID_HANDLE_VALUE); }
+WinDivert::~WinDivert() { assert(_WinDivertHandle == INVALID_HANDLE_VALUE); }
 
-auto EndpointWinDivert::GetName() const -> std::string {
-  return std::format("EndpointWinDivert:{}[{}]", _Name, _WinDivertHandle);
-}
+auto WinDivert::GetName() const -> std::string { return std::format("WinDivert:{}[{}]", _Name, _WinDivertHandle); }
 
-auto EndpointWinDivert::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
+auto WinDivert::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   _WinDivertHandle = WinDivertOpen("outbound and !impostor and ip and !loopback", WINDIVERT_LAYER_NETWORK,
                                    0, // priority
                                    0  // flags
@@ -25,7 +22,7 @@ auto EndpointWinDivert::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
 
   if (_WinDivertHandle == INVALID_HANDLE_VALUE) {
     DWORD err = GetLastError();
-    BOOST_LOG_TRIVIAL(error) << "EndpointWinDivert: WinDivertOpen failed: " << err;
+    BOOST_LOG_TRIVIAL(error) << "WinDivert: WinDivertOpen failed: " << err;
     co_return SysError(err);
   }
 
@@ -34,7 +31,7 @@ auto EndpointWinDivert::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
 
   if ((_ReadEvent == nullptr) || (_WriteEvent == nullptr)) {
     DWORD err = GetLastError();
-    BOOST_LOG_TRIVIAL(error) << "EndpointWinDivert: CreateEventW failed: " << err;
+    BOOST_LOG_TRIVIAL(error) << "WinDivert: CreateEventW failed: " << err;
     if (_ReadEvent != nullptr) {
       CloseHandle(_ReadEvent);
       _ReadEvent = nullptr;
@@ -51,12 +48,12 @@ auto EndpointWinDivert::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   _ReadObjectHandle.emplace(_Executor, _ReadEvent);
   _WriteObjectHandle.emplace(_Executor, _WriteEvent);
 
-  BOOST_LOG_TRIVIAL(info) << "EndpointWinDivert: started, handle=" << _WinDivertHandle;
+  BOOST_LOG_TRIVIAL(info) << "WinDivert: started, handle=" << _WinDivertHandle;
   co_return ErrorCode{};
 }
 
-auto EndpointWinDivert::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
-  BOOST_LOG_TRIVIAL(info) << "EndpointWinDivert: stopping";
+auto WinDivert::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
+  BOOST_LOG_TRIVIAL(info) << "WinDivert: stopping";
 
   if (_WinDivertHandle != INVALID_HANDLE_VALUE) {
     CancelIoEx(_WinDivertHandle, nullptr);
@@ -87,11 +84,11 @@ auto EndpointWinDivert::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
     _WinDivertHandle = INVALID_HANDLE_VALUE;
   }
 
-  BOOST_LOG_TRIVIAL(info) << "EndpointWinDivert: stopped";
+  BOOST_LOG_TRIVIAL(info) << "WinDivert: stopped";
   co_return ErrorCode{};
 }
 
-auto EndpointWinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> {
+auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> {
   if (cancel.IsTriggered()) {
     co_return Error(AppErrorCategory::kOperationAborted);
   }
@@ -143,7 +140,7 @@ auto EndpointWinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Cor
   }
 }
 
-auto EndpointWinDivert::Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> {
+auto WinDivert::Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> {
   if (cancel.IsTriggered()) {
     co_return Error(AppErrorCategory::kOperationAborted);
   }

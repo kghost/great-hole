@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-#if !defined(_WIN32)
+#ifndef _WIN32
 #include <unistd.h>
 #endif
 
@@ -18,7 +18,7 @@
 #include "ResolverHelper.hpp"
 #include "VpnClientMultiChannel.hpp"
 
-#if defined(_WIN32)
+#ifdef _WIN32
 #include "EndpointWinDivert.hpp"
 #else
 #include "EndpointTun.hpp"
@@ -33,7 +33,7 @@ TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor, Connecti
 TunnelDataPlane::~TunnelDataPlane() { assert(!_Running); }
 
 auto TunnelDataPlane::Start(
-#if !defined(_WIN32)
+#ifndef _WIN32
     int tunFd,
 #endif
     int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void> {
@@ -43,8 +43,8 @@ auto TunnelDataPlane::Start(
   _Running = true;
   _Callbacks.OnVpnStateChanged(TunnelState::Starting, "VPN starting");
 
-#if defined(_WIN32)
-  _Tun = std::make_shared<EndpointWinDivert>(_Executor, "EndpointWinDivert");
+#ifdef _WIN32
+  _Tun = std::make_shared<WinDivert>(_Executor, "WinDivert", *this);
 #else
   _Tun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
 #endif
@@ -79,7 +79,7 @@ auto TunnelDataPlane::Start(
   _Callbacks.OnVpnStateChanged(TunnelState::Running, "VPN tunnel established");
 }
 
-#if !defined(_WIN32)
+#ifndef _WIN32
 auto TunnelDataPlane::MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void> {
   if (_Running && _Client) {
     auto newTun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
@@ -164,6 +164,10 @@ auto TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannel::Session* sessio
   }
   return nullptr;
 }
+
+#ifdef _WIN32
+auto TunnelDataPlane::ByPass(Packet& packet) -> bool { return false; }
+#endif
 
 auto TunnelDataPlane::GetTrafficStats(const std::shared_ptr<VpnClientMultiChannel::Session>& session)
     -> std::optional<VpnTrafficStats> {

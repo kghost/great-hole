@@ -11,15 +11,28 @@
 
 namespace gh {
 
-class EndpointWinDivert : public Endpoint {
+class WinDivertFastByPassCallback {
 public:
-  EndpointWinDivert(boost::asio::any_io_executor executor, std::string name);
-  ~EndpointWinDivert() override;
+  explicit WinDivertFastByPassCallback() = default;
+  virtual ~WinDivertFastByPassCallback() = default;
 
-  EndpointWinDivert(const EndpointWinDivert&) = delete;
-  auto operator=(const EndpointWinDivert&) -> EndpointWinDivert& = delete;
-  EndpointWinDivert(EndpointWinDivert&&) = delete;
-  auto operator=(EndpointWinDivert&&) -> EndpointWinDivert& = delete;
+  WinDivertFastByPassCallback(const WinDivertFastByPassCallback&) = delete;
+  auto operator=(const WinDivertFastByPassCallback&) -> WinDivertFastByPassCallback& = delete;
+  WinDivertFastByPassCallback(WinDivertFastByPassCallback&&) = delete;
+  auto operator=(WinDivertFastByPassCallback&&) -> WinDivertFastByPassCallback& = delete;
+
+  virtual auto ByPass(Packet& packet) -> bool = 0;
+};
+
+class WinDivert : public Endpoint {
+public:
+  WinDivert(boost::asio::any_io_executor executor, std::string name, WinDivertFastByPassCallback& callback);
+  ~WinDivert() override;
+
+  WinDivert(const WinDivert&) = delete;
+  auto operator=(const WinDivert&) -> WinDivert& = delete;
+  WinDivert(WinDivert&&) = delete;
+  auto operator=(WinDivert&&) -> WinDivert& = delete;
 
   auto Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override;
   auto Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override;
@@ -32,8 +45,9 @@ protected:
 private:
   boost::asio::any_io_executor _Executor;
   const std::string _Name;
+  WinDivertFastByPassCallback& _FastByPassCallback;
 
-  HANDLE _WinDivertHandle;
+  HANDLE _WinDivertHandle = INVALID_HANDLE_VALUE;
   HANDLE _ReadEvent = nullptr;
   HANDLE _WriteEvent = nullptr;
 

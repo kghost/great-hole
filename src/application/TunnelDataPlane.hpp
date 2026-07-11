@@ -16,6 +16,10 @@
 #include "Utils/Comparator.hpp"
 #include "VpnClientMultiChannel.hpp"
 
+#ifdef _WIN32
+#include "EndpointWinDivert.hpp"
+#endif
+
 namespace gh {
 
 enum class TunnelState : std::uint8_t { Starting = 0, Running = 1, Stopping = 2, Stopped = 3, Failed = 4 };
@@ -35,7 +39,11 @@ public:
                                     const std::string& error) = 0;
 };
 
-class TunnelDataPlane : public VpnClientMultiChannel::SessionStateListener {
+class TunnelDataPlane :
+#ifdef _WIN32
+    public WinDivertFastByPassCallback,
+#endif
+    public VpnClientMultiChannel::SessionStateListener {
 public:
   TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
                   DataPlaneCallbacks& callbacks);
@@ -53,8 +61,9 @@ public:
   TunnelDataPlane(TunnelDataPlane&&) = delete;
   auto operator=(TunnelDataPlane&&) -> TunnelDataPlane& = delete;
 
-#if defined(_WIN32)
+#ifdef _WIN32
   auto Start(int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void>;
+  auto ByPass(Packet& packet) -> bool override;
 #else
   auto Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void>;
   auto MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void>;

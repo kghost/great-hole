@@ -1,6 +1,6 @@
 # Windows Network Redirection (WinDivert)
 
-The Windows network redirection implementation provides the Windows-specific network data plane redirection using the WinDivert driver. It exposes a `EndpointWinDivert` endpoint, which acts as a TUN device implementation using user-mode packet redirection.
+The Windows network redirection implementation provides the Windows-specific network data plane redirection using the WinDivert driver. It exposes a `WinDivert` endpoint, which acts as a TUN device implementation using user-mode packet redirection.
 
 ## Integration & CMake Usage
 
@@ -20,15 +20,15 @@ target_link_libraries(your-target-asan PRIVATE great-hole-core-asan)
 
 ## Public API Reference
 
-The primary class exposed by this module is [EndpointWinDivert](file:///q:/Projects/great-hole/src/core/windows/EndpointWinDivert.hpp).
+The primary class exposed by this module is [WinDivert](file:///q:/Projects/great-hole/src/core/windows/WinDivert.hpp).
 
-### `gh::EndpointWinDivert`
+### `gh::WinDivert`
 
 A `gh::Endpoint` implementation that handles network traffic capturing and injection on Windows.
 
 - **Constructor**:
   ```cpp
-  explicit EndpointWinDivert(boost::asio::any_io_executor executor, std::string const& name);
+  explicit WinDivert(boost::asio::any_io_executor executor, std::string const& name);
   ```
   - `executor`: The Boost.Asio I/O executor to associate with asynchronous operations.
   - `name`: A descriptive name identifier for logging and debugging purposes.
