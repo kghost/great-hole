@@ -7,8 +7,8 @@
 
 namespace gh {
 
-WinDivert::WinDivert(boost::asio::any_io_executor executor, std::string name, WinDivertFastByPassCallback& callback)
-    : _Executor(std::move(executor)), _Name(std::move(name)), _FastByPassCallback(callback) {}
+WinDivert::WinDivert(boost::asio::any_io_executor executor, std::string name, WinDivertRouteCallback& callback)
+    : _Executor(std::move(executor)), _Name(std::move(name)), _RouteCallback(callback) {}
 
 WinDivert::~WinDivert() { assert(_WinDivertHandle == INVALID_HANDLE_VALUE); }
 
@@ -136,7 +136,8 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
     _LastSubIfIdx.store(addr.Network.SubIfIdx); // NOLINT(cppcoreguidelines-pro-type-union-access)
 
     packet._Length = recvLen;
-    if (_FastByPassCallback.WinDivertShouldByPass(packet, addr)) {
+    auto route = _RouteCallback.WinDivertRoute(packet, addr);
+    if (route == WinDivertRouteCallback::Result::Bypass) {
       UINT sendLen = 0;
       if (WinDivertSendEx(_WinDivertHandle, packet.Data().data(), packet.Data().size(), &sendLen, 0, &addr,
                           sizeof(addr), nullptr) != TRUE) {
@@ -145,8 +146,11 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
       }
       packet._Length = packet._Data.size() - packet._Offset;
       continue;
+    } else if (route == WinDivertRouteCallback::Result::Discard) {
+      continue;
+    } else {
+      co_return ErrorCode{};
     }
-    co_return ErrorCode{};
   }
 }
 

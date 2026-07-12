@@ -1,4 +1,5 @@
 #include "TunnelDataPlane.hpp"
+#include "Utils/Overload.hpp"
 
 #include <memory>
 #include <string>
@@ -135,18 +136,37 @@ auto TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannel::Session* sessio
 }
 
 #ifdef _WIN32
-auto TunnelDataPlane::WinDivertShouldByPass(Packet& packet, const WINDIVERT_ADDRESS& addr) -> bool {
+auto TunnelDataPlane::WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> WinDivertRouteCallback::Result {
   if (addr.Loopback || !addr.Outbound) {
-    return true;
+    return WinDivertRouteCallback::Result::Normal;
   }
   auto result = _ConnectionTracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(packet, _Selector);
   if (result.has_value()) {
     auto& mark = dynamic_cast<VpnClientMultiChannel::Mark&>(result.value().get());
     packet.SetMark(mark.ToPacketMark());
-    return mark.IsByPass();
+
+    return std::visit(
+        Overload{
+            [](VpnClientMultiChannel::Mark::ToBeSelected) -> gh::WinDivertRouteCallback::Result {
+              return WinDivertRouteCallback::Result::Normal;
+            },
+            [](VpnClientMultiChannel::Mark::Bypass) -> gh::WinDivertRouteCallback::Result {
+              return WinDivertRouteCallback::Result::Bypass;
+            },
+            [](VpnClientMultiChannel::Mark::Discard) -> gh::WinDivertRouteCallback::Result {
+              return WinDivertRouteCallback::Result::Discard;
+            },
+            [](VpnClientMultiChannel::Mark::Deferred) -> gh::WinDivertRouteCallback::Result {
+              return WinDivertRouteCallback::Result::Discard;
+            },
+            [](const std::weak_ptr<VpnClientMultiChannel::Session>&) -> gh::WinDivertRouteCallback::Result {
+              return WinDivertRouteCallback::Result::Normal;
+            },
+        },
+        mark.GetValue());
   } else {
     BOOST_LOG_TRIVIAL(warning) << "WinDivert: LookupAndUpdate bypass failed: " << result.error().message();
-    return true;
+    return WinDivertRouteCallback::Result::Normal;
   }
 }
 #endif

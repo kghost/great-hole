@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <boost/asio.hpp>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <windivert.h>
@@ -11,22 +12,23 @@
 
 namespace gh {
 
-class WinDivertFastByPassCallback {
+class WinDivertRouteCallback {
 public:
-  explicit WinDivertFastByPassCallback() = default;
-  virtual ~WinDivertFastByPassCallback() = default;
+  explicit WinDivertRouteCallback() = default;
+  virtual ~WinDivertRouteCallback() = default;
 
-  WinDivertFastByPassCallback(const WinDivertFastByPassCallback&) = delete;
-  auto operator=(const WinDivertFastByPassCallback&) -> WinDivertFastByPassCallback& = delete;
-  WinDivertFastByPassCallback(WinDivertFastByPassCallback&&) = delete;
-  auto operator=(WinDivertFastByPassCallback&&) -> WinDivertFastByPassCallback& = delete;
+  WinDivertRouteCallback(const WinDivertRouteCallback&) = delete;
+  auto operator=(const WinDivertRouteCallback&) -> WinDivertRouteCallback& = delete;
+  WinDivertRouteCallback(WinDivertRouteCallback&&) = delete;
+  auto operator=(WinDivertRouteCallback&&) -> WinDivertRouteCallback& = delete;
 
-  virtual auto WinDivertShouldByPass(Packet& packet, const WINDIVERT_ADDRESS& addr) -> bool = 0;
+  enum class Result : std::uint8_t { Bypass, Discard, Normal };
+  virtual auto WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> Result = 0;
 };
 
 class WinDivert : public Endpoint {
 public:
-  WinDivert(boost::asio::any_io_executor executor, std::string name, WinDivertFastByPassCallback& callback);
+  WinDivert(boost::asio::any_io_executor executor, std::string name, WinDivertRouteCallback& callback);
   ~WinDivert() override;
 
   WinDivert(const WinDivert&) = delete;
@@ -45,7 +47,7 @@ protected:
 private:
   boost::asio::any_io_executor _Executor;
   const std::string _Name;
-  WinDivertFastByPassCallback& _FastByPassCallback;
+  WinDivertRouteCallback& _RouteCallback;
 
   HANDLE _WinDivertHandle = INVALID_HANDLE_VALUE;
   HANDLE _ReadEvent = nullptr;

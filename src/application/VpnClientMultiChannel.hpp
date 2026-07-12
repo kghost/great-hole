@@ -51,12 +51,14 @@ public:
     struct ToBeSelected {};
     struct Bypass {};
     struct Discard {};
+    struct Deferred {};
 
-    using ValueType = std::variant<ToBeSelected, Bypass, Discard, std::weak_ptr<Session>>;
+    using ValueType = std::variant<ToBeSelected, Bypass, Discard, Deferred, std::weak_ptr<Session>>;
 
     explicit Mark() : _Value(ToBeSelected{}) {}
     explicit Mark(Bypass /*unused*/) : _Value(Bypass{}) {}
     explicit Mark(Discard /*unused*/) : _Value(Discard{}) {}
+    explicit Mark(Deferred /*unused*/) : _Value(Deferred{}) {}
     explicit Mark(std::shared_ptr<Session> session) : _Value(std::move(session)) {}
     explicit Mark(ValueType value) : _Value(std::move(value)) {}
     ~Mark() override = default;
@@ -69,7 +71,6 @@ public:
     [[nodiscard]] auto GetDescription() const -> std::string override;
     [[nodiscard]] auto Validate() const -> bool override;
     [[nodiscard]] auto GetValue() const -> const ValueType& { return _Value; }
-    [[nodiscard]] auto IsByPass() const -> bool { return std::holds_alternative<Bypass>(_Value); }
 
     [[nodiscard]] auto ToPacketMark() const -> std::unique_ptr<PacketMark> override {
       return std::make_unique<Mark>(_Value);

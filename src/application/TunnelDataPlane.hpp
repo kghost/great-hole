@@ -40,7 +40,7 @@ public:
 
 class TunnelDataPlane :
 #ifdef _WIN32
-    public WinDivertFastByPassCallback,
+    public WinDivertRouteCallback,
 #endif
     public VpnClientMultiChannel::SessionStateListener {
 public:
@@ -62,7 +62,7 @@ public:
 
 #ifdef _WIN32
   auto Start(int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void>;
-  auto WinDivertShouldByPass(Packet& packet, const WINDIVERT_ADDRESS& addr) -> bool override;
+  auto WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> WinDivertRouteCallback::Result override;
 #else
   auto Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void>;
   auto MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void>;

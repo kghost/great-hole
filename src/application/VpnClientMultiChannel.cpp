@@ -65,6 +65,7 @@ auto VpnClientMultiChannel::Mark::GetDescription() const -> std::string {
   return std::visit(Overload{[](const ToBeSelected&) -> std::string { return "ToBeSelected"; },
                              [](const Bypass&) -> std::string { return "Bypass"; },
                              [](const Discard&) -> std::string { return "Discard"; },
+                             [](const Deferred&) -> std::string { return "Deferred"; },
                              [](const std::weak_ptr<Session>& weakSession) -> std::string {
                                if (auto session = weakSession.lock()) {
                                  return session->GetDescription();
@@ -77,6 +78,7 @@ auto VpnClientMultiChannel::Mark::GetDescription() const -> std::string {
 auto VpnClientMultiChannel::Mark::Validate() const -> bool {
   return std::visit(Overload{[](const ToBeSelected&) -> bool { return false; },
                              [](const Bypass&) -> bool { return true; }, [](const Discard&) -> bool { return true; },
+                             [](const Deferred&) -> bool { return true; },
                              [](const std::weak_ptr<Session>& weakSession) -> bool {
                                if (auto session = weakSession.lock()) {
                                  return session->Running;
@@ -243,7 +245,11 @@ private:
                    std::unreachable();
                  },
                  [&](Mark::Discard) -> Omni::Fiber::Coroutine<ErrorCode> {
-                   BOOST_LOG_TRIVIAL(debug) << GetName() << ": Packet marked Discard, dropping";
+                   BOOST_LOG_TRIVIAL(debug) << GetName() << ": Packet marked Discard";
+                   co_return ErrorCode{};
+                 },
+                 [&](Mark::Deferred) -> Omni::Fiber::Coroutine<ErrorCode> {
+                   BOOST_LOG_TRIVIAL(info) << GetName() << ": Packet marked Deferred";
                    co_return ErrorCode{};
                  },
                  [&](const std::weak_ptr<Session>& sessionWeak) -> Omni::Fiber::Coroutine<ErrorCode> {
@@ -533,7 +539,8 @@ auto VpnClientMultiChannel::MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni
     _TunPipeline = std::make_shared<Pipeline>(_Tun, std::vector<std::shared_ptr<Filter>>{}, _TunSide);
     auto errPipeline = co_await _TunPipeline->Start();
     if (errPipeline) {
-      BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start new TUN pipeline during migration: " << errPipeline.message();
+      BOOST_LOG_TRIVIAL(error) << GetName()
+                               << ": Failed to start new TUN pipeline during migration: " << errPipeline.message();
       co_await _Tun->Stop();
       _Tun.reset();
       co_return errPipeline;
