@@ -1,5 +1,6 @@
 add_subdirectory(base)
 add_subdirectory(resolvers)
+add_subdirectory(interface)
 add_subdirectory(core)
 add_subdirectory(application)
 
@@ -7,4 +8,8 @@ if(ANDROID)
   add_subdirectory(android)
 elseif(NOT ANDROID AND NOT WIN32)
   add_subdirectory(lua)
+endif()
+
+if(WIN32)
+  add_subdirectory(windows)
 endif()

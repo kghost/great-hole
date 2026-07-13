@@ -15,6 +15,7 @@
 #include "EndpointUdpDynMux.hpp"
 #include "ErrorCode.hpp"
 #include "Filter.hpp"
+#include "Interface.hpp"
 #include "Packet.hpp"
 #include "Pipeline.hpp"
 #include "RemoteCall.hpp"
@@ -22,30 +23,14 @@
 
 namespace gh {
 
-struct VpnTrafficStats : public TrafficStats {
-  VpnTrafficStats() = default;
-  explicit VpnTrafficStats(const TrafficStats& stats, int64_t rttMs = -1) : TrafficStats(stats), RttMs(rttMs) {}
+using VpnTrafficStats = Interface::VpnTrafficStats;
 
-  int64_t RttMs{-1};
-};
+class VpnClientMultiChannelSession;
 
 class VpnClientMultiChannel : public ServiceBase, public UdpDynMux::ChannelNotification {
 public:
   class TunSideEndpoint;
   class ChannelSideEndpoint;
-
-  class Session {
-  public:
-    explicit Session() = default;
-    [[nodiscard]] auto GetDescription() const -> std::string {
-      return Channel ? Channel->GetName() : "Invalid Session";
-    }
-
-    std::shared_ptr<UdpDynMux::Channel> Channel;
-    std::shared_ptr<ChannelSideEndpoint> ChannelSide;
-    std::shared_ptr<Pipeline> SessionPipeline;
-    bool Running = true;
-  };
 
   class Mark : public ConnectionMark, public PacketMark {
   public:
@@ -56,13 +41,14 @@ public:
       std::vector<Packet> Packets;
     };
 
-    using ValueType = std::variant<ToBeSelected, Bypass, Discard, Deferred, std::weak_ptr<Session>>;
+    using ValueType =
+        std::variant<ToBeSelected, Bypass, Discard, Deferred, std::weak_ptr<VpnClientMultiChannelSession>>;
 
     explicit Mark() : _Value(ToBeSelected{}) {}
     explicit Mark(Bypass /*unused*/) : _Value(Bypass{}) {}
     explicit Mark(Discard /*unused*/) : _Value(Discard{}) {}
     explicit Mark(Deferred deferred) : _Value(std::move(deferred)) {}
-    explicit Mark(std::shared_ptr<Session> session) : _Value(std::move(session)) {}
+    explicit Mark(std::shared_ptr<VpnClientMultiChannelSession> session) : _Value(std::move(session)) {}
     ~Mark() override = default;
 
     Mark(const Mark&) = delete;
@@ -89,11 +75,12 @@ public:
     SessionStateListener(SessionStateListener&&) = delete;
     auto operator=(SessionStateListener&&) -> SessionStateListener& = delete;
 
-    virtual void OnSessionStarting(const std::shared_ptr<Session>& session) = 0;
-    virtual void OnSessionRunning(const std::shared_ptr<Session>& session) = 0;
-    virtual void OnSessionStopping(const std::shared_ptr<Session>& session) = 0;
-    virtual void OnSessionStopped(const std::shared_ptr<Session>& session) = 0;
-    virtual void OnSessionFailed(const std::shared_ptr<Session>& session, const std::string& error) = 0;
+    virtual void OnSessionStarting(const std::shared_ptr<VpnClientMultiChannelSession>& session) = 0;
+    virtual void OnSessionRunning(const std::shared_ptr<VpnClientMultiChannelSession>& session) = 0;
+    virtual void OnSessionStopping(const std::shared_ptr<VpnClientMultiChannelSession>& session) = 0;
+    virtual void OnSessionStopped(const std::shared_ptr<VpnClientMultiChannelSession>& session) = 0;
+    virtual void OnSessionFailed(const std::shared_ptr<VpnClientMultiChannelSession>& session,
+                                 const std::string& error) = 0;
   };
 
   class NoopSessionStateListener : public SessionStateListener {
@@ -106,11 +93,12 @@ public:
     NoopSessionStateListener(NoopSessionStateListener&&) = delete;
     auto operator=(NoopSessionStateListener&&) -> NoopSessionStateListener& = delete;
 
-    void OnSessionStarting(const std::shared_ptr<Session>& /*session*/) override {}
-    void OnSessionRunning(const std::shared_ptr<Session>& /*session*/) override {}
-    void OnSessionStopping(const std::shared_ptr<Session>& /*session*/) override {}
-    void OnSessionStopped(const std::shared_ptr<Session>& /*session*/) override {}
-    void OnSessionFailed(const std::shared_ptr<Session>& /*session*/, const std::string& /*error*/) override {}
+    void OnSessionStarting(const std::shared_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
+    void OnSessionRunning(const std::shared_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
+    void OnSessionStopping(const std::shared_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
+    void OnSessionStopped(const std::shared_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
+    void OnSessionFailed(const std::shared_ptr<VpnClientMultiChannelSession>& /*session*/,
+                         const std::string& /*error*/) override {}
   };
   static NoopSessionStateListener _NoopSessionStateListener;
 
@@ -128,11 +116,11 @@ public:
   auto GetName() const -> std::string override;
 
   auto RegisterChannel(const UdpDynMux::PskType& psk, const std::string& address)
-      -> Omni::Fiber::Coroutine<std::shared_ptr<Session>>;
-  auto UnregisterChannel(std::shared_ptr<Session> session) -> Omni::Fiber::Coroutine<void>;
+      -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannelSession>>;
+  auto UnregisterChannel(std::shared_ptr<VpnClientMultiChannelSession> session) -> Omni::Fiber::Coroutine<void>;
   auto MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni::Fiber::Coroutine<ErrorCode>;
 
-  static auto GetStats(const std::shared_ptr<Session>& session) -> std::optional<VpnTrafficStats>;
+  static auto GetStats(const std::shared_ptr<VpnClientMultiChannelSession>& session) -> std::optional<VpnTrafficStats>;
 
   auto OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override;
   auto OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override;
@@ -152,9 +140,20 @@ private:
   std::shared_ptr<TunSideEndpoint> _TunSide;
   std::shared_ptr<Pipeline> _TunPipeline;
 
-  std::map<UdpDynMux::PskType, std::shared_ptr<Session>> _Sessions;
+  std::map<UdpDynMux::PskType, std::shared_ptr<VpnClientMultiChannelSession>> _Sessions;
   Omni::Fiber::RemoteCall _ChannelCall;
   std::reference_wrapper<SessionStateListener> _StateListener;
+};
+
+class VpnClientMultiChannelSession {
+public:
+  explicit VpnClientMultiChannelSession() = default;
+  [[nodiscard]] auto GetDescription() const -> std::string { return Channel ? Channel->GetName() : "Invalid Session"; }
+
+  std::shared_ptr<UdpDynMux::Channel> Channel;
+  std::shared_ptr<VpnClientMultiChannel::ChannelSideEndpoint> ChannelSide;
+  std::shared_ptr<Pipeline> SessionPipeline;
+  bool Running = true;
 };
 
 } // namespace gh

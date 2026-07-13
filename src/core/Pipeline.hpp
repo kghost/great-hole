@@ -8,30 +8,12 @@
 #include "Endpoint.hpp"
 #include "ErrorCode.hpp"
 #include "Filter.hpp"
+#include "Interface.hpp"
 #include "Service.hpp"
-
-namespace Omni::Fiber {
-class Fiber;
-}
 
 namespace gh {
 
-struct TrafficStats {
-  uint64_t ForwardBytes{0};
-  uint64_t BackwardBytes{0};
-  uint64_t ForwardPackets{0};
-  uint64_t BackwardPackets{0};
-
-  void OnForward(uint64_t bytes) {
-    ForwardBytes += bytes;
-    ForwardPackets++;
-  }
-
-  void OnBackword(uint64_t bytes) {
-    BackwardBytes += bytes;
-    BackwardPackets++;
-  }
-};
+using TrafficStats = Interface::TrafficStats;
 
 class Pipeline : public std::enable_shared_from_this<Pipeline>, public Service {
 public:
@@ -52,8 +34,8 @@ public:
 
 private:
   auto IsCritical(const ErrorCode& ec) -> bool;
-  auto RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoint> out,
-                                            Direction direction) -> Omni::Fiber::Coroutine<void>;
+  auto RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoint> out, Direction direction)
+      -> Omni::Fiber::Coroutine<void>;
   auto GetNameWithDirection(Direction direction) -> std::string {
     if (direction == Direction::Forward) {
       return std::format("Pipeline[F] {}->{}", _Ep1->GetName(), _Ep2->GetName());

@@ -1,29 +1,21 @@
-include(FetchContent)
+add_subdirectory(utils)
+add_subdirectory(flow)
+add_subdirectory(policy)
 
 foreach(suffix "" "-asan")
-  set(target "great-hole-application${suffix}")
+  set(target "great-hole-windows${suffix}")
 
-  set(app_sources
-    VpnClientMultiChannel.cpp
-    ConnectionTracker.cpp
-    TunnelDataPlane.cpp
+  add_library(${target} SHARED
+    Interface.cpp
   )
-
-  if(NOT WIN32)
-    list(APPEND app_sources
-      VpnServer.cpp
-    )
-  endif()
-
-  add_library(${target} STATIC ${app_sources})
-
+  target_compile_definitions(${target} PRIVATE GREAT_HOLE_WINDOWS_BUILD_DLL)
   target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-
   target_link_libraries(${target} PUBLIC
     Boost::log
     omni-fiber${suffix}
-    great-hole-interface${suffix}
     great-hole-core${suffix}
+    great-hole-application${suffix}
+    great-hole-windows-policy${suffix}
   )
 
   if(suffix STREQUAL "-asan")
@@ -31,7 +23,3 @@ foreach(suffix "" "-asan")
     target_link_options(${target} PRIVATE -fsanitize=address)
   endif()
 endforeach()
-
-if(BUILD_TESTING)
-  add_subdirectory(tests)
-endif()

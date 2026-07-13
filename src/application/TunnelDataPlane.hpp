@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <memory>
 #include <optional>
 #include <set>
@@ -12,35 +11,24 @@
 #include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
 #include "EndpointUdpDynMux.hpp"
+#include "Interface.hpp"
 #include "Utils/Comparator.hpp"
 #include "VpnClientMultiChannel.hpp"
 
 #ifdef _WIN32
+#include "DeferredPacketInjector.hpp"
 #include "EndpointWinDivert.hpp"
+
 #endif
 
 namespace gh {
 
-enum class TunnelState : std::uint8_t { Starting = 0, Running = 1, Stopping = 2, Stopped = 3, Failed = 4 };
-
-class DataPlaneCallbacks {
-public:
-  explicit DataPlaneCallbacks() = default;
-  virtual ~DataPlaneCallbacks() = default;
-
-  DataPlaneCallbacks(const DataPlaneCallbacks&) = delete;
-  auto operator=(const DataPlaneCallbacks&) -> DataPlaneCallbacks& = delete;
-  DataPlaneCallbacks(DataPlaneCallbacks&&) = delete;
-  auto operator=(DataPlaneCallbacks&&) -> DataPlaneCallbacks& = delete;
-
-  virtual void OnVpnStateChanged(TunnelState state, const std::string& message) = 0;
-  virtual void OnTunnelStateChanged(const std::shared_ptr<VpnClientMultiChannel::Session>& session, TunnelState state,
-                                    const std::string& error) = 0;
-};
+using DataPlaneCallbacks = Interface::DataPlaneCallbacks;
 
 class TunnelDataPlane :
 #ifdef _WIN32
     public WinDivertRouteCallback,
+    public DeferredPacketInjector,
 #endif
     public VpnClientMultiChannel::SessionStateListener {
 public:
@@ -48,12 +36,11 @@ public:
                   DataPlaneCallbacks& callbacks);
   ~TunnelDataPlane();
 
-  void OnSessionStarting(const std::shared_ptr<VpnClientMultiChannel::Session>& session) override;
-  void OnSessionRunning(const std::shared_ptr<VpnClientMultiChannel::Session>& session) override;
-  void OnSessionStopping(const std::shared_ptr<VpnClientMultiChannel::Session>& session) override;
-  void OnSessionStopped(const std::shared_ptr<VpnClientMultiChannel::Session>& session) override;
-  void OnSessionFailed(const std::shared_ptr<VpnClientMultiChannel::Session>& session,
-                       const std::string& error) override;
+  void OnSessionStarting(const std::shared_ptr<VpnClientMultiChannelSession>& session) override;
+  void OnSessionRunning(const std::shared_ptr<VpnClientMultiChannelSession>& session) override;
+  void OnSessionStopping(const std::shared_ptr<VpnClientMultiChannelSession>& session) override;
+  void OnSessionStopped(const std::shared_ptr<VpnClientMultiChannelSession>& session) override;
+  void OnSessionFailed(const std::shared_ptr<VpnClientMultiChannelSession>& session, const std::string& error) override;
 
   TunnelDataPlane(const TunnelDataPlane&) = delete;
   auto operator=(const TunnelDataPlane&) -> TunnelDataPlane& = delete;
@@ -63,18 +50,22 @@ public:
 #ifdef _WIN32
   auto Start(int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void>;
   auto WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> WinDivertRouteCallback::Result override;
+
+  // TODO: remove Inject
+  auto Inject(Packet&& packet) -> Omni::Fiber::Coroutine<void> override;
 #else
   auto Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void>;
   auto MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void>;
 #endif
   auto Stop() -> Omni::Fiber::Coroutine<void>;
   auto AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address)
-      -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>>;
-  auto RemoveEndpoint(std::shared_ptr<VpnClientMultiChannel::Session> session) -> Omni::Fiber::Coroutine<void>;
+      -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannelSession>>;
+  auto RemoveEndpoint(std::shared_ptr<VpnClientMultiChannelSession> session) -> Omni::Fiber::Coroutine<void>;
 
-  auto FindSessionByHandle(VpnClientMultiChannel::Session* session) -> std::shared_ptr<VpnClientMultiChannel::Session>;
+  // TODO: remove this function
+  auto FindSessionByHandle(VpnClientMultiChannelSession* session) -> std::shared_ptr<VpnClientMultiChannelSession>;
 
-  static auto GetTrafficStats(const std::shared_ptr<VpnClientMultiChannel::Session>& session)
+  static auto GetTrafficStats(const std::shared_ptr<VpnClientMultiChannelSession>& session)
       -> std::optional<VpnTrafficStats>;
 
 private:
@@ -83,11 +74,12 @@ private:
   DataPlaneCallbacks& _Callbacks;
 #ifdef _WIN32
   std::shared_ptr<ConnectionTracker> _ConnectionTracker;
+  std::shared_ptr<WinDivert> _WinDivert;
 #endif
 
   std::shared_ptr<VpnClientMultiChannel> _Client;
 
-  std::set<std::shared_ptr<VpnClientMultiChannel::Session>, SharedPtrCompare> _Endpoints;
+  std::set<std::shared_ptr<VpnClientMultiChannelSession>, SharedPtrCompare> _Endpoints;
   bool _Running = false;
 };
 

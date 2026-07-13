@@ -120,6 +120,7 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
 
   OVERLAPPED overlapped = {};
   overlapped.hEvent = _ReadEvent;
+  Cancel::HandleTracker handleTracker(cancel, _WinDivertHandle, &overlapped);
 
   WINDIVERT_ADDRESS addr = {};
   UINT addrLen = sizeof(addr);
@@ -151,7 +152,7 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
                                       }
                                     }),
             Omni::Fiber::SelectPair(
-                _ReadObjectHandle->async_wait(cancel.AsioSlot()()),
+                _ReadObjectHandle->async_wait(Omni::Fiber::AsioUseFiber),
                 Omni::Fiber::AsioApply([&](boost::system::error_code err) -> auto { return err; })));
 
         if (hasInjectedPacket.has_value() && hasInjectedPacket.value()) {
@@ -214,6 +215,7 @@ auto WinDivert::Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<
   OVERLAPPED overlapped = {};
   overlapped.hEvent = _WriteEvent;
   ResetEvent(_WriteEvent);
+  Cancel::HandleTracker handleTracker(cancel, _WinDivertHandle, &overlapped);
 
   WINDIVERT_ADDRESS addr = {};
   addr.Outbound = 0;
@@ -227,7 +229,7 @@ auto WinDivert::Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<
                       &overlapped) != TRUE) {
     DWORD err = GetLastError();
     if (err == ERROR_IO_PENDING) {
-      auto [err2] = co_await _WriteObjectHandle->async_wait(cancel.AsioSlot()());
+      auto [err2] = co_await _WriteObjectHandle->async_wait(Omni::Fiber::AsioUseFiber);
       if (err2) {
         CancelIoEx(_WinDivertHandle, &overlapped);
         DWORD transferred = 0;

@@ -18,6 +18,7 @@
 #include "Endpoint.hpp"
 #include "EndpointUdpDynMux.hpp"
 #include "ErrorCode.hpp"
+#include "Interface.hpp"
 #include "Packet.hpp"
 #include "Pipe.hpp"
 #include "ResolverHelper.hpp"
@@ -30,7 +31,7 @@ namespace gh {
 
 class SessionSelector : public ConnectionTracker::Selector {
 public:
-  explicit SessionSelector(std::shared_ptr<VpnClientMultiChannel::Session> session) : _Session(std::move(session)) {}
+  explicit SessionSelector(std::shared_ptr<VpnClientMultiChannelSession> session) : _Session(std::move(session)) {}
   ~SessionSelector() override = default;
 
   SessionSelector(const SessionSelector&) = delete;
@@ -43,7 +44,7 @@ public:
   }
 
 private:
-  std::shared_ptr<VpnClientMultiChannel::Session> _Session;
+  std::shared_ptr<VpnClientMultiChannelSession> _Session;
 };
 
 auto VpnClientMultiChannel::Mark::GetDescription() const -> std::string {
@@ -51,8 +52,8 @@ auto VpnClientMultiChannel::Mark::GetDescription() const -> std::string {
                              [](const Bypass&) -> std::string { return "Bypass"; },
                              [](const Discard&) -> std::string { return "Discard"; },
                              [](const Deferred&) -> std::string { return "Deferred"; },
-                             [](const std::weak_ptr<Session>& weakSession) -> std::string {
-                               if (auto session = weakSession.lock()) {
+                             [](const Interface::VpnEndpoint& endpoint) -> std::string {
+                               if (auto session = endpoint.lock()) {
                                  return session->GetDescription();
                                }
                                return "Expired Session";
@@ -64,8 +65,8 @@ auto VpnClientMultiChannel::Mark::Validate() const -> bool {
   return std::visit(Overload{[](const ToBeSelected&) -> bool { return false; },
                              [](const Bypass&) -> bool { return true; }, [](const Discard&) -> bool { return true; },
                              [](const Deferred&) -> bool { return true; },
-                             [](const std::weak_ptr<Session>& weakSession) -> bool {
-                               if (auto session = weakSession.lock()) {
+                             [](const Interface::VpnEndpoint& endpoint) -> bool {
+                               if (auto session = endpoint.lock()) {
                                  return session->Running;
                                }
                                return false;
@@ -75,7 +76,7 @@ auto VpnClientMultiChannel::Mark::Validate() const -> bool {
 
 class VpnClientMultiChannel::ChannelSideEndpoint : public Endpoint {
 public:
-  ChannelSideEndpoint(VpnClientMultiChannel& parent, std::shared_ptr<Session> session)
+  ChannelSideEndpoint(VpnClientMultiChannel& parent, std::shared_ptr<VpnClientMultiChannelSession> session)
       : _Parent(parent), _Session(std::move(session)) {}
   ~ChannelSideEndpoint() override = default;
 
@@ -127,7 +128,7 @@ protected:
 
 private:
   VpnClientMultiChannel& _Parent;
-  std::shared_ptr<Session> _Session;
+  std::shared_ptr<VpnClientMultiChannelSession> _Session;
   Omni::Fiber::Pipe<Packet> _Pipe;
 };
 
@@ -135,7 +136,7 @@ class VpnClientMultiChannel::TunSideEndpoint : public Endpoint {
 public:
   struct QueueEntry {
     Packet PacketData;
-    std::shared_ptr<Session> PacketSession;
+    std::shared_ptr<VpnClientMultiChannelSession> PacketSession;
   };
 
   explicit TunSideEndpoint(VpnClientMultiChannel& parent, ConnectionTracker& tracker,
@@ -152,7 +153,7 @@ public:
     return std::format("VpnClientMultiChannel:TunSide:{}", _Parent.GetName());
   }
 
-  auto PushIncoming(Packet packet, std::shared_ptr<Session> session)
+  auto PushIncoming(Packet packet, std::shared_ptr<VpnClientMultiChannelSession> session)
       -> Omni::Fiber::Coroutine<std::expected<void, Omni::Fiber::PipeClosed>> {
     co_return co_await _Pipe.GetProducer().Put(QueueEntry{.PacketData = std::move(packet), .PacketSession = session});
   }
@@ -237,8 +238,8 @@ private:
                    BOOST_LOG_TRIVIAL(info) << GetName() << ": Packet marked Deferred";
                    co_return ErrorCode{};
                  },
-                 [&](const std::weak_ptr<Session>& sessionWeak) -> Omni::Fiber::Coroutine<ErrorCode> {
-                   if (auto session = sessionWeak.lock()) {
+                 [&](const Interface::VpnEndpoint& endpoint) -> Omni::Fiber::Coroutine<ErrorCode> {
+                   if (auto session = endpoint.lock()) {
                      if (session->ChannelSide) {
                        auto result = co_await session->ChannelSide->PushOutgoing(std::move(packet));
                        if (!result.has_value()) {
@@ -389,10 +390,10 @@ auto VpnClientMultiChannel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode
 }
 
 auto VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, const std::string& address)
-    -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>> {
+    -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannelSession>> {
   auto [iterator, inserted] = _Sessions.emplace(psk, nullptr);
   if (inserted) {
-    iterator->second = std::make_shared<Session>();
+    iterator->second = std::make_shared<VpnClientMultiChannelSession>();
   } else {
     co_return iterator->second;
   }
@@ -408,7 +409,7 @@ auto VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, const
   co_return iterator->second;
 }
 
-auto VpnClientMultiChannel::UnregisterChannel(std::shared_ptr<VpnClientMultiChannel::Session> session)
+auto VpnClientMultiChannel::UnregisterChannel(std::shared_ptr<VpnClientMultiChannelSession> session)
     -> Omni::Fiber::Coroutine<void> {
   _StateListener.get().OnSessionStopping(session);
   session->Running = false;
@@ -543,7 +544,7 @@ auto VpnClientMultiChannel::MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni
   }
 }
 
-auto VpnClientMultiChannel::GetStats(const std::shared_ptr<VpnClientMultiChannel::Session>& session)
+auto VpnClientMultiChannel::GetStats(const std::shared_ptr<VpnClientMultiChannelSession>& session)
     -> std::optional<VpnTrafficStats> {
   if (session->SessionPipeline) {
     int64_t rttMs = -1;

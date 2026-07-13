@@ -41,6 +41,7 @@ foreach(suffix "" "-asan")
     Boost::thread
     omni-fiber${suffix}
     omni-resolver${suffix}
+    great-hole-interface${suffix}
   )
 
   if(WIN32)

@@ -76,7 +76,7 @@ public:
 
   bool ProtectSocket(int fd);
   void OnVpnStateChanged(TunnelState state, const std::string& message) override;
-  void OnTunnelStateChanged(const std::shared_ptr<VpnClientMultiChannel::Session>& session, TunnelState state,
+  void OnTunnelStateChanged(const std::shared_ptr<VpnClientMultiChannelSession>& session, TunnelState state,
                             const std::string& error) override;
   std::optional<VpnTrafficStats> GetTrafficStats(jlong endpointHandle);
 
@@ -165,7 +165,7 @@ std::shared_ptr<ConnectionMark> JniSelector::FindTunnel(int protocol, const boos
   if (endpointHandle != 0) {
     auto dp = _Session.GetDataPlane();
     if (dp) {
-      auto session = dp->FindSessionByHandle(reinterpret_cast<VpnClientMultiChannel::Session*>(endpointHandle));
+      auto session = dp->FindSessionByHandle(reinterpret_cast<VpnClientMultiChannelSession*>(endpointHandle));
       if (session) {
         return std::make_unique<VpnClientMultiChannel::Mark>(std::move(session));
       }
@@ -310,7 +310,7 @@ void JniSession::RemoveEndpoint(jlong handle) {
   auto future = promise.get_future();
 
   PostTask([&promise, handle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
-    co_await dp.RemoveEndpoint(dp.FindSessionByHandle(reinterpret_cast<VpnClientMultiChannel::Session*>(handle)));
+    co_await dp.RemoveEndpoint(dp.FindSessionByHandle(reinterpret_cast<VpnClientMultiChannelSession*>(handle)));
     promise.set_value();
     co_return;
   });
@@ -347,7 +347,7 @@ void JniSession::OnVpnStateChanged(TunnelState state, const std::string& message
   }
 }
 
-void JniSession::OnTunnelStateChanged(const std::shared_ptr<VpnClientMultiChannel::Session>& session, TunnelState state,
+void JniSession::OnTunnelStateChanged(const std::shared_ptr<VpnClientMultiChannelSession>& session, TunnelState state,
                                       const std::string& error) {
   if (!_Callbacks) {
     return;
@@ -375,7 +375,7 @@ std::optional<VpnTrafficStats> JniSession::GetTrafficStats(jlong endpointHandle)
   auto future = promise.get_future();
 
   PostTask([&promise, endpointHandle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
-    auto* session = reinterpret_cast<VpnClientMultiChannel::Session*>(endpointHandle);
+    auto* session = reinterpret_cast<VpnClientMultiChannelSession*>(endpointHandle);
     promise.set_value(dp.GetTrafficStats(dp.FindSessionByHandle(session)));
     co_return;
   });

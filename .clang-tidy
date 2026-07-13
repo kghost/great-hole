@@ -2,11 +2,12 @@
 Checks: |
   bugprone-*, concurrency-*, cppcoreguidelines-*, misc-*, modernize-*, performance-*, portability-*, readability-*,
   -bugprone-reserved-identifier, -bugprone-easily-swappable-parameters,
+  -bugprone-unchecked-optional-access,
   -readability-else-after-return, -readability-function-cognitive-complexity,
   -misc-non-private-member-variables-in-classes, -misc-use-internal-linkage, -misc-no-recursion,
   -cppcoreguidelines-avoid-reference-coroutine-parameters, -cppcoreguidelines-avoid-capturing-lambda-coroutines,
   -cppcoreguidelines-avoid-const-or-ref-data-members, -cppcoreguidelines-non-private-member-variables-in-classes,
-  -portability-avoid-pragma-once, -portability-template-virtual-member-function
-  -bugprone-unchecked-optional-access,
+  -portability-avoid-pragma-once, -portability-template-virtual-member-function,
+  -performance-avoid-endl,
 
 HeaderFilterRegex: '.*'

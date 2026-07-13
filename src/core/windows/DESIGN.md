@@ -50,6 +50,7 @@ outbound and !impostor and ip and !loopback
 Since Windows `HANDLE` objects returned by WinDivert are waitable asynchronous resources, we integrate them with `Boost.Asio` using `boost::asio::windows::object_handle`:
 - **Read Operations**: Intercepted using overlapping structures (`OVERLAPPED`) and waitable event handles. When a packet is captured, `WinDivertRecvEx` initiates the capture. If the packet matches the bypass rules determined by the queried `WinDivertRouteCallback`, it is synchronously re-injected back to its original path using `WinDivertSendEx`, and the read loop continues to capture the next packet.
 - **Write Operations**: Packets returning from the VPN channel are injected back into the Windows kernel via `WinDivertSendEx` with the appropriate interface index (`IfIdx` and `SubIfIdx`) cached from previous outgoing packets to ensure correct routing.
+- **Cancellation**: Since `boost::asio::windows::object_handle` does not natively support Asio cancellation slots, we associate the WinDivert handle and the active `OVERLAPPED` structure with the `Cancel` token via `Cancel::HandleTracker`. Triggering the cancel token calls `CancelIoEx` on the specific overlapped block, signaling the waitable event and waking up the pending `async_wait` with `operation_aborted`.
 
 #### Connection Tracking & Loop Prevention
 Each captured packet that is not bypassed by the fast bypass callback is evaluated through the `ConnectionTracker`:
@@ -84,4 +85,3 @@ Since standard Windows Named Pipes only carry raw stream data, the `FakeWinDiver
 - **Asynchronous Reads**: When a read is pending, the controller copies the test address to the application's `WINDIVERT_ADDRESS` buffer *before* writing the packet data to the server pipe. When the read completes, the application sees the populated address.
 - **Synchronous Reads**: If data is written while no read is pending, the address is buffered in a FIFO queue. When `WinDivertRecvEx` is called later, it pops the address synchronously alongside the `ReadFile`.
 - **Cancellation**: Non-pending / cancelled operations are pruned from the tracking registry by inspecting `overlapped->Internal != STATUS_PENDING` (`0x103`).
-

@@ -228,7 +228,7 @@ private:
 
 class RoutingSelector : public ConnectionTracker::Selector {
 public:
-  RoutingSelector(std::shared_ptr<VpnClientMultiChannel::Session>& resolvedSession, int& selectorCalls)
+  RoutingSelector(std::shared_ptr<VpnClientMultiChannelSession>& resolvedSession, int& selectorCalls)
       : _ResolvedSession(resolvedSession), _SelectorCalls(selectorCalls) {}
 
   auto operator()(const ConnectionTracker::ConnectionKey&) -> std::shared_ptr<ConnectionMark> override {
@@ -244,7 +244,7 @@ private:
     return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
 
-  std::shared_ptr<VpnClientMultiChannel::Session>& _ResolvedSession;
+  std::shared_ptr<VpnClientMultiChannelSession>& _ResolvedSession;
   int& _SelectorCalls;
 };
 
@@ -372,7 +372,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
 
   UdpDynMux::PskType psk = {9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6};
 
-  std::shared_ptr<VpnClientMultiChannel::Session> resolvedSession;
+  std::shared_ptr<VpnClientMultiChannelSession> resolvedSession;
   int selectorCalls = 0;
 
   RoutingSelector selector(resolvedSession, selectorCalls);
@@ -521,7 +521,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
 
   UdpDynMux::PskType psk = {1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6};
 
-  std::shared_ptr<VpnClientMultiChannel::Session> resolvedSession;
+  std::shared_ptr<VpnClientMultiChannelSession> resolvedSession;
   int selectorCalls = 0;
 
   RoutingSelector selector(resolvedSession, selectorCalls);
@@ -692,7 +692,7 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
 
   UdpDynMux::PskType psk = {1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6};
 
-  std::shared_ptr<VpnClientMultiChannel::Session> resolvedSession;
+  std::shared_ptr<VpnClientMultiChannelSession> resolvedSession;
   int selectorCalls = 0;
 
   RoutingSelector selector(resolvedSession, selectorCalls);

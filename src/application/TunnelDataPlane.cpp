@@ -25,6 +25,8 @@
 
 namespace gh {
 
+using TunnelState = Interface::TunnelState;
+
 TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
                                  DataPlaneCallbacks& callbacks)
     : _Executor(std::move(executor)), _Selector(selector), _Callbacks(callbacks)
@@ -49,7 +51,8 @@ auto TunnelDataPlane::Start(
   _Callbacks.OnVpnStateChanged(TunnelState::Starting, "VPN starting");
 
 #ifdef _WIN32
-  auto tun = std::make_shared<WinDivert>(_Executor, "WinDivert", 0, 0, *this);
+  _WinDivert = std::make_shared<WinDivert>(_Executor, "WinDivert", 0, 0, *this);
+  auto tun = _WinDivert;
 #else
   auto tun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
 #endif
@@ -103,12 +106,15 @@ auto TunnelDataPlane::Stop() -> Omni::Fiber::Coroutine<void> {
   }
 
   _Client.reset();
+#ifdef _WIN32
+  _WinDivert.reset();
+#endif
 
   _Callbacks.OnVpnStateChanged(TunnelState::Stopped, "VPN tunnel stopped");
 }
 
 auto TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address)
-    -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannel::Session>> {
+    -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannelSession>> {
   if (_Client) {
     auto session = co_await _Client->RegisterChannel(psk, address);
     _Endpoints.insert(session);
@@ -117,7 +123,7 @@ auto TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::stri
   co_return nullptr;
 }
 
-auto TunnelDataPlane::RemoveEndpoint(std::shared_ptr<VpnClientMultiChannel::Session> session)
+auto TunnelDataPlane::RemoveEndpoint(std::shared_ptr<VpnClientMultiChannelSession> session)
     -> Omni::Fiber::Coroutine<void> {
   _Endpoints.erase(session);
   if (_Client) {
@@ -125,8 +131,8 @@ auto TunnelDataPlane::RemoveEndpoint(std::shared_ptr<VpnClientMultiChannel::Sess
   }
 }
 
-auto TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannel::Session* session)
-    -> std::shared_ptr<VpnClientMultiChannel::Session> {
+auto TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannelSession* session)
+    -> std::shared_ptr<VpnClientMultiChannelSession> {
   auto iterator = _Endpoints.find(session);
   if (iterator != _Endpoints.end()) {
     return *iterator;
@@ -144,56 +150,62 @@ auto TunnelDataPlane::WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& ad
     auto mark = std::dynamic_pointer_cast<VpnClientMultiChannel::Mark>(result.value());
     packet.SetMark(mark);
 
-    return std::visit(
-        Overload{
-            [](VpnClientMultiChannel::Mark::ToBeSelected) -> gh::WinDivertRouteCallback::Result {
-              return WinDivertRouteCallback::Result::Normal;
-            },
-            [](VpnClientMultiChannel::Mark::Bypass) -> gh::WinDivertRouteCallback::Result {
-              return WinDivertRouteCallback::Result::Bypass;
-            },
-            [](VpnClientMultiChannel::Mark::Discard) -> gh::WinDivertRouteCallback::Result {
-              return WinDivertRouteCallback::Result::Discard;
-            },
-            [](const VpnClientMultiChannel::Mark::Deferred&) -> gh::WinDivertRouteCallback::Result {
-              return WinDivertRouteCallback::Result::Discard;
-            },
-            [](const std::weak_ptr<VpnClientMultiChannel::Session>&) -> gh::WinDivertRouteCallback::Result {
-              return WinDivertRouteCallback::Result::Normal;
-            },
-        },
-        mark->GetValue());
+    return std::visit(Overload{
+                          [](VpnClientMultiChannel::Mark::ToBeSelected) -> gh::WinDivertRouteCallback::Result {
+                            return WinDivertRouteCallback::Result::Normal;
+                          },
+                          [](VpnClientMultiChannel::Mark::Bypass) -> gh::WinDivertRouteCallback::Result {
+                            return WinDivertRouteCallback::Result::Bypass;
+                          },
+                          [](VpnClientMultiChannel::Mark::Discard) -> gh::WinDivertRouteCallback::Result {
+                            return WinDivertRouteCallback::Result::Discard;
+                          },
+                          [](const VpnClientMultiChannel::Mark::Deferred&) -> gh::WinDivertRouteCallback::Result {
+                            return WinDivertRouteCallback::Result::Discard;
+                          },
+                          [](const std::weak_ptr<VpnClientMultiChannelSession>&) -> gh::WinDivertRouteCallback::Result {
+                            return WinDivertRouteCallback::Result::Normal;
+                          },
+                      },
+                      mark->GetValue());
   } else {
     BOOST_LOG_TRIVIAL(warning) << "WinDivert: LookupAndUpdate bypass failed: " << result.error().message();
     return WinDivertRouteCallback::Result::Normal;
   }
 }
+
+auto TunnelDataPlane::Inject(Packet&& packet) -> Omni::Fiber::Coroutine<void> {
+  if (_WinDivert) {
+    co_await _WinDivert->Inject(std::move(packet));
+  }
+  co_return;
+}
 #endif
 
-auto TunnelDataPlane::GetTrafficStats(const std::shared_ptr<VpnClientMultiChannel::Session>& session)
+auto TunnelDataPlane::GetTrafficStats(const std::shared_ptr<VpnClientMultiChannelSession>& session)
     -> std::optional<VpnTrafficStats> {
   return VpnClientMultiChannel::GetStats(session);
 }
 
-void TunnelDataPlane::OnSessionStarting(const std::shared_ptr<VpnClientMultiChannel::Session>& session) {
-  _Callbacks.OnTunnelStateChanged(session, TunnelState::Starting, "");
+void TunnelDataPlane::OnSessionStarting(const std::shared_ptr<VpnClientMultiChannelSession>& session) {
+  _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Starting, "");
 }
 
-void TunnelDataPlane::OnSessionRunning(const std::shared_ptr<VpnClientMultiChannel::Session>& session) {
-  _Callbacks.OnTunnelStateChanged(session, TunnelState::Running, "");
+void TunnelDataPlane::OnSessionRunning(const std::shared_ptr<VpnClientMultiChannelSession>& session) {
+  _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Running, "");
 }
 
-void TunnelDataPlane::OnSessionStopping(const std::shared_ptr<VpnClientMultiChannel::Session>& session) {
-  _Callbacks.OnTunnelStateChanged(session, TunnelState::Stopping, "");
+void TunnelDataPlane::OnSessionStopping(const std::shared_ptr<VpnClientMultiChannelSession>& session) {
+  _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Stopping, "");
 }
 
-void TunnelDataPlane::OnSessionStopped(const std::shared_ptr<VpnClientMultiChannel::Session>& session) {
-  _Callbacks.OnTunnelStateChanged(session, TunnelState::Stopped, "");
+void TunnelDataPlane::OnSessionStopped(const std::shared_ptr<VpnClientMultiChannelSession>& session) {
+  _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Stopped, "");
 }
 
-void TunnelDataPlane::OnSessionFailed(const std::shared_ptr<VpnClientMultiChannel::Session>& session,
+void TunnelDataPlane::OnSessionFailed(const std::shared_ptr<VpnClientMultiChannelSession>& session,
                                       const std::string& error) {
-  _Callbacks.OnTunnelStateChanged(session, TunnelState::Failed, error);
+  _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Failed, error);
 }
 
 } // namespace gh

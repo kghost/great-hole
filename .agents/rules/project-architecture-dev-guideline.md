@@ -61,3 +61,12 @@ Documentation in this project is split into two categories based on target audie
 - **src/application**:
   - [src/application/README.md](../../src/application/README.md) - Public APIs and integration guidelines for connection tracking, VPN server, and multi-channel VPN client.
   - [src/application/DESIGN.md](../../src/application/DESIGN.md) - Internal architecture of the application module, detailing ConnectionTracker tables, timeouts, and ICMP matching.
+- **src/windows**:
+  - [src/windows/README.md](../../src/windows/README.md) - Public FFI bindings, Rust-CXX specifications, and integration instructions.
+  - [src/windows/DESIGN.md](../../src/windows/DESIGN.md) - Threading model, wrapper classes, memory management, and roadmap for the bridge.
+- **src/windows/flow**:
+  - [src/windows/flow/README.md](../../src/windows/flow/README.md) - Public APIs and interface guidelines for Windows WinDivert flow sniffer.
+  - [src/windows/flow/DESIGN.md](../../src/windows/flow/DESIGN.md) - Internal design, cancellation handling, and flow parsing algorithms.
+- **src/windows/policy**:
+  - [src/windows/policy/README.md](../../src/windows/policy/README.md) - Public FFI APIs and integration guidelines for routing policy engine.
+  - [src/windows/policy/DESIGN.md](../../src/windows/policy/DESIGN.md) - Internal design, process tree tracking, flow cache mapping, and policy resolution algorithms.

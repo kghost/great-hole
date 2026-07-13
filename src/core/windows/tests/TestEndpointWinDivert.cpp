@@ -14,6 +14,7 @@
 #include "Fiber.hpp"
 #include "GetCurrentOmniFiber.hpp"
 #include "Manager.hpp"
+#include "OmniYield.hpp"
 #include "Packet.hpp"
 
 using namespace gh;
@@ -291,6 +292,103 @@ TEST(WinDivertTest, ReadInjectedPacketPrioritized) {
     EXPECT_EQ(readMsg, injectMsg);
 
     co_await winDivert->Stop();
+    co_return;
+  });
+
+  RunEventLoop(io);
+}
+
+TEST(WinDivertTest, ReadCancelledByStop) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  MockRouteCallback callback;
+  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", 12, 34, callback);
+
+  auto& controller = test::GetFakeWinDivertController();
+  controller.Reset();
+
+  bool readCompleted = false;
+  ErrorCode readErr{};
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    auto err = co_await winDivert->Start();
+    EXPECT_FALSE(err);
+    if (err) {
+      co_return;
+    }
+
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
+    auto reader = current.Spawn("reader", [&]() -> Omni::Fiber::Coroutine<void> {
+      Packet readPacket;
+      Cancel cancel;
+      readErr = co_await winDivert->Read(readPacket, cancel);
+      readCompleted = true;
+      co_return;
+    });
+
+    co_await Omni::Fiber::OmniYield();
+
+    auto stopErr = co_await winDivert->Stop();
+    EXPECT_FALSE(stopErr);
+
+    co_await current.Join(reader);
+
+    EXPECT_TRUE(readCompleted);
+    EXPECT_EQ(readErr.value(), boost::asio::error::operation_aborted);
+
+    co_return;
+  });
+
+  RunEventLoop(io);
+}
+
+TEST(WinDivertTest, ReadCancelledByCancelObject) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  MockRouteCallback callback;
+  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", 12, 34, callback);
+
+  auto& controller = test::GetFakeWinDivertController();
+  controller.Reset();
+
+  bool readCompleted = false;
+  ErrorCode readErr{};
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    auto err = co_await winDivert->Start();
+    EXPECT_FALSE(err);
+    if (err) {
+      co_return;
+    }
+
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
+    Cancel cancel;
+    auto reader = current.Spawn("reader", [&]() -> Omni::Fiber::Coroutine<void> {
+      Packet readPacket;
+      readErr = co_await winDivert->Read(readPacket, cancel);
+      readCompleted = true;
+      co_return;
+    });
+
+    co_await Omni::Fiber::OmniYield();
+
+    // Trigger the cancel object instead of calling Stop()!
+    cancel.Trigger();
+
+    // Wait a bit to let the scheduler run
+    boost::asio::steady_timer timer(io);
+    timer.expires_after(std::chrono::milliseconds(50));
+    co_await timer.async_wait(Omni::Fiber::AsioUseFiber);
+
+    EXPECT_TRUE(readCompleted);
+    EXPECT_EQ(readErr.value(), boost::asio::error::operation_aborted);
+
+    co_await winDivert->Stop();
+    co_await current.Join(reader);
     co_return;
   });
 
