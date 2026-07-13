@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <variant>
 
 #include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
@@ -51,16 +52,17 @@ public:
     struct ToBeSelected {};
     struct Bypass {};
     struct Discard {};
-    struct Deferred {};
+    struct Deferred {
+      std::vector<Packet> Packets;
+    };
 
     using ValueType = std::variant<ToBeSelected, Bypass, Discard, Deferred, std::weak_ptr<Session>>;
 
     explicit Mark() : _Value(ToBeSelected{}) {}
     explicit Mark(Bypass /*unused*/) : _Value(Bypass{}) {}
     explicit Mark(Discard /*unused*/) : _Value(Discard{}) {}
-    explicit Mark(Deferred /*unused*/) : _Value(Deferred{}) {}
+    explicit Mark(Deferred deferred) : _Value(std::move(deferred)) {}
     explicit Mark(std::shared_ptr<Session> session) : _Value(std::move(session)) {}
-    explicit Mark(ValueType value) : _Value(std::move(value)) {}
     ~Mark() override = default;
 
     Mark(const Mark&) = delete;
@@ -71,10 +73,6 @@ public:
     [[nodiscard]] auto GetDescription() const -> std::string override;
     [[nodiscard]] auto Validate() const -> bool override;
     [[nodiscard]] auto GetValue() const -> const ValueType& { return _Value; }
-
-    [[nodiscard]] auto ToPacketMark() const -> std::unique_ptr<PacketMark> override {
-      return std::make_unique<Mark>(_Value);
-    }
 
   private:
     ValueType _Value;

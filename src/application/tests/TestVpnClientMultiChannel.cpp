@@ -194,29 +194,29 @@ class CallbackSelector : public ConnectionTracker::Selector {
 public:
   CallbackSelector(std::vector<CallbackArgs>& invocations) : _Invocations(invocations) {}
 
-  auto operator()(const ConnectionTracker::Ip4TcpKey& k) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip4TcpKey& k) -> std::shared_ptr<ConnectionMark> override {
     _Invocations.push_back(
         CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.LocalPort, k.RemotePort, 6});
     return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  auto operator()(const ConnectionTracker::Ip6TcpKey& k) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip6TcpKey& k) -> std::shared_ptr<ConnectionMark> override {
     _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.LocalPort, k.RemotePort, 6});
     return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  auto operator()(const ConnectionTracker::Ip4UdpKey& k) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip4UdpKey& k) -> std::shared_ptr<ConnectionMark> override {
     _Invocations.push_back(
         CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.LocalPort, k.RemotePort, 17});
     return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  auto operator()(const ConnectionTracker::Ip6UdpKey& k) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip6UdpKey& k) -> std::shared_ptr<ConnectionMark> override {
     _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.LocalPort, k.RemotePort, 17});
     return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  auto operator()(const ConnectionTracker::IcmpKey& k) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::IcmpKey& k) -> std::shared_ptr<ConnectionMark> override {
     _Invocations.push_back(CallbackArgs{MapToV6(k.LocalAddress), MapToV6(k.RemoteAddress), k.Id, k.Id, 1});
     return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
-  auto operator()(const ConnectionTracker::Icmp6Key& k) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Icmp6Key& k) -> std::shared_ptr<ConnectionMark> override {
     _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.Id, k.Id, 58});
     return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }
@@ -230,27 +230,15 @@ public:
   RoutingSelector(std::shared_ptr<VpnClientMultiChannel::Session>& resolvedSession, int& selectorCalls)
       : _ResolvedSession(resolvedSession), _SelectorCalls(selectorCalls) {}
 
-  auto operator()(const ConnectionTracker::Ip4TcpKey&) const -> std::unique_ptr<ConnectionMark> override {
-    return Handle();
-  }
-  auto operator()(const ConnectionTracker::Ip6TcpKey&) const -> std::unique_ptr<ConnectionMark> override {
-    return Handle();
-  }
-  auto operator()(const ConnectionTracker::Ip4UdpKey&) const -> std::unique_ptr<ConnectionMark> override {
-    return Handle();
-  }
-  auto operator()(const ConnectionTracker::Ip6UdpKey&) const -> std::unique_ptr<ConnectionMark> override {
-    return Handle();
-  }
-  auto operator()(const ConnectionTracker::IcmpKey&) const -> std::unique_ptr<ConnectionMark> override {
-    return Handle();
-  }
-  auto operator()(const ConnectionTracker::Icmp6Key&) const -> std::unique_ptr<ConnectionMark> override {
-    return Handle();
-  }
+  auto operator()(const ConnectionTracker::Ip4TcpKey&) -> std::shared_ptr<ConnectionMark> override { return Handle(); }
+  auto operator()(const ConnectionTracker::Ip6TcpKey&) -> std::shared_ptr<ConnectionMark> override { return Handle(); }
+  auto operator()(const ConnectionTracker::Ip4UdpKey&) -> std::shared_ptr<ConnectionMark> override { return Handle(); }
+  auto operator()(const ConnectionTracker::Ip6UdpKey&) -> std::shared_ptr<ConnectionMark> override { return Handle(); }
+  auto operator()(const ConnectionTracker::IcmpKey&) -> std::shared_ptr<ConnectionMark> override { return Handle(); }
+  auto operator()(const ConnectionTracker::Icmp6Key&) -> std::shared_ptr<ConnectionMark> override { return Handle(); }
 
 private:
-  auto Handle() const -> std::unique_ptr<ConnectionMark> {
+  auto Handle() const -> std::shared_ptr<ConnectionMark> {
     _SelectorCalls++;
     if (_ResolvedSession) {
       return std::make_unique<VpnClientMultiChannel::Mark>(_ResolvedSession);

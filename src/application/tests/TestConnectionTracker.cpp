@@ -1,6 +1,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <vector>
 
 #include <boost/asio.hpp>
@@ -83,27 +84,29 @@ class MockSelector : public ConnectionTracker::Selector {
 public:
   explicit MockSelector(ConnectionMark& result) : Result(&result) {}
 
-  auto operator()(const ConnectionTracker::Ip4TcpKey&) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip4TcpKey&) -> std::shared_ptr<ConnectionMark> override {
     return CloneResult();
   }
-  auto operator()(const ConnectionTracker::Ip6TcpKey&) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip6TcpKey&) -> std::shared_ptr<ConnectionMark> override {
     return CloneResult();
   }
-  auto operator()(const ConnectionTracker::Ip4UdpKey&) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip4UdpKey&) -> std::shared_ptr<ConnectionMark> override {
     return CloneResult();
   }
-  auto operator()(const ConnectionTracker::Ip6UdpKey&) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip6UdpKey&) -> std::shared_ptr<ConnectionMark> override {
     return CloneResult();
   }
-  auto operator()(const ConnectionTracker::IcmpKey&) const -> std::unique_ptr<ConnectionMark> override { return CloneResult(); }
-  auto operator()(const ConnectionTracker::Icmp6Key&) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::IcmpKey&) -> std::shared_ptr<ConnectionMark> override {
+    return CloneResult();
+  }
+  auto operator()(const ConnectionTracker::Icmp6Key&) -> std::shared_ptr<ConnectionMark> override {
     return CloneResult();
   }
 
   mutable ConnectionMark* Result = nullptr;
 
 private:
-  auto CloneResult() const -> std::unique_ptr<ConnectionMark> {
+  auto CloneResult() const -> std::shared_ptr<ConnectionMark> {
     if (Result) {
       return std::make_unique<ReferenceMark>(*Result);
     }
@@ -114,22 +117,22 @@ private:
 class ConstantSelector : public ConnectionTracker::Selector {
 public:
   explicit ConstantSelector(ConnectionMark& mark) : _Mark(mark) {}
-  auto operator()(const ConnectionTracker::Ip4TcpKey&) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip4TcpKey&) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<ReferenceMark>(_Mark);
   }
-  auto operator()(const ConnectionTracker::Ip6TcpKey&) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip6TcpKey&) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<ReferenceMark>(_Mark);
   }
-  auto operator()(const ConnectionTracker::Ip4UdpKey&) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip4UdpKey&) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<ReferenceMark>(_Mark);
   }
-  auto operator()(const ConnectionTracker::Ip6UdpKey&) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip6UdpKey&) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<ReferenceMark>(_Mark);
   }
-  auto operator()(const ConnectionTracker::IcmpKey&) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::IcmpKey&) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<ReferenceMark>(_Mark);
   }
-  auto operator()(const ConnectionTracker::Icmp6Key&) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Icmp6Key&) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<ReferenceMark>(_Mark);
   }
 
@@ -137,7 +140,7 @@ private:
   ConnectionMark& _Mark;
 };
 
-static auto GetMark(const std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>& res) -> ConnectionMark* {
+static auto GetMark(const std::expected<std::shared_ptr<ConnectionMark>, ErrorCode>& res) -> ConnectionMark* {
   if (res.has_value()) {
     ConnectionMark& mark = res->get();
     if (auto* refMark = dynamic_cast<ReferenceMark*>(&mark)) {

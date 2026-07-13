@@ -6,7 +6,6 @@
 #include <boost/asio/steady_timer.hpp>
 #include <chrono>
 #include <cstdint>
-#include <functional>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -76,13 +75,13 @@ auto ConnectionTracker::LookupAndUpdate(const Packet& packet, ConnectionTracker:
         if (type == PacketType::kRealPacket) {
           using EntryType = typename std::decay_t<decltype(table)>::mapped_type;
           auto [iterator, inserted] = table.try_emplace(
-              key, std::in_place_type<Direction>, [&] -> std::unique_ptr<ConnectionMark> { return selector(key); }, now,
+              key, std::in_place_type<Direction>, [&] -> std::shared_ptr<ConnectionMark> { return selector(key); }, now,
               keyExtra);
           auto& entry = iterator->second;
           if (!inserted) {
             if (entry.IsExpired(now)) {
               entry = EntryType{std::in_place_type<Direction>,
-                                [&] -> std::unique_ptr<ConnectionMark> { return selector(key); }, now, keyExtra};
+                                [&] -> std::shared_ptr<ConnectionMark> { return selector(key); }, now, keyExtra};
             } else {
               if (!entry.ConnectionMark->Validate()) {
                 entry.ConnectionMark = selector(key);
@@ -92,10 +91,10 @@ auto ConnectionTracker::LookupAndUpdate(const Packet& packet, ConnectionTracker:
             }
           }
 
-          return std::reference_wrapper<ConnectionMark>(*entry.ConnectionMark);
+          return entry.ConnectionMark;
         } else {
           if (auto iterator = table.find(key); iterator != table.end() && iterator->second.Validate(now)) {
-            return std::reference_wrapper<ConnectionMark>(*iterator->second.ConnectionMark);
+            return iterator->second.ConnectionMark;
           }
           return std::unexpected(Error(AppMinorErrorCategory::kUnsupportedPacket));
         }

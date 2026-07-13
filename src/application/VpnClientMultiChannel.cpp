@@ -38,22 +38,22 @@ public:
   SessionSelector(SessionSelector&&) = delete;
   auto operator=(SessionSelector&&) -> SessionSelector& = delete;
 
-  auto operator()(const ConnectionTracker::Ip4TcpKey& /*unused*/) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip4TcpKey& /*unused*/) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
   }
-  auto operator()(const ConnectionTracker::Ip6TcpKey& /*unused*/) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip6TcpKey& /*unused*/) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
   }
-  auto operator()(const ConnectionTracker::Ip4UdpKey& /*unused*/) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip4UdpKey& /*unused*/) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
   }
-  auto operator()(const ConnectionTracker::Ip6UdpKey& /*unused*/) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Ip6UdpKey& /*unused*/) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
   }
-  auto operator()(const ConnectionTracker::IcmpKey& /*unused*/) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::IcmpKey& /*unused*/) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
   }
-  auto operator()(const ConnectionTracker::Icmp6Key& /*unused*/) const -> std::unique_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::Icmp6Key& /*unused*/) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
   }
 
@@ -217,7 +217,7 @@ public:
                                  << ", dropping packet";
         co_return ErrorCode{};
       }
-      co_return co_await RouteByMark(packet, dynamic_cast<Mark&>(route->get()).GetValue());
+      co_return co_await RouteByMark(packet, std::dynamic_pointer_cast<Mark>(route.value())->GetValue());
     }
   }
 
@@ -248,7 +248,7 @@ private:
                    BOOST_LOG_TRIVIAL(debug) << GetName() << ": Packet marked Discard";
                    co_return ErrorCode{};
                  },
-                 [&](Mark::Deferred) -> Omni::Fiber::Coroutine<ErrorCode> {
+                 [&](const Mark::Deferred&) -> Omni::Fiber::Coroutine<ErrorCode> {
                    BOOST_LOG_TRIVIAL(info) << GetName() << ": Packet marked Deferred";
                    co_return ErrorCode{};
                  },

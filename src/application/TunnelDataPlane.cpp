@@ -142,8 +142,8 @@ auto TunnelDataPlane::WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& ad
   }
   auto result = _ConnectionTracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(packet, _Selector);
   if (result.has_value()) {
-    auto& mark = dynamic_cast<VpnClientMultiChannel::Mark&>(result.value().get());
-    packet.SetMark(mark.ToPacketMark());
+    auto mark = std::dynamic_pointer_cast<VpnClientMultiChannel::Mark>(result.value());
+    packet.SetMark(mark);
 
     return std::visit(
         Overload{
@@ -156,14 +156,14 @@ auto TunnelDataPlane::WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& ad
             [](VpnClientMultiChannel::Mark::Discard) -> gh::WinDivertRouteCallback::Result {
               return WinDivertRouteCallback::Result::Discard;
             },
-            [](VpnClientMultiChannel::Mark::Deferred) -> gh::WinDivertRouteCallback::Result {
+            [](const VpnClientMultiChannel::Mark::Deferred&) -> gh::WinDivertRouteCallback::Result {
               return WinDivertRouteCallback::Result::Discard;
             },
             [](const std::weak_ptr<VpnClientMultiChannel::Session>&) -> gh::WinDivertRouteCallback::Result {
               return WinDivertRouteCallback::Result::Normal;
             },
         },
-        mark.GetValue());
+        mark->GetValue());
   } else {
     BOOST_LOG_TRIVIAL(warning) << "WinDivert: LookupAndUpdate bypass failed: " << result.error().message();
     return WinDivertRouteCallback::Result::Normal;

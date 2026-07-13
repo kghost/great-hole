@@ -4,10 +4,10 @@
 #include <compare>
 #include <cstdint>
 #include <expected>
-#include <functional>
 #include <map>
 #include <memory>
 #include <utility>
+#include <variant>
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/address_v4.hpp>
@@ -31,8 +31,6 @@ public:
 
   [[nodiscard]] virtual auto GetDescription() const -> std::string = 0;
   [[nodiscard]] virtual auto Validate() const -> bool { return true; }
-
-  [[nodiscard]] virtual auto ToPacketMark() const -> std::unique_ptr<PacketMark> { return nullptr; }
 };
 
 class ConnectionTracker : public ServiceBase {
@@ -96,7 +94,7 @@ public:
   };
 
   // Selector determines connection routing:
-  // - Returns a std::unique_ptr<ConnectionMark> representing the routing decision.
+  // - Returns a std::shared_ptr<ConnectionMark> representing the routing decision.
   //
   // Explicit Guarantee:
   // The Selector implementation must guarantee loop prevention by returning a 'Bypass'
@@ -111,12 +109,12 @@ public:
     Selector(Selector&&) = delete;
     auto operator=(Selector&&) -> Selector& = delete;
 
-    virtual auto operator()(const Ip4TcpKey&) const -> std::unique_ptr<ConnectionMark> = 0;
-    virtual auto operator()(const Ip6TcpKey&) const -> std::unique_ptr<ConnectionMark> = 0;
-    virtual auto operator()(const Ip4UdpKey&) const -> std::unique_ptr<ConnectionMark> = 0;
-    virtual auto operator()(const Ip6UdpKey&) const -> std::unique_ptr<ConnectionMark> = 0;
-    virtual auto operator()(const IcmpKey&) const -> std::unique_ptr<ConnectionMark> = 0;
-    virtual auto operator()(const Icmp6Key&) const -> std::unique_ptr<ConnectionMark> = 0;
+    virtual auto operator()(const Ip4TcpKey&) -> std::shared_ptr<ConnectionMark> = 0;
+    virtual auto operator()(const Ip6TcpKey&) -> std::shared_ptr<ConnectionMark> = 0;
+    virtual auto operator()(const Ip4UdpKey&) -> std::shared_ptr<ConnectionMark> = 0;
+    virtual auto operator()(const Ip6UdpKey&) -> std::shared_ptr<ConnectionMark> = 0;
+    virtual auto operator()(const IcmpKey&) -> std::shared_ptr<ConnectionMark> = 0;
+    virtual auto operator()(const Icmp6Key&) -> std::shared_ptr<ConnectionMark> = 0;
   };
 
   explicit ConnectionTracker(boost::asio::any_io_executor executor);
@@ -144,7 +142,8 @@ public:
     using OppositeDirection = ConnectionDirectionOutput;
   };
 
-  using Result = std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>;
+  using Result = std::expected<std::shared_ptr<ConnectionMark>, ErrorCode>;
+  using ConnectionKey = std::variant<Ip4TcpKey, Ip6TcpKey, Ip4UdpKey, Ip6UdpKey, IcmpKey, Icmp6Key>;
 
   template <typename Direction> auto LookupAndUpdate(const Packet& packet, Selector& selector) -> Result;
 
@@ -160,7 +159,7 @@ private:
       return now - self.LastActive > self.GetTimeout();
     }
 
-    std::unique_ptr<ConnectionMark> ConnectionMark;
+    std::shared_ptr<ConnectionMark> ConnectionMark;
     std::chrono::steady_clock::time_point LastActive;
     static constexpr std::chrono::seconds ProneInterval = std::chrono::seconds(60);
   };
