@@ -84,22 +84,7 @@ class MockSelector : public ConnectionTracker::Selector {
 public:
   explicit MockSelector(ConnectionMark& result) : Result(&result) {}
 
-  auto operator()(const ConnectionTracker::Ip4TcpKey&) -> std::shared_ptr<ConnectionMark> override {
-    return CloneResult();
-  }
-  auto operator()(const ConnectionTracker::Ip6TcpKey&) -> std::shared_ptr<ConnectionMark> override {
-    return CloneResult();
-  }
-  auto operator()(const ConnectionTracker::Ip4UdpKey&) -> std::shared_ptr<ConnectionMark> override {
-    return CloneResult();
-  }
-  auto operator()(const ConnectionTracker::Ip6UdpKey&) -> std::shared_ptr<ConnectionMark> override {
-    return CloneResult();
-  }
-  auto operator()(const ConnectionTracker::IcmpKey&) -> std::shared_ptr<ConnectionMark> override {
-    return CloneResult();
-  }
-  auto operator()(const ConnectionTracker::Icmp6Key&) -> std::shared_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::ConnectionKey&) -> std::shared_ptr<ConnectionMark> override {
     return CloneResult();
   }
 
@@ -117,22 +102,7 @@ private:
 class ConstantSelector : public ConnectionTracker::Selector {
 public:
   explicit ConstantSelector(ConnectionMark& mark) : _Mark(mark) {}
-  auto operator()(const ConnectionTracker::Ip4TcpKey&) -> std::shared_ptr<ConnectionMark> override {
-    return std::make_unique<ReferenceMark>(_Mark);
-  }
-  auto operator()(const ConnectionTracker::Ip6TcpKey&) -> std::shared_ptr<ConnectionMark> override {
-    return std::make_unique<ReferenceMark>(_Mark);
-  }
-  auto operator()(const ConnectionTracker::Ip4UdpKey&) -> std::shared_ptr<ConnectionMark> override {
-    return std::make_unique<ReferenceMark>(_Mark);
-  }
-  auto operator()(const ConnectionTracker::Ip6UdpKey&) -> std::shared_ptr<ConnectionMark> override {
-    return std::make_unique<ReferenceMark>(_Mark);
-  }
-  auto operator()(const ConnectionTracker::IcmpKey&) -> std::shared_ptr<ConnectionMark> override {
-    return std::make_unique<ReferenceMark>(_Mark);
-  }
-  auto operator()(const ConnectionTracker::Icmp6Key&) -> std::shared_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::ConnectionKey&) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<ReferenceMark>(_Mark);
   }
 

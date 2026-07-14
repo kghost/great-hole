@@ -20,6 +20,16 @@ The `great-hole-application` module provides high-level application components f
     *   `selector`: A reference to a `Selector` interface used to select a new mark when no tracked entry exists or the existing entry is invalid.
     *   Returns the matched or registered `ConnectionMark` shared pointer, or an `ErrorCode` if parsing or tracking failed.
 
+*   **`Selector`**:
+    An interface used to define how new or invalid connections are routed:
+    ```cpp
+    class Selector {
+    public:
+      virtual auto operator()(const ConnectionKey& key) -> std::shared_ptr<ConnectionMark> = 0;
+    };
+    ```
+    Where `ConnectionKey` is a `std::variant` containing one of the protocol-specific keys (`Ip4TcpKey`, `Ip6TcpKey`, `Ip4UdpKey`, `Ip6UdpKey`, `IcmpKey`, `Icmp6Key`).
+
 *   **`Clear`**:
     Clears all tracking tables.
     ```cpp

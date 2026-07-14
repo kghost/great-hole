@@ -28,6 +28,7 @@
 #include "Asio.hpp"
 #include "Coroutine.hpp"
 #include "Utils.hpp"
+#include "Utils/Overload.hpp"
 
 #include "TunnelDataPlane.hpp"
 
@@ -105,12 +106,7 @@ public:
   explicit JniSelector(JniSession& session) : _Session(session) {}
   ~JniSelector() override = default;
 
-  std::shared_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4TcpKey& key) const override;
-  std::shared_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6TcpKey& key) const override;
-  std::shared_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip4UdpKey& key) const override;
-  std::shared_ptr<ConnectionMark> operator()(const ConnectionTracker::Ip6UdpKey& key) const override;
-  std::shared_ptr<ConnectionMark> operator()(const ConnectionTracker::IcmpKey& key) const override;
-  std::shared_ptr<ConnectionMark> operator()(const ConnectionTracker::Icmp6Key& key) const override;
+  std::shared_ptr<ConnectionMark> operator()(const ConnectionTracker::ConnectionKey& key) const override;
 
 private:
   std::shared_ptr<ConnectionMark> FindTunnel(int protocol, const boost::asio::ip::address& localAddr,
@@ -178,23 +174,26 @@ std::shared_ptr<ConnectionMark> JniSelector::FindTunnel(int protocol, const boos
   return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
 }
 
-std::shared_ptr<ConnectionMark> JniSelector::operator()(const ConnectionTracker::Ip4TcpKey& key) const {
-  return FindTunnel(6, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
-}
-std::shared_ptr<ConnectionMark> JniSelector::operator()(const ConnectionTracker::Ip6TcpKey& key) const {
-  return FindTunnel(6, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
-}
-std::shared_ptr<ConnectionMark> JniSelector::operator()(const ConnectionTracker::Ip4UdpKey& key) const {
-  return FindTunnel(17, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
-}
-std::shared_ptr<ConnectionMark> JniSelector::operator()(const ConnectionTracker::Ip6UdpKey& key) const {
-  return FindTunnel(17, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
-}
-std::shared_ptr<ConnectionMark> JniSelector::operator()(const ConnectionTracker::IcmpKey& key) const {
-  return FindTunnel(1, key.LocalAddress, key.Id, key.RemoteAddress, 0);
-}
-std::shared_ptr<ConnectionMark> JniSelector::operator()(const ConnectionTracker::Icmp6Key& key) const {
-  return FindTunnel(58, key.LocalAddress, key.Id, key.RemoteAddress, 0);
+std::shared_ptr<ConnectionMark> JniSelector::operator()(const ConnectionTracker::ConnectionKey& key) const {
+  return std::visit(Overload{[this](const ConnectionTracker::Ip4TcpKey& k) {
+                               return FindTunnel(6, k.LocalAddress, k.LocalPort, k.RemoteAddress, k.RemotePort);
+                             },
+                             [this](const ConnectionTracker::Ip6TcpKey& k) {
+                               return FindTunnel(6, k.LocalAddress, k.LocalPort, k.RemoteAddress, k.RemotePort);
+                             },
+                             [this](const ConnectionTracker::Ip4UdpKey& k) {
+                               return FindTunnel(17, k.LocalAddress, k.LocalPort, k.RemoteAddress, k.RemotePort);
+                             },
+                             [this](const ConnectionTracker::Ip6UdpKey& k) {
+                               return FindTunnel(17, k.LocalAddress, k.LocalPort, k.RemoteAddress, k.RemotePort);
+                             },
+                             [this](const ConnectionTracker::IcmpKey& k) {
+                               return FindTunnel(1, k.LocalAddress, k.Id, k.RemoteAddress, 0);
+                             },
+                             [this](const ConnectionTracker::Icmp6Key& k) {
+                               return FindTunnel(58, k.LocalAddress, k.Id, k.RemoteAddress, 0);
+                             }},
+                    key);
 }
 
 // JniSession Implementation

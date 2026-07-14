@@ -38,22 +38,7 @@ public:
   SessionSelector(SessionSelector&&) = delete;
   auto operator=(SessionSelector&&) -> SessionSelector& = delete;
 
-  auto operator()(const ConnectionTracker::Ip4TcpKey& /*unused*/) -> std::shared_ptr<ConnectionMark> override {
-    return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
-  }
-  auto operator()(const ConnectionTracker::Ip6TcpKey& /*unused*/) -> std::shared_ptr<ConnectionMark> override {
-    return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
-  }
-  auto operator()(const ConnectionTracker::Ip4UdpKey& /*unused*/) -> std::shared_ptr<ConnectionMark> override {
-    return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
-  }
-  auto operator()(const ConnectionTracker::Ip6UdpKey& /*unused*/) -> std::shared_ptr<ConnectionMark> override {
-    return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
-  }
-  auto operator()(const ConnectionTracker::IcmpKey& /*unused*/) -> std::shared_ptr<ConnectionMark> override {
-    return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
-  }
-  auto operator()(const ConnectionTracker::Icmp6Key& /*unused*/) -> std::shared_ptr<ConnectionMark> override {
+  auto operator()(const ConnectionTracker::ConnectionKey& /*unused*/) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
   }
 

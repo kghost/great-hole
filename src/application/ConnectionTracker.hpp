@@ -94,6 +94,8 @@ public:
     auto operator==(const Icmp6Key&) const -> bool = default;
   };
 
+  using ConnectionKey = std::variant<Ip4TcpKey, Ip6TcpKey, Ip4UdpKey, Ip6UdpKey, IcmpKey, Icmp6Key>;
+
   // Selector determines connection routing:
   // - Returns a std::shared_ptr<ConnectionMark> representing the routing decision.
   //
@@ -110,12 +112,7 @@ public:
     Selector(Selector&&) = delete;
     auto operator=(Selector&&) -> Selector& = delete;
 
-    virtual auto operator()(const Ip4TcpKey&) -> std::shared_ptr<ConnectionMark> = 0;
-    virtual auto operator()(const Ip6TcpKey&) -> std::shared_ptr<ConnectionMark> = 0;
-    virtual auto operator()(const Ip4UdpKey&) -> std::shared_ptr<ConnectionMark> = 0;
-    virtual auto operator()(const Ip6UdpKey&) -> std::shared_ptr<ConnectionMark> = 0;
-    virtual auto operator()(const IcmpKey&) -> std::shared_ptr<ConnectionMark> = 0;
-    virtual auto operator()(const Icmp6Key&) -> std::shared_ptr<ConnectionMark> = 0;
+    virtual auto operator()(const ConnectionKey&) -> std::shared_ptr<ConnectionMark> = 0;
   };
 
   explicit ConnectionTracker(boost::asio::any_io_executor executor);
@@ -144,7 +141,6 @@ public:
   };
 
   using Result = std::expected<std::shared_ptr<ConnectionMark>, ErrorCode>;
-  using ConnectionKey = std::variant<Ip4TcpKey, Ip6TcpKey, Ip4UdpKey, Ip6UdpKey, IcmpKey, Icmp6Key>;
 
   template <typename Direction> auto LookupAndUpdate(const Packet& packet, Selector& selector) -> Result;
 
