@@ -17,3 +17,7 @@ endif()
 add_library(windivert_lib INTERFACE)
 target_include_directories(windivert_lib INTERFACE "${windivert_SOURCE_DIR}/include")
 target_link_libraries(windivert_lib INTERFACE "${windivert_SOURCE_DIR}/${WINDIVERT_ARCH}/WinDivert.lib")
+
+if(BUILD_TESTING)
+  add_subdirectory(tests)
+endif()

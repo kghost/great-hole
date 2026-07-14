@@ -72,7 +72,8 @@ public:
 
     [[nodiscard]] auto GetDescription() const -> std::string override;
     [[nodiscard]] auto Validate() const -> bool override;
-    [[nodiscard]] auto GetValue() const -> const ValueType& { return _Value; }
+    [[nodiscard]] auto GetValue() -> ValueType& { return _Value; }
+    void Swap(Mark& other) { _Value.swap(other._Value); }
 
   private:
     ValueType _Value;

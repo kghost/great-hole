@@ -20,7 +20,7 @@ target_link_libraries(your-target-asan PRIVATE great-hole-core-asan)
 
 ## Public API Reference
 
-The primary class exposed by this module is [WinDivert](file:///q:/Projects/great-hole/src/core/windows/WinDivert.hpp).
+The primary class exposed by this module is [WinDivert](src/core/windows/WinDivert.hpp).
 
 ### `gh::WinDivert`
 

@@ -6,6 +6,7 @@
 #include <expected>
 #include <map>
 #include <memory>
+#include <ostream>
 #include <utility>
 #include <variant>
 
@@ -319,5 +320,39 @@ private:
   std::map<IcmpKey, IcmpConnEntry> _IcmpTable;
   std::map<Icmp6Key, IcmpConnEntry> _Icmp6Table;
 };
+
+inline auto operator<<(std::ostream& stream, const ConnectionTracker::Ip4TcpKey& key) -> std::ostream& {
+  return stream << key.LocalAddress.to_string() << ":" << key.LocalPort << " -> " << key.RemoteAddress.to_string()
+                << ":" << key.RemotePort;
+}
+
+inline auto operator<<(std::ostream& stream, const ConnectionTracker::Ip6TcpKey& key) -> std::ostream& {
+  return stream << "[" << key.LocalAddress.to_string() << "]:" << key.LocalPort << " -> ["
+                << key.RemoteAddress.to_string() << "]:" << key.RemotePort;
+}
+
+inline auto operator<<(std::ostream& stream, const ConnectionTracker::Ip4UdpKey& key) -> std::ostream& {
+  return stream << key.LocalAddress.to_string() << ":" << key.LocalPort << " -> " << key.RemoteAddress.to_string()
+                << ":" << key.RemotePort;
+}
+
+inline auto operator<<(std::ostream& stream, const ConnectionTracker::Ip6UdpKey& key) -> std::ostream& {
+  return stream << "[" << key.LocalAddress.to_string() << "]:" << key.LocalPort << " -> ["
+                << key.RemoteAddress.to_string() << "]:" << key.RemotePort;
+}
+
+inline auto operator<<(std::ostream& stream, const ConnectionTracker::IcmpKey& key) -> std::ostream& {
+  return stream << key.LocalAddress.to_string() << " -> " << key.RemoteAddress.to_string() << " (ID: " << key.Id << ")";
+}
+
+inline auto operator<<(std::ostream& stream, const ConnectionTracker::Icmp6Key& key) -> std::ostream& {
+  return stream << "[" << key.LocalAddress.to_string() << "] -> [" << key.RemoteAddress.to_string()
+                << "] (ID: " << key.Id << ")";
+}
+
+inline auto operator<<(std::ostream& stream, const ConnectionTracker::ConnectionKey& key) -> std::ostream& {
+  std::visit([&stream](const auto& key) -> auto { stream << key; }, key);
+  return stream;
+}
 
 } // namespace gh

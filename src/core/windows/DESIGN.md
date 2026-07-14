@@ -34,7 +34,7 @@ graph TD
 
 ### `gh::WinDivert`
 
-The primary class [WinDivert](file:///q:/Projects/great-hole/src/core/windows/WinDivert.hpp) implements the virtual `gh::Endpoint` interfaces.
+The primary class [WinDivert](src/core/windows/WinDivert.hpp) implements the virtual `gh::Endpoint` interfaces.
 
 #### Packet Redirection Filter
 When starting (`DoStart`), `WinDivert` requests packet capture via the WinDivert filter:
@@ -56,3 +56,32 @@ Each captured packet that is not bypassed by the fast bypass callback is evaluat
 - If `RouteResult` is `Bypass`: The packet is immediately re-injected into the network stack via `WinDivertSend` to continue its normal path.
 - If `RouteResult` is `Discard`: The packet is dropped in user space.
 - Otherwise (routed via chosen VPN session): The packet is forwarded up through the VPN client pipeline to be transmitted to the remote server.
+
+## Unit Testing Fake WinDivert DLL
+
+To enable unit testing of the WinDivert data plane components without requiring administrative permissions or the actual `WinDivert.sys` kernel driver, this module implements a fake `WinDivert.dll` located under `tests/`.
+
+### Design & Architecture
+
+The fake DLL mimics the exact binary interface of the official WinDivert library by exporting identical entry points:
+- `WinDivertOpen`
+- `WinDivertClose`
+- `WinDivertRecvEx`
+- `WinDivertSendEx`
+- `WinDivertHelperHtonIPv6Address`
+- `GetFakeWinDivertControllerPtr`
+
+#### Asynchronous I/O Simulation (Named Pipes)
+To faithfully simulate asynchronous overlapped I/O:
+1. `WinDivertOpen` creates a local duplex Named Pipe pair (`pipeServer` and `pipeClient`) with a unique name matching the current process and an atomic counter. It returns the `pipeClient` handle to the application.
+2. `WinDivertRecvEx` performs an overlapped `ReadFile` on the `pipeClient` handle.
+3. If no packets are available, the OS puts the read into `ERROR_IO_PENDING` state and waits on the overlapped event (`overlapped.hEvent`).
+4. To inject/receive a packet during a test, the `FakeWinDivertController` writes the packet data to `pipeServer`. The Windows named pipe driver completes the pending read, populating the user buffer, and sets the event.
+5. If the application calls `CancelIoEx`, the Windows named pipe driver automatically cancels the pending `ReadFile` and completes the overlapped operation with `STATUS_CANCELLED` immediately.
+
+#### Address Mocking & Correlation
+Since standard Windows Named Pipes only carry raw stream data, the `FakeWinDivertController` maintains a thread-safe registry mapping `LPOVERLAPPED` pointers to the application's target `WINDIVERT_ADDRESS` pointers.
+- **Asynchronous Reads**: When a read is pending, the controller copies the test address to the application's `WINDIVERT_ADDRESS` buffer *before* writing the packet data to the server pipe. When the read completes, the application sees the populated address.
+- **Synchronous Reads**: If data is written while no read is pending, the address is buffered in a FIFO queue. When `WinDivertRecvEx` is called later, it pops the address synchronously alongside the `ReadFile`.
+- **Cancellation**: Non-pending / cancelled operations are pruned from the tracking registry by inspecting `overlapped->Internal != STATUS_PENDING` (`0x103`).
+

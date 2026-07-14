@@ -142,11 +142,11 @@ private:
 
 static auto GetMark(const std::expected<std::shared_ptr<ConnectionMark>, ErrorCode>& res) -> ConnectionMark* {
   if (res.has_value()) {
-    ConnectionMark& mark = res->get();
-    if (auto* refMark = dynamic_cast<ReferenceMark*>(&mark)) {
+    ConnectionMark* mark = res.value().get();
+    if (auto* refMark = dynamic_cast<ReferenceMark*>(mark)) {
       return &refMark->GetReferencedMark();
     }
-    return &mark;
+    return mark;
   }
   return nullptr;
 }

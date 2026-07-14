@@ -1,6 +1,7 @@
 #include "TunnelDataPlane.hpp"
-#include "Utils/Overload.hpp"
 
+#include <boost/asio.hpp>
+#include <boost/log/trivial.hpp>
 #include <memory>
 #include <string>
 #include <utility>
@@ -10,12 +11,10 @@
 #include <unistd.h>
 #endif
 
-#include <boost/asio.hpp>
-#include <boost/log/trivial.hpp>
-
 #include "Coroutine.hpp"
 #include "EndpointUdpDynMux.hpp"
 #include "FilterXor.hpp"
+#include "Utils/Overload.hpp"
 #include "VpnClientMultiChannel.hpp"
 
 #ifdef _WIN32
@@ -50,7 +49,7 @@ auto TunnelDataPlane::Start(
   _Callbacks.OnVpnStateChanged(TunnelState::Starting, "VPN starting");
 
 #ifdef _WIN32
-  auto tun = std::make_shared<WinDivert>(_Executor, "WinDivert", *this);
+  auto tun = std::make_shared<WinDivert>(_Executor, "WinDivert", 0, 0, *this);
 #else
   auto tun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
 #endif

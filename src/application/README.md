@@ -13,12 +13,12 @@ The `great-hole-application` module provides high-level application components f
     Looks up an existing tracking entry or registers/selects a new one.
     ```cpp
     template <typename Direction>
-    std::expected<std::reference_wrapper<ConnectionMark>, ErrorCode>
+    std::expected<std::shared_ptr<ConnectionMark>, ErrorCode>
     LookupAndUpdate(const Packet& packet, Selector& selector);
     ```
     *   `Direction`: Specifies if the packet is `ConnectionDirectionOutput` (outgoing) or `ConnectionDirectionInput` (incoming).
     *   `selector`: A reference to a `Selector` interface used to select a new mark when no tracked entry exists or the existing entry is invalid.
-    *   Returns the matched or registered `ConnectionMark` reference, or an `ErrorCode` if parsing or tracking failed.
+    *   Returns the matched or registered `ConnectionMark` shared pointer, or an `ErrorCode` if parsing or tracking failed.
 
 *   **`Clear`**:
     Clears all tracking tables.

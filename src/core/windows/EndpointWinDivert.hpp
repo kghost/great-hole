@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <boost/asio.hpp>
 #include <cstdint>
 #include <optional>
@@ -8,7 +7,9 @@
 #include <windivert.h>
 #include <windows.h>
 
+#include "DeferredPacketInjector.hpp"
 #include "Endpoint.hpp"
+#include "Pipe.hpp"
 
 namespace gh {
 
@@ -26,9 +27,10 @@ public:
   virtual auto WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> Result = 0;
 };
 
-class WinDivert : public Endpoint {
+class WinDivert : public Endpoint, public DeferredPacketInjector {
 public:
-  WinDivert(boost::asio::any_io_executor executor, std::string name, WinDivertRouteCallback& callback);
+  WinDivert(boost::asio::any_io_executor executor, std::string name, uint32_t ifIdx, uint32_t ifSubIdx,
+            WinDivertRouteCallback& callback);
   ~WinDivert() override;
 
   WinDivert(const WinDivert&) = delete;
@@ -38,6 +40,7 @@ public:
 
   auto Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override;
   auto Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto Inject(Packet&& packet) -> Omni::Fiber::Coroutine<void> override;
 
 protected:
   auto GetName() const -> std::string override;
@@ -47,7 +50,10 @@ protected:
 private:
   boost::asio::any_io_executor _Executor;
   const std::string _Name;
+  const uint32_t _IfIdx;
+  const uint32_t _IfSubIdx;
   WinDivertRouteCallback& _RouteCallback;
+  Omni::Fiber::Pipe<Packet> _InjectedPacketPipe;
 
   HANDLE _WinDivertHandle = INVALID_HANDLE_VALUE;
   HANDLE _ReadEvent = nullptr;
@@ -55,9 +61,6 @@ private:
 
   std::optional<boost::asio::windows::object_handle> _ReadObjectHandle;
   std::optional<boost::asio::windows::object_handle> _WriteObjectHandle;
-
-  std::atomic<uint32_t> _LastIfIdx{0};
-  std::atomic<uint32_t> _LastSubIfIdx{0};
 };
 
 } // namespace gh
