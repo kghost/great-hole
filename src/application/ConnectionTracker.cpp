@@ -83,18 +83,18 @@ auto ConnectionTracker::LookupAndUpdate(const Packet& packet, ConnectionTracker:
               entry = EntryType{std::in_place_type<Direction>,
                                 [&] -> std::shared_ptr<ConnectionMark> { return selector(key); }, now, keyExtra};
             } else {
-              if (!entry.ConnectionMark->Validate()) {
-                entry.ConnectionMark = selector(key);
+              if (!entry.ConnectionEntryMark->Validate()) {
+                entry.ConnectionEntryMark = selector(key);
               }
               entry.LastActive = now;
               entry.template UpdateState<Direction>(keyExtra);
             }
           }
 
-          return entry.ConnectionMark;
+          return entry.ConnectionEntryMark;
         } else {
           if (auto iterator = table.find(key); iterator != table.end() && iterator->second.Validate(now)) {
-            return iterator->second.ConnectionMark;
+            return iterator->second.ConnectionEntryMark;
           }
           return std::unexpected(Error(AppMinorErrorCategory::kUnsupportedPacket));
         }

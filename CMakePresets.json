@@ -38,28 +38,31 @@
     {
       "name": "configure-android-base",
       "hidden": true,
-      "binaryDir": "${sourceDir}/build-${presetName}",
       "toolchainFile": "$env{HOME}/android-sdk/ndk/30.0.14904198/build/cmake/android.toolchain.cmake",
       "cacheVariables": { "ANDROID_PLATFORM": "android-26", "BUILD_TESTING": "OFF" }
     },
     {
       "name": "configure-android-arm64-v8a-debug",
       "inherits": "configure-android-base",
+      "binaryDir": "${sourceDir}/build-android-arm64-v8a-debug",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "ANDROID_ABI": "arm64-v8a" }
     },
     {
       "name": "configure-android-x86_64-debug",
       "inherits": "configure-android-base",
+      "binaryDir": "${sourceDir}/build-android-x86_64-debug",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "ANDROID_ABI": "x86_64" }
     },
     {
       "name": "configure-android-arm64-v8a-release",
       "inherits": "configure-android-base",
+      "binaryDir": "${sourceDir}/build-android-arm64-v8a-release",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "ANDROID_ABI": "arm64-v8a" }
     },
     {
       "name": "configure-android-x86_64-release",
       "inherits": "configure-android-base",
+      "binaryDir": "${sourceDir}/build-android-x86_64-release",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "ANDROID_ABI": "x86_64" }
     }
   ],

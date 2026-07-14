@@ -148,7 +148,7 @@ private:
   struct ConnectionEntry {
     template <typename Self>
     auto Validate(this Self& self, std::chrono::time_point<std::chrono::steady_clock> now) -> bool {
-      return !self.IsExpired(now) && self.ConnectionMark->Validate();
+      return !self.IsExpired(now) && self.ConnectionEntryMark->Validate();
     }
 
     template <typename Self>
@@ -156,7 +156,7 @@ private:
       return now - self.LastActive > self.GetTimeout();
     }
 
-    std::shared_ptr<ConnectionMark> ConnectionMark;
+    std::shared_ptr<ConnectionMark> ConnectionEntryMark;
     std::chrono::steady_clock::time_point LastActive;
     static constexpr std::chrono::seconds ProneInterval = std::chrono::seconds(60);
   };
