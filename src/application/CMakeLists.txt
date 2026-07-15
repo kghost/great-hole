@@ -1,13 +1,7 @@
 include(FetchContent)
 
 foreach(suffix "" "-asan")
-  if(suffix STREQUAL "-asan")
-    set(omnifiber "omni-fiber-asan")
-    set(target "great-hole-application-asan")
-  else()
-    set(omnifiber "omni-fiber")
-    set(target "great-hole-application")
-  endif()
+  set(target "great-hole-application${suffix}")
 
   set(app_sources
     VpnClientMultiChannel.cpp
@@ -27,7 +21,7 @@ foreach(suffix "" "-asan")
 
   target_link_libraries(${target} PUBLIC
     Boost::log
-    ${omnifiber}
+    omni-fiber${suffix}
     great-hole-core${suffix}
   )
 

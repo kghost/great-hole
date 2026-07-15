@@ -3,15 +3,7 @@ if(WIN32)
 endif()
 
 foreach(suffix "" "-asan")
-  if(suffix STREQUAL "-asan")
-    set(target_core "great-hole-core-asan")
-    set(omnifiber "omni-fiber-asan")
-    set(omniresolver "omni-resolver-asan")
-  else()
-    set(target_core "great-hole-core")
-    set(omnifiber "omni-fiber")
-    set(omniresolver "omni-resolver")
-  endif()
+  set(target_core "great-hole-core${suffix}")
 
   set(core_sources
     BackoffTimer.cpp
@@ -47,8 +39,8 @@ foreach(suffix "" "-asan")
     Boost::program_options
     Boost::filesystem
     Boost::thread
-    ${omnifiber}
-    ${omniresolver}
+    omni-fiber${suffix}
+    omni-resolver${suffix}
   )
 
   if(WIN32)

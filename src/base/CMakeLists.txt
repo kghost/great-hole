@@ -1,11 +1,5 @@
 foreach(suffix "" "-asan")
-  if(suffix STREQUAL "-asan")
-    set(target "omni-base-asan")
-    set(omnifiber "omni-fiber-asan")
-  else()
-    set(target "omni-base")
-    set(omnifiber "omni-fiber")
-  endif()
+  set(target "omni-base${suffix}")
 
   add_library(${target} STATIC
     ServiceBase.cpp
@@ -16,7 +10,7 @@ foreach(suffix "" "-asan")
 
   target_link_libraries(${target} PUBLIC
     Boost::log
-    ${omnifiber}
+    omni-fiber${suffix}
   )
 
   if(suffix STREQUAL "-asan")

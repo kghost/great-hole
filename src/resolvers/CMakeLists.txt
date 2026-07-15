@@ -1,13 +1,5 @@
 foreach(suffix "" "-asan")
-  if(suffix STREQUAL "-asan")
-    set(target "omni-resolver-asan")
-    set(omnibase "omni-base-asan")
-    set(omnifiber "omni-fiber-asan")
-  else()
-    set(target "omni-resolver")
-    set(omnibase "omni-base")
-    set(omnifiber "omni-fiber")
-  endif()
+  set(target "omni-resolver${suffix}")
 
   add_library(${target} STATIC
     Resolver.cpp
@@ -26,8 +18,8 @@ foreach(suffix "" "-asan")
 
   target_link_libraries(${target} PUBLIC
     Boost::log
-    ${omnibase}
-    ${omnifiber}
+    omni-base${suffix}
+    omni-fiber${suffix}
     PkgConfig::CARES
   )
 

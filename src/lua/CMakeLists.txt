@@ -11,17 +11,7 @@ add_custom_command(
 )
 
 foreach(suffix "" "-asan")
-  if(suffix STREQUAL "-asan")
-    set(target_exe "great-hole-asan")
-    set(omnifiber "omni-fiber-asan")
-    set(omniresolver "omni-resolver-asan")
-    set(omnicore "great-hole-core-asan")
-  else()
-    set(target_exe "great-hole")
-    set(omnifiber "omni-fiber")
-    set(omniresolver "omni-resolver")
-    set(omnicore "great-hole-core")
-  endif()
+  set(target_exe "great-hole${suffix}")
 
   add_executable(${target_exe}
     ${INIT_LUA_OBJ}
@@ -45,9 +35,9 @@ foreach(suffix "" "-asan")
     Boost::filesystem
     Boost::thread
     PkgConfig::LUA
-    ${omnifiber}
-    ${omniresolver}
-    ${omnicore}
+    omni-fiber${suffix}
+    omni-resolver${suffix}
+    great-hole-core${suffix}
     great-hole-application${suffix}
   )
 
