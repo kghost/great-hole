@@ -1,9 +1,10 @@
 #include "Interface.hpp"
 
-#include <algorithm>
+#include <atomic>
 #include <future>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -12,7 +13,7 @@
 
 #include "Asio.hpp"
 #include "Coroutine.hpp"
-#include "DeferredPacketInjector.hpp"
+#include "ErrorCode.hpp"
 #include "EventQueue.hpp"
 #include "Fiber.hpp"
 #include "Manager.hpp"
@@ -22,7 +23,7 @@
 
 namespace gh::Interface {
 
-class PlatformImpl : public PlatformInterface, public gh::DeferredPacketInjector {
+class PlatformImpl : public PlatformInterface {
 public:
   explicit PlatformImpl(DataPlaneCallbacks& callbacks);
   ~PlatformImpl() override;
@@ -32,10 +33,10 @@ public:
   PlatformImpl(PlatformImpl&&) = delete;
   auto operator=(PlatformImpl&&) -> PlatformImpl& = delete;
 
-  void Start(int32_t mtu, std::span<uint8_t> encryption_key) override;
-  void Stop() override;
+  auto Start(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code override;
+  auto Stop() -> std::error_code override;
 
-  auto AddEndpoint(const std::string& psk, const std::string& address) -> VpnEndpoint override;
+  auto AddEndpoint(const std::array<uint8_t, 16>& psk, const std::string& address) -> VpnEndpoint override;
   void RemoveEndpoint(VpnEndpoint endpoint) override;
 
   // Policy Interface
@@ -48,138 +49,130 @@ public:
   void SetDefaultBypass() override;
   void LaunchWithPolicy(const std::string& command_line, VpnEndpoint endpoint, PolicyScope scope) override;
 
-  // From gh::DeferredPacketInjector
-  auto Inject(Packet&& packet) -> Omni::Fiber::Coroutine<void> override;
-
 private:
-  using BridgeTask = std::function<Omni::Fiber::Coroutine<void>()>;
+  using BridgeTask = std::function<Omni::Fiber::Coroutine<void>(const std::shared_ptr<gh::policy::PolicyEngine>&,
+                                                                const std::unique_ptr<gh::TunnelDataPlane>&)>;
 
   DataPlaneCallbacks& _Callbacks;
-  std::shared_ptr<boost::asio::io_context> _IoContext;
-  boost::asio::executor_work_guard<boost::asio::io_context::executor_type> _WorkGuard;
-  std::shared_ptr<gh::policy::PolicyEngine> _PolicyEngine;
-  std::unique_ptr<gh::TunnelDataPlane> _DataPlane;
   std::thread _AsioThread;
+  // TODO: EventQueue is not thread-safe
   Omni::Fiber::EventQueue<BridgeTask> _TaskQueue;
+  std::atomic<bool> _Stop = false;
 };
 
-PlatformImpl::PlatformImpl(DataPlaneCallbacks& callbacks)
-    : _Callbacks(callbacks), _IoContext(std::make_shared<boost::asio::io_context>()),
-      _WorkGuard(boost::asio::make_work_guard(*_IoContext)) {
-  auto ioExecutor = _IoContext->get_executor();
-  _PolicyEngine = std::make_shared<gh::policy::PolicyEngine>(ioExecutor, *this);
-  _DataPlane = std::make_unique<gh::TunnelDataPlane>(ioExecutor, _PolicyEngine->GetPolicySelector(), _Callbacks);
+PlatformImpl::PlatformImpl(DataPlaneCallbacks& callbacks) : _Callbacks(callbacks) {}
+PlatformImpl::~PlatformImpl() {}
 
-  _AsioThread = std::thread([this]() {
-    auto ioExecutor = _IoContext->get_executor();
+auto PlatformImpl::Start(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code {
+  _AsioThread = std::thread([this]() -> void {
+    boost::asio::io_context ioContext;
+    auto ioExecutor = ioContext.get_executor();
     Omni::Fiber::AsioExecutor executor(ioExecutor);
     Omni::Fiber::Manager manager(executor);
 
-    manager.SpawnRoot("bridge_task_processor", [this]() -> Omni::Fiber::Coroutine<void> {
-      bool stop = false;
-      while (!stop) {
+    manager.SpawnRoot("bridge_task_processor", [this, ioExecutor]() -> Omni::Fiber::Coroutine<void> {
+      auto guard = boost::asio::make_work_guard(ioExecutor);
+      auto policyEngine = std::make_shared<gh::policy::PolicyEngine>(ioExecutor);
+      auto dataPlane = std::make_unique<gh::TunnelDataPlane>(ioExecutor, policyEngine->GetPolicySelector(), _Callbacks);
+      policyEngine->GetPolicySelector().SetInjector(dataPlane->GetInjector());
+
+      while (!_Stop.load()) {
         co_await _TaskQueue;
         while (!_TaskQueue.IsEmpty()) {
           auto task = _TaskQueue.PopFront();
           if (task) {
-            co_await task();
-          } else {
-            stop = true;
+            co_await task(policyEngine, dataPlane);
           }
         }
       }
+      guard.reset();
       co_return;
     });
 
-    _IoContext->run();
+    ioContext.run();
   });
-}
 
-PlatformImpl::~PlatformImpl() {
-  std::promise<void> promise;
+  std::promise<ErrorCode> promise;
   auto future = promise.get_future();
-  _TaskQueue.Push([this, &promise]() -> Omni::Fiber::Coroutine<void> {
-    if (_DataPlane) {
-      co_await _DataPlane->Stop();
+  std::vector<char> key(encryption_key.begin(), encryption_key.end());
+
+  _TaskQueue.Push([this, &promise, mtu, key = std::move(key)](const auto& policyEngine,
+                                                              const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
+    auto err = co_await policyEngine->Start();
+    if (err) {
+      promise.set_value(err);
+      _Stop.store(true);
+      co_return;
     }
-    if (_PolicyEngine) {
-      co_await _PolicyEngine->Stop();
+
+    err = co_await dataPlane->Start(mtu, key);
+    if (err) {
+      promise.set_value(err);
+      _Stop.store(true);
+      co_return;
     }
-    promise.set_value();
+
+    promise.set_value(ErrorCode{});
     co_return;
   });
-  future.wait();
 
-  _TaskQueue.Push(BridgeTask(nullptr));
-  _WorkGuard.reset();
-  _IoContext->stop();
+  auto err = future.get();
+  if (err) {
+    if (_AsioThread.joinable()) {
+      _AsioThread.join();
+    }
+    return err;
+  }
+
+  return ErrorCode{};
+}
+
+auto PlatformImpl::Stop() -> std::error_code {
+  std::promise<ErrorCode> promise;
+  auto future = promise.get_future();
+
+  _TaskQueue.Push([this, &promise](const auto& policyEngine, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
+    auto err = co_await dataPlane->Stop();
+    if (err) {
+      promise.set_value(err);
+      co_return;
+    }
+
+    err = co_await policyEngine->Stop();
+    if (err) {
+      promise.set_value(err);
+      co_return;
+    }
+
+    promise.set_value(ErrorCode{});
+    _Stop.store(true);
+    co_return;
+  });
+
+  auto err = future.get();
+  if (err) {
+    return err;
+  }
 
   if (_AsioThread.joinable()) {
     _AsioThread.join();
   }
+
+  return ErrorCode{};
 }
 
-void PlatformImpl::Start(int32_t mtu, std::span<uint8_t> encryption_key) {
-  std::promise<void> promise;
-  auto future = promise.get_future();
-  std::vector<char> key(encryption_key.begin(), encryption_key.end());
-
-  _TaskQueue.Push([this, &promise, mtu, key = std::move(key)]() -> Omni::Fiber::Coroutine<void> {
-    try {
-      auto err1 = co_await _PolicyEngine->Start();
-      if (err1) {
-        throw std::runtime_error(err1.message());
-      }
-      co_await _DataPlane->Start(mtu, key);
-      promise.set_value();
-    } catch (...) {
-      promise.set_exception(std::current_exception());
-    }
-    co_return;
-  });
-
-  future.get();
-}
-
-void PlatformImpl::Stop() {
-  std::promise<void> promise;
-  auto future = promise.get_future();
-
-  _TaskQueue.Push([this, &promise]() -> Omni::Fiber::Coroutine<void> {
-    try {
-      co_await _DataPlane->Stop();
-      co_await _PolicyEngine->Stop();
-      promise.set_value();
-    } catch (...) {
-      promise.set_exception(std::current_exception());
-    }
-    co_return;
-  });
-
-  future.get();
-}
-
-auto PlatformImpl::AddEndpoint(const std::string& psk, const std::string& address) -> VpnEndpoint {
+auto PlatformImpl::AddEndpoint(const std::array<uint8_t, 16>& psk, const std::string& address) -> VpnEndpoint {
   std::promise<std::shared_ptr<gh::VpnClientMultiChannelSession>> promise;
   auto future = promise.get_future();
 
-  _TaskQueue.Push([this, &promise, psk, address]() -> Omni::Fiber::Coroutine<void> {
-    try {
-      gh::UdpDynMux::PskType pskArray;
-      std::copy_n(psk.begin(), std::min(psk.size(), pskArray.size()), pskArray.begin());
-      auto session = co_await _DataPlane->AddEndpoint(pskArray, address);
-      promise.set_value(session);
-    } catch (...) {
-      promise.set_exception(std::current_exception());
-    }
-    co_return;
-  });
+  _TaskQueue.Push(
+      [&promise, psk, address](const auto& /*policyEngine*/, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
+        auto session = co_await dataPlane->AddEndpoint(psk, address);
+        promise.set_value(session);
+        co_return;
+      });
 
-  auto session = future.get();
-  if (!session) {
-    throw std::runtime_error("Failed to add endpoint");
-  }
-  return VpnEndpoint{session};
+  return VpnEndpoint{future.get()};
 }
 
 void PlatformImpl::RemoveEndpoint(VpnEndpoint endpoint) {
@@ -187,17 +180,14 @@ void PlatformImpl::RemoveEndpoint(VpnEndpoint endpoint) {
   auto future = promise.get_future();
   auto session = endpoint.lock();
 
-  _TaskQueue.Push([this, &promise, session]() -> Omni::Fiber::Coroutine<void> {
-    try {
-      if (session) {
-        co_await _DataPlane->RemoveEndpoint(session);
-      }
-      promise.set_value();
-    } catch (...) {
-      promise.set_exception(std::current_exception());
-    }
-    co_return;
-  });
+  _TaskQueue.Push(
+      [&promise, session](const auto& /*policyEngine*/, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
+        if (session) {
+          co_await dataPlane->RemoveEndpoint(session);
+        }
+        promise.set_value();
+        co_return;
+      });
 
   future.get();
 }
@@ -205,8 +195,8 @@ void PlatformImpl::RemoveEndpoint(VpnEndpoint endpoint) {
 void PlatformImpl::ClearRegistry() {
   std::promise<void> promise;
   auto future = promise.get_future();
-  _TaskQueue.Push([this, &promise]() -> Omni::Fiber::Coroutine<void> {
-    _PolicyEngine->ClearRegistry();
+  _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+    policyEngine->ClearRegistry();
     promise.set_value();
     co_return;
   });
@@ -216,11 +206,12 @@ void PlatformImpl::ClearRegistry() {
 void PlatformImpl::AddPathBypassRule(const std::string& path, PolicyScope scope) {
   std::promise<void> promise;
   auto future = promise.get_future();
-  _TaskQueue.Push([this, &promise, path, scope]() -> Omni::Fiber::Coroutine<void> {
-    _PolicyEngine->AddPathBypassRule(path, scope);
-    promise.set_value();
-    co_return;
-  });
+  _TaskQueue.Push(
+      [&promise, path, scope](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        policyEngine->AddPathBypassRule(path, scope);
+        promise.set_value();
+        co_return;
+      });
   future.get();
 }
 
@@ -228,8 +219,9 @@ void PlatformImpl::AddPathEndpointRule(const std::string& path, VpnEndpoint endp
   std::promise<void> promise;
   auto future = promise.get_future();
   auto session = endpoint.lock();
-  _TaskQueue.Push([this, &promise, path, session, scope]() -> Omni::Fiber::Coroutine<void> {
-    _PolicyEngine->AddPathEndpointRule(path, session, scope);
+  _TaskQueue.Push([&promise, path, session, scope](const auto& policyEngine,
+                                                   const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+    policyEngine->AddPathEndpointRule(path, session, scope);
     promise.set_value();
     co_return;
   });
@@ -239,11 +231,12 @@ void PlatformImpl::AddPathEndpointRule(const std::string& path, VpnEndpoint endp
 void PlatformImpl::RemovePathRule(const std::string& path) {
   std::promise<void> promise;
   auto future = promise.get_future();
-  _TaskQueue.Push([this, &promise, path]() -> Omni::Fiber::Coroutine<void> {
-    _PolicyEngine->RemovePathRule(path);
-    promise.set_value();
-    co_return;
-  });
+  _TaskQueue.Push(
+      [&promise, path](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        policyEngine->RemovePathRule(path);
+        promise.set_value();
+        co_return;
+      });
   future.get();
 }
 
@@ -251,8 +244,9 @@ void PlatformImpl::AddPidEndpointRule(uint32_t pid, VpnEndpoint endpoint, Policy
   std::promise<void> promise;
   auto future = promise.get_future();
   auto session = endpoint.lock();
-  _TaskQueue.Push([this, &promise, pid, session, scope]() -> Omni::Fiber::Coroutine<void> {
-    _PolicyEngine->AddPidEndpointRule(pid, session, scope);
+  _TaskQueue.Push([&promise, pid, session, scope](const auto& policyEngine,
+                                                  const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+    policyEngine->AddPidEndpointRule(pid, session, scope);
     promise.set_value();
     co_return;
   });
@@ -263,19 +257,20 @@ void PlatformImpl::SetDefaultEndpoint(VpnEndpoint endpoint) {
   std::promise<void> promise;
   auto future = promise.get_future();
   auto session = endpoint.lock();
-  _TaskQueue.Push([this, &promise, session]() -> Omni::Fiber::Coroutine<void> {
-    _PolicyEngine->SetDefaultEndpoint(session);
-    promise.set_value();
-    co_return;
-  });
+  _TaskQueue.Push(
+      [&promise, session](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        policyEngine->SetDefaultEndpoint(session);
+        promise.set_value();
+        co_return;
+      });
   future.get();
 }
 
 void PlatformImpl::SetDefaultBypass() {
   std::promise<void> promise;
   auto future = promise.get_future();
-  _TaskQueue.Push([this, &promise]() -> Omni::Fiber::Coroutine<void> {
-    _PolicyEngine->SetDefaultBypass();
+  _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+    policyEngine->SetDefaultBypass();
     promise.set_value();
     co_return;
   });
@@ -286,8 +281,9 @@ void PlatformImpl::LaunchWithPolicy(const std::string& command_line, VpnEndpoint
   std::promise<void> promise;
   auto future = promise.get_future();
   auto session = endpoint.lock();
-  _TaskQueue.Push([this, &promise, command_line, session, scope]() -> Omni::Fiber::Coroutine<void> {
-    auto pid = _PolicyEngine->LaunchWithPolicy(command_line, session, scope);
+  _TaskQueue.Push([&promise, command_line, session, scope](const auto& policyEngine,
+                                                           const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+    auto pid = policyEngine->LaunchWithPolicy(command_line, session, scope);
     if (pid == 0) {
       promise.set_exception(std::make_exception_ptr(std::runtime_error("LaunchWithPolicy failed")));
     } else {
@@ -296,13 +292,6 @@ void PlatformImpl::LaunchWithPolicy(const std::string& command_line, VpnEndpoint
     co_return;
   });
   future.get();
-}
-
-auto PlatformImpl::Inject(Packet&& packet) -> Omni::Fiber::Coroutine<void> {
-  if (_DataPlane) {
-    co_await _DataPlane->Inject(std::move(packet));
-  }
-  co_return;
 }
 
 auto CreatePlatform(DataPlaneCallbacks& callbacks) -> std::shared_ptr<PlatformInterface> {

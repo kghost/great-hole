@@ -69,7 +69,7 @@ The following workflow presets are configured in `CMakePresets.json`:
 
 ### Windows Debug MSVC (`windows-debug-msvc`)
 
-- **Description:** Configures (using `configure-windows-debug-msvc` configure preset), builds (using `build-windows-debug-msvc` build preset), and tests (using `test-windows-debug-msvc` test preset) on Windows using MSVC.
+- **Description:** Configures (using `configure-windows-msvc` configure preset), builds (using `build-windows-debug-msvc` build preset) on Windows using MSVC.
 - **Workflow Command:**
   ```bash
   cmake --workflow --preset windows-debug-msvc

@@ -24,15 +24,15 @@
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "CMAKE_C_COMPILER": "/usr/lib/gcc-snapshot/bin/gcc", "CMAKE_CXX_COMPILER": "/usr/lib/gcc-snapshot/bin/g++" }
     },
     {
-      "name": "configure-windows-debug-msvc",
+      "name": "configure-windows-msvc",
       "binaryDir": "${sourceDir}/build-windows-msvc",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" },
-      "environment": { "ASAN_OPTIONS": "detect_container_overflow=0" }
+      "cacheVariables": { "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake", "BUILD_TESTING": "OFF" }
     },
     {
       "name": "configure-windows-debug-ninja",
-      "inherits": "configure-windows-debug-msvc",
       "binaryDir": "${sourceDir}/build",
+      "cacheVariables": { "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" },
+      "environment": { "ASAN_OPTIONS": "detect_container_overflow=0" },
       "generator": "Ninja"
     },
     {
@@ -71,7 +71,8 @@
     { "name": "build-debug-tidy", "configurePreset": "configure-debug-tidy", "jobs": 16 },
     { "name": "build-debug-gcc-14", "configurePreset": "configure-debug-gcc-14", "jobs": 8 },
     { "name": "build-debug-gcc-snapshot", "configurePreset": "configure-debug-gcc-snapshot", "jobs": 8 },
-    { "name": "build-windows-debug-msvc", "configurePreset": "configure-windows-debug-msvc", "jobs": 8 },
+    { "name": "build-windows-debug-msvc", "configurePreset": "configure-windows-msvc", "configuration": "Debug", "jobs": 8 },
+    { "name": "build-windows-release-msvc", "configurePreset": "configure-windows-msvc", "configuration": "Release", "jobs": 8 },
     { "name": "build-windows-debug-ninja", "configurePreset": "configure-windows-debug-ninja", "jobs": 8 },
     { "name": "build-android-arm64-v8a-debug", "configurePreset": "configure-android-arm64-v8a-debug", "jobs": 16 },
     { "name": "build-android-x86_64-debug", "configurePreset": "configure-android-x86_64-debug", "jobs": 16 },
@@ -82,7 +83,6 @@
     { "name": "test-debug", "configurePreset": "configure-debug" },
     { "name": "test-debug-gcc-14", "configurePreset": "configure-debug-gcc-14" },
     { "name": "test-debug-gcc-snapshot", "configurePreset": "configure-debug-gcc-snapshot" },
-    { "name": "test-windows-debug-msvc", "configurePreset": "configure-windows-debug-msvc", "environment": { "ASAN_OPTIONS": "detect_container_overflow=0" } },
     { "name": "test-windows-debug-ninja", "configurePreset": "configure-windows-debug-ninja", "environment": { "ASAN_OPTIONS": "detect_container_overflow=0" } }
   ],
   "workflowPresets": [
@@ -113,9 +113,15 @@
     {
       "name": "windows-debug-msvc",
       "steps": [
-        { "type": "configure", "name": "configure-windows-debug-msvc" },
-        { "type": "build", "name": "build-windows-debug-msvc" },
-        { "type": "test", "name": "test-windows-debug-msvc" }
+        { "type": "configure", "name": "configure-windows-msvc" },
+        { "type": "build", "name": "build-windows-debug-msvc" }
+      ]
+    },
+    {
+      "name": "windows-release-msvc",
+      "steps": [
+        { "type": "configure", "name": "configure-windows-msvc" },
+        { "type": "build", "name": "build-windows-release-msvc" }
       ]
     },
     {

@@ -13,6 +13,7 @@
 
 #include "Coroutine.hpp"
 #include "EndpointUdpDynMux.hpp"
+#include "ErrorCode.hpp"
 #include "FilterXor.hpp"
 #include "Utils/Overload.hpp"
 #include "VpnClientMultiChannel.hpp"
@@ -43,9 +44,9 @@ auto TunnelDataPlane::Start(
 #ifndef _WIN32
     int tunFd,
 #endif
-    int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void> {
+    int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode> {
   if (_Running) {
-    co_return;
+    co_return ErrorCode{};
   }
   _Running = true;
   _Callbacks.OnVpnStateChanged(TunnelState::Starting, "VPN starting");
@@ -72,15 +73,16 @@ auto TunnelDataPlane::Start(
   if (err) {
     BOOST_LOG_TRIVIAL(error) << "Failed to start VpnClientMultiChannel: " << err.message();
     _Callbacks.OnVpnStateChanged(TunnelState::Failed, err.message());
-    co_return;
+    co_return err;
   }
 
   _Callbacks.OnVpnStateChanged(TunnelState::Running, "VPN tunnel established");
+  co_return ErrorCode{};
 }
 
 #ifndef _WIN32
 auto TunnelDataPlane::MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void> {
-  if (_Running && _Client) {
+  if (_Running) {
     auto newTun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
     auto err = co_await _Client->MigrateTun(newTun);
     if (err) {
@@ -94,15 +96,16 @@ auto TunnelDataPlane::MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void> {
 }
 #endif
 
-auto TunnelDataPlane::Stop() -> Omni::Fiber::Coroutine<void> {
+auto TunnelDataPlane::Stop() -> Omni::Fiber::Coroutine<ErrorCode> {
   if (!_Running) {
-    co_return;
+    co_return ErrorCode{};
   }
   _Running = false;
   _Callbacks.OnVpnStateChanged(TunnelState::Stopping, "VPN stopping");
 
-  if (_Client) {
-    co_await _Client->Stop();
+  auto err = co_await _Client->Stop();
+  if (err) {
+    co_return err;
   }
 
   _Client.reset();
@@ -111,24 +114,20 @@ auto TunnelDataPlane::Stop() -> Omni::Fiber::Coroutine<void> {
 #endif
 
   _Callbacks.OnVpnStateChanged(TunnelState::Stopped, "VPN tunnel stopped");
+  co_return ErrorCode{};
 }
 
 auto TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address)
     -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannelSession>> {
-  if (_Client) {
-    auto session = co_await _Client->RegisterChannel(psk, address);
-    _Endpoints.insert(session);
-    co_return session;
-  }
-  co_return nullptr;
+  auto session = co_await _Client->RegisterChannel(psk, address);
+  _Endpoints.insert(session);
+  co_return session;
 }
 
 auto TunnelDataPlane::RemoveEndpoint(std::shared_ptr<VpnClientMultiChannelSession> session)
     -> Omni::Fiber::Coroutine<void> {
   _Endpoints.erase(session);
-  if (_Client) {
-    co_await _Client->UnregisterChannel(session);
-  }
+  co_await _Client->UnregisterChannel(session);
 }
 
 auto TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannelSession* session)
@@ -172,13 +171,6 @@ auto TunnelDataPlane::WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& ad
     BOOST_LOG_TRIVIAL(warning) << "WinDivert: LookupAndUpdate bypass failed: " << result.error().message();
     return WinDivertRouteCallback::Result::Normal;
   }
-}
-
-auto TunnelDataPlane::Inject(Packet&& packet) -> Omni::Fiber::Coroutine<void> {
-  if (_WinDivert) {
-    co_await _WinDivert->Inject(std::move(packet));
-  }
-  co_return;
 }
 #endif
 

@@ -4,7 +4,6 @@
 #include <memory>
 #include <string>
 
-#include "DeferredPacketInjector.hpp"
 #include "PolicyRegistry.hpp"
 #include "PolicySelector.hpp"
 #include "ServiceBase.hpp"
@@ -14,7 +13,7 @@ namespace gh::policy {
 
 class PolicyEngine : public ServiceBase {
 public:
-  explicit PolicyEngine(boost::asio::any_io_executor executor, gh::DeferredPacketInjector& injector);
+  explicit PolicyEngine(boost::asio::any_io_executor executor);
   ~PolicyEngine() override;
 
   PolicyEngine(const PolicyEngine&) = delete;

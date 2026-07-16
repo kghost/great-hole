@@ -50,7 +50,12 @@ auto ServiceBase::Start() -> Omni::Fiber::Coroutine<ErrorCode> {
                       BOOST_LOG_TRIVIAL(info) << GetName() << " stops failed: " << errStop;
                     }
                   });
-  co_return co_await errStart;
+  auto err = co_await errStart;
+  if (err) {
+    co_await fiber.Join(_Service.value()._Fiber);
+    _Service.reset();
+  }
+  co_return err;
 }
 
 auto ServiceBase::DoWork() -> Omni::Fiber::Coroutine<void> {

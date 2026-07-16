@@ -11,6 +11,7 @@
 #include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
 #include "EndpointUdpDynMux.hpp"
+#include "ErrorCode.hpp"
 #include "Interface.hpp"
 #include "Utils/Comparator.hpp"
 #include "VpnClientMultiChannel.hpp"
@@ -28,7 +29,6 @@ using DataPlaneCallbacks = Interface::DataPlaneCallbacks;
 class TunnelDataPlane :
 #ifdef _WIN32
     public WinDivertRouteCallback,
-    public DeferredPacketInjector,
 #endif
     public VpnClientMultiChannel::SessionStateListener {
 public:
@@ -48,16 +48,14 @@ public:
   auto operator=(TunnelDataPlane&&) -> TunnelDataPlane& = delete;
 
 #ifdef _WIN32
-  auto Start(int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void>;
+  auto Start(int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>;
   auto WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> WinDivertRouteCallback::Result override;
-
-  // TODO: remove Inject
-  auto Inject(Packet&& packet) -> Omni::Fiber::Coroutine<void> override;
+  [[nodiscard]] auto GetInjector() const -> DeferredPacketInjector& { return *_WinDivert; }
 #else
   auto Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void>;
   auto MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void>;
 #endif
-  auto Stop() -> Omni::Fiber::Coroutine<void>;
+  auto Stop() -> Omni::Fiber::Coroutine<ErrorCode>;
   auto AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address)
       -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannelSession>>;
   auto RemoveEndpoint(std::shared_ptr<VpnClientMultiChannelSession> session) -> Omni::Fiber::Coroutine<void>;

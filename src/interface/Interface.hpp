@@ -4,6 +4,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <system_error>
 
 #if defined(_WIN32)
 #if defined(GREAT_HOLE_WINDOWS_BUILD_DLL)
@@ -76,10 +77,10 @@ public:
   PlatformInterface(PlatformInterface&&) = delete;
   auto operator=(PlatformInterface&&) -> PlatformInterface& = delete;
 
-  virtual void Start(int32_t mtu, std::span<uint8_t> encryption_key) = 0;
-  virtual void Stop() = 0;
+  virtual auto Start(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code = 0;
+  virtual auto Stop() -> std::error_code = 0;
 
-  virtual auto AddEndpoint(const std::string& psk, const std::string& address) -> VpnEndpoint = 0;
+  virtual auto AddEndpoint(const std::array<uint8_t, 16>& psk, const std::string& address) -> VpnEndpoint = 0;
   virtual void RemoveEndpoint(VpnEndpoint endpoint) = 0;
 
   // Policy Interface

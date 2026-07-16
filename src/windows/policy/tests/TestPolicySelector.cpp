@@ -42,7 +42,8 @@ TEST_F(TestPolicySelector, OutOfOrder_F_Pr_P) {
   PolicyRegistry reg;
   MockDeferredPacketInjector injector;
   boost::asio::any_io_executor asioExecutor = ioContext.get_executor();
-  PolicySelector selector(asioExecutor, injector, reg);
+  PolicySelector selector(asioExecutor, reg);
+  selector.SetInjector(injector);
 
   reg.SetDefaultAction(PolicyRule::EndpointRoute{});
   PolicyRule bypassRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::SingleProcess};
@@ -92,7 +93,8 @@ TEST_F(TestPolicySelector, OutOfOrder_Pr_F_P) {
   PolicyRegistry reg;
   MockDeferredPacketInjector injector;
   boost::asio::any_io_executor asioExecutor = ioContext.get_executor();
-  PolicySelector selector(asioExecutor, injector, reg);
+  PolicySelector selector(asioExecutor, reg);
+  selector.SetInjector(injector);
 
   reg.SetDefaultAction(PolicyRule::EndpointRoute{});
   PolicyRule bypassRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::SingleProcess};
@@ -142,7 +144,8 @@ TEST_F(TestPolicySelector, OutOfOrder_F_P_Pr) {
   PolicyRegistry reg;
   MockDeferredPacketInjector injector;
   boost::asio::any_io_executor asioExecutor = ioContext.get_executor();
-  PolicySelector selector(asioExecutor, injector, reg);
+  PolicySelector selector(asioExecutor, reg);
+  selector.SetInjector(injector);
 
   reg.SetDefaultAction(PolicyRule::EndpointRoute{});
   PolicyRule bypassRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::SingleProcess};
@@ -215,7 +218,8 @@ TEST_F(TestPolicySelector, OutOfOrder_Pr_P_F) {
   PolicyRegistry reg;
   MockDeferredPacketInjector injector;
   boost::asio::any_io_executor asioExecutor = ioContext.get_executor();
-  PolicySelector selector(asioExecutor, injector, reg);
+  PolicySelector selector(asioExecutor, reg);
+  selector.SetInjector(injector);
 
   reg.SetDefaultAction(PolicyRule::EndpointRoute{});
   PolicyRule bypassRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::SingleProcess};
@@ -283,7 +287,8 @@ TEST_F(TestPolicySelector, OutOfOrder_P_F_Pr) {
   PolicyRegistry reg;
   MockDeferredPacketInjector injector;
   boost::asio::any_io_executor asioExecutor = ioContext.get_executor();
-  PolicySelector selector(asioExecutor, injector, reg);
+  PolicySelector selector(asioExecutor, reg);
+  selector.SetInjector(injector);
 
   reg.SetDefaultAction(PolicyRule::EndpointRoute{});
   PolicyRule bypassRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::SingleProcess};
@@ -361,7 +366,8 @@ TEST_F(TestPolicySelector, OutOfOrder_P_Pr_F) {
   PolicyRegistry reg;
   MockDeferredPacketInjector injector;
   boost::asio::any_io_executor asioExecutor = ioContext.get_executor();
-  PolicySelector selector(asioExecutor, injector, reg);
+  PolicySelector selector(asioExecutor, reg);
+  selector.SetInjector(injector);
 
   reg.SetDefaultAction(PolicyRule::EndpointRoute{});
   PolicyRule bypassRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::SingleProcess};

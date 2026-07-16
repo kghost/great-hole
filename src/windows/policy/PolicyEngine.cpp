@@ -8,8 +8,8 @@
 
 namespace gh::policy {
 
-PolicyEngine::PolicyEngine(boost::asio::any_io_executor executor, gh::DeferredPacketInjector& injector)
-    : _Executor(std::move(executor)), _Selector(_Executor, injector, _Registry),
+PolicyEngine::PolicyEngine(boost::asio::any_io_executor executor)
+    : _Executor(std::move(executor)), _Selector(_Executor, _Registry),
       _Sniffer(std::make_shared<gh::WinDivertFlowSniffer>(_Executor, _Selector.GetFlowTracker())) {}
 
 PolicyEngine::~PolicyEngine() {

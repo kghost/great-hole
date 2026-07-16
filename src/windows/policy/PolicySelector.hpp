@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <memory>
 
 #include "ConnectionTracker.hpp"
@@ -13,8 +14,7 @@ class PolicySelector : public ConnectionTracker::Selector,
                        public FlowTrackerDeferredCallback,
                        public ProcessTreeTrackerDeferredCallback {
 public:
-  explicit PolicySelector(boost::asio::any_io_executor& executor, DeferredPacketInjector& injector,
-                          PolicyRegistry& registry);
+  explicit PolicySelector(boost::asio::any_io_executor& executor, PolicyRegistry& registry);
   ~PolicySelector() override = default;
 
   PolicySelector(const PolicySelector&) = delete;
@@ -22,6 +22,7 @@ public:
   PolicySelector(PolicySelector&&) = delete;
   auto operator=(PolicySelector&&) -> PolicySelector& = delete;
 
+  void SetInjector(DeferredPacketInjector& injector) { _Injector = injector; }
   auto GetProcessTreeTracker() -> ProcessTreeTracker& { return *_TreeTracker; }
   auto GetFlowTracker() -> FlowTracker& { return _FlowTracker; }
 
@@ -37,7 +38,7 @@ private:
   [[nodiscard]] static auto ToConnectionMark(const PolicyRule::RoutingAction& action)
       -> std::shared_ptr<VpnClientMultiChannel::Mark>;
 
-  DeferredPacketInjector& _Injector;
+  std::optional<std::reference_wrapper<DeferredPacketInjector>> _Injector;
   FlowTracker _FlowTracker;
   std::shared_ptr<ProcessTreeTracker> _TreeTracker;
 };

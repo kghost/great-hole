@@ -12,10 +12,8 @@
 
 namespace gh::policy {
 
-PolicySelector::PolicySelector(boost::asio::any_io_executor& executor, DeferredPacketInjector& injector,
-                               PolicyRegistry& registry)
-    : _Injector(injector), _FlowTracker(*this),
-      _TreeTracker(std::make_shared<ProcessTreeTracker>(executor, *this, registry)) {}
+PolicySelector::PolicySelector(boost::asio::any_io_executor& executor, PolicyRegistry& registry)
+    : _FlowTracker(*this), _TreeTracker(std::make_shared<ProcessTreeTracker>(executor, *this, registry)) {}
 
 auto PolicySelector::operator()(const ConnectionTracker::ConnectionKey& key) -> std::shared_ptr<ConnectionMark> {
   return ResolvePolicy(key);
@@ -60,7 +58,7 @@ auto PolicySelector::ProcessTreeTrackerContinue(const std::shared_ptr<VpnClientM
   auto& packets = std::get<VpnClientMultiChannel::Mark::Deferred>(newMark->GetValue()).Packets;
   for (auto& packet : packets) {
     packet.SetMark(mark);
-    co_await _Injector.Inject(std::move(packet));
+    co_await _Injector->get().Inject(std::move(packet));
   }
   co_return;
 }
