@@ -16,6 +16,7 @@ This allows the sniffer to run in non-blocking / sniff-only mode, meaning it rec
   2. This calls `CancelIoEx` on the WinDivert flow handle with the active `OVERLAPPED` structure.
   3. The pending overlapped read is canceled, which signals the overlapped event.
   4. The pending `_ReadObject->async_wait` completes, resuming the coroutine, which sees the triggered cancel token and exits `DoWork()` cleanly so the fiber can be joined.
+- **Handle Lifecycle & Cleanup**: Boost.Asio's `windows::object_handle` takes ownership of the wrapped native event handle `_ReadEvent` upon construction/assignment. Closing or resetting the `windows::object_handle` closes the underlying native handle. Therefore, to prevent a double-close crash (`0xC0000008: An invalid handle was specified.`), any manual `CloseHandle(_ReadEvent)` must only be performed if the `windows::object_handle` was never constructed, and `_ReadEvent` must be set to `nullptr` once the `windows::object_handle` is closed or reset.
 - **Named Pipe Communication**: Under the hood, the fake `WinDivert.dll` simulates `WINDIVERT_LAYER_FLOW` by using named pipes to complete overlapped reads.
 
 ### Flow Parsing

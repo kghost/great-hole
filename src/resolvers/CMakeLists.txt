@@ -1,18 +1,42 @@
 foreach(suffix "" "-asan")
+  if(suffix STREQUAL "-asan" AND SKIP_ASAN)
+    continue()
+  endif()
+  if(suffix STREQUAL "" AND SKIP_NON_ASAN)
+    continue()
+  endif()
+
   set(target "omni-resolver${suffix}")
 
-  add_library(${target} STATIC
-    Resolver.cpp
-    ResolverStaticIp.cpp
-    ResolverIpDns.cpp
-    ResolverNumberPort.cpp
-    ResolverServicePort.cpp
-    ResolverCombinedEndpoint.cpp
-    ResolverDnsService.cpp
-    ResolverStaticEndpoint.cpp
-    ResolverHelper.cpp
-    AresResolver.cpp
-  )
+  if(WIN32)
+    set(resolver_sources
+      Resolver.cpp
+      ResolverStaticIp.cpp
+      ResolverIpDns.cpp
+      ResolverNumberPort.cpp
+      ResolverServicePort.cpp
+      ResolverCombinedEndpoint.cpp
+      ResolverDnsService.cpp
+      ResolverStaticEndpoint.cpp
+      ResolverHelper.cpp
+      WindowsAsyncResolver.cpp
+    )
+  else()
+    set(resolver_sources
+      Resolver.cpp
+      ResolverStaticIp.cpp
+      ResolverIpDns.cpp
+      ResolverNumberPort.cpp
+      ResolverServicePort.cpp
+      ResolverCombinedEndpoint.cpp
+      ResolverDnsService.cpp
+      ResolverStaticEndpoint.cpp
+      ResolverHelper.cpp
+      AresResolver.cpp
+    )
+  endif()
+
+  add_library(${target} STATIC ${resolver_sources})
 
   target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
@@ -20,8 +44,13 @@ foreach(suffix "" "-asan")
     Boost::log
     omni-base${suffix}
     omni-fiber${suffix}
-    PkgConfig::CARES
   )
+
+  if(WIN32)
+    target_link_libraries(${target} PUBLIC iphlpapi dnsapi)
+  else()
+    target_link_libraries(${target} PUBLIC PkgConfig::CARES)
+  endif()
 
   if (Boost_PROCESS_FOUND)
     target_link_libraries(${target} PUBLIC Boost::process)

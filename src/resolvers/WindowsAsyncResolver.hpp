@@ -13,7 +13,7 @@
 
 namespace gh {
 
-class AresResolver {
+class WindowsAsyncResolver {
 public:
   static auto ResolveIp(boost::asio::any_io_executor executor, const std::string& host, Cancel& cancel)
       -> Omni::Fiber::Coroutine<std::expected<std::vector<boost::asio::ip::address_v6>, ErrorCode>>;

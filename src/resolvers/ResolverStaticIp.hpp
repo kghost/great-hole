@@ -21,9 +21,9 @@ public:
   auto operator=(ResolverStaticIp&&) -> ResolverStaticIp& = delete;
 
   auto GetResolverResult() const -> boost::asio::ip::address_v6 override;
+  auto GetName() const -> std::string override;
 
 protected:
-  auto GetName() const -> std::string override;
   auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
   auto DoWork() -> Omni::Fiber::Coroutine<void> override;
   auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;

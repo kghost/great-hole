@@ -3,6 +3,13 @@ add_subdirectory(flow)
 add_subdirectory(policy)
 
 foreach(suffix "" "-asan")
+  if(suffix STREQUAL "-asan" AND SKIP_ASAN)
+    continue()
+  endif()
+  if(suffix STREQUAL "" AND SKIP_NON_ASAN)
+    continue()
+  endif()
+
   set(target "great-hole-windows${suffix}")
 
   add_library(${target} SHARED

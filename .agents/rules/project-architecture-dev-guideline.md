@@ -70,3 +70,7 @@ Documentation in this project is split into two categories based on target audie
 - **src/windows/policy**:
   - [src/windows/policy/README.md](../../src/windows/policy/README.md) - Public FFI APIs and integration guidelines for routing policy engine.
   - [src/windows/policy/DESIGN.md](../../src/windows/policy/DESIGN.md) - Internal design, process tree tracking, flow cache mapping, and policy resolution algorithms.
+- **src/resolvers**:
+  - [src/resolvers/README.md](../../src/resolvers/README.md) - Public APIs and usage guidelines for DNS and endpoint resolvers.
+  - [src/resolvers/DESIGN.md](../../src/resolvers/DESIGN.md) - Internal design specs for c-ares wrapper, RunChannel implementation, and event loop integration.
+

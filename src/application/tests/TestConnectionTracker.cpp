@@ -84,7 +84,7 @@ class MockSelector : public ConnectionTracker::Selector {
 public:
   explicit MockSelector(ConnectionMark& result) : Result(&result) {}
 
-  auto operator()(const ConnectionTracker::ConnectionKey&) -> std::shared_ptr<ConnectionMark> override {
+  auto SelectConnectionMark(const ConnectionTracker::ConnectionKey&) -> std::shared_ptr<ConnectionMark> override {
     return CloneResult();
   }
 
@@ -102,7 +102,7 @@ private:
 class ConstantSelector : public ConnectionTracker::Selector {
 public:
   explicit ConstantSelector(ConnectionMark& mark) : _Mark(mark) {}
-  auto operator()(const ConnectionTracker::ConnectionKey&) -> std::shared_ptr<ConnectionMark> override {
+  auto SelectConnectionMark(const ConnectionTracker::ConnectionKey&) -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<ReferenceMark>(_Mark);
   }
 

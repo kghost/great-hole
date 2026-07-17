@@ -1,4 +1,11 @@
 foreach(suffix "" "-asan")
+  if(suffix STREQUAL "-asan" AND SKIP_ASAN)
+    continue()
+  endif()
+  if(suffix STREQUAL "" AND SKIP_NON_ASAN)
+    continue()
+  endif()
+
   set(target "great-hole-interface${suffix}")
   add_library(${target} INTERFACE)
   target_include_directories(${target} INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})

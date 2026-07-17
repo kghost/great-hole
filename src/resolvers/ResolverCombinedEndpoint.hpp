@@ -21,9 +21,9 @@ public:
   auto operator=(ResolverCombinedEndpoint&&) -> ResolverCombinedEndpoint& = delete;
 
   auto GetResolverResult() const -> boost::asio::ip::udp::endpoint override;
+  auto GetName() const -> std::string override;
 
 protected:
-  auto GetName() const -> std::string override;
   auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
   auto DoWork() -> Omni::Fiber::Coroutine<void> override;
   auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;

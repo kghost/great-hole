@@ -13,7 +13,7 @@ namespace gh {
 
 class ResolverDnsService final : public ResolverEndpoint {
 public:
-  explicit ResolverDnsService(const std::string& serviceName, ResolveFor& target);
+  explicit ResolverDnsService(std::string serviceName, ResolveFor& target);
   ~ResolverDnsService() override = default;
 
   ResolverDnsService(const ResolverDnsService&) = delete;
@@ -22,9 +22,9 @@ public:
   auto operator=(ResolverDnsService&&) -> ResolverDnsService& = delete;
 
   auto GetResolverResult() const -> boost::asio::ip::udp::endpoint override;
+  auto GetName() const -> std::string override { return "ResolverDnsService"; }
 
 protected:
-  auto GetName() const -> std::string override { return "ResolverDnsService"; }
   auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
   auto DoWork() -> Omni::Fiber::Coroutine<void> override;
   auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;

@@ -10,6 +10,13 @@ else()
 endif()
 
 foreach(suffix "" "-asan")
+  if(suffix STREQUAL "-asan" AND SKIP_ASAN)
+    continue()
+  endif()
+  if(suffix STREQUAL "" AND SKIP_NON_ASAN)
+    continue()
+  endif()
+
   set(target "flow-dump${suffix}")
 
   add_executable(${target} FlowDump.cpp)

@@ -1,5 +1,6 @@
 #include "AresResolver.hpp"
 
+#include <array>
 #include <boost/asio/ip/tcp.hpp>
 #include <chrono>
 #include <cstring>
@@ -13,12 +14,7 @@
 #include <sys/socket.h>
 #endif
 
-#if __has_include(<winsock2.h>)
-#include <winsock2.h>
-#endif
-
 #include <ares.h>
-#include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ip/udp.hpp>
 #include <boost/log/trivial.hpp>
 
@@ -39,19 +35,24 @@ class AresGlobal {
 public:
   explicit AresGlobal();
   ~AresGlobal();
+
+  AresGlobal(const AresGlobal&) = delete;
+  auto operator=(const AresGlobal&) -> AresGlobal& = delete;
+  AresGlobal(AresGlobal&&) = delete;
+  auto operator=(AresGlobal&&) -> AresGlobal& = delete;
 };
 
 AresGlobal::AresGlobal() { (void)ares_library_init(ARES_LIB_INIT_ALL); }
 AresGlobal::~AresGlobal() { ares_library_cleanup(); }
-AresGlobal Ares;
+const AresGlobal Ares;
 
 template <typename Lambda, typename... Args> void LambdaBridge(void* data, Args... args) {
-  (*reinterpret_cast<Lambda*>(data))(args...);
+  (*static_cast<Lambda*>(data))(args...);
 }
 
 struct SocketTracker {
-  explicit SocketTracker(boost::asio::any_io_executor executor, ares_socket_t fd)
-      : Descriptor(ToAsioSocket(executor, fd)) {}
+  explicit SocketTracker(const boost::asio::any_io_executor& executor, ares_socket_t socketFd)
+      : Descriptor(ToAsioSocket(executor, socketFd)) {}
   ~SocketTracker() {
     std::visit([](auto& descriptor) -> auto { descriptor.release(); }, Descriptor);
   }
@@ -61,38 +62,41 @@ struct SocketTracker {
   SocketTracker(SocketTracker&&) = delete;
   auto operator=(SocketTracker&&) -> SocketTracker& = delete;
 
-  static auto ToAsioSocket(boost::asio::any_io_executor executor, ares_socket_t fd)
+  static auto ToAsioSocket(const boost::asio::any_io_executor& executor, ares_socket_t socketFd)
       -> std::variant<boost::asio::ip::tcp::socket, boost::asio::ip::udp::socket> {
     int soType = 0;
     socklen_t soTypeLen = sizeof(soType);
 
-    if (::getsockopt(fd, SOL_SOCKET, SO_TYPE, reinterpret_cast<char*>(&soType), &soTypeLen) < 0) {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    if (::getsockopt(socketFd, SOL_SOCKET, SO_TYPE, reinterpret_cast<char*>(&soType), &soTypeLen) < 0) {
       throw std::runtime_error("getsockopt failed: " + std::to_string(errno));
     }
 
     if (soType == SOCK_STREAM) {
-      sockaddr_storage addr;
+      sockaddr_storage addr{};
       std::remove_pointer_t<FunctionTraits<decltype(::getsockname)>::Arg<2>> addrLen = sizeof(addr);
-      if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &addrLen) < 0) {
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+      if (::getsockname(socketFd, reinterpret_cast<sockaddr*>(&addr), &addrLen) < 0) {
         throw std::runtime_error("getsockname failed: " + std::to_string(errno));
       }
       if (addr.ss_family == AF_INET) {
-        return {boost::asio::ip::tcp::socket(executor, boost::asio::ip::tcp::v4(), fd)};
+        return {boost::asio::ip::tcp::socket(executor, boost::asio::ip::tcp::v4(), socketFd)};
       } else if (addr.ss_family == AF_INET6) {
-        return {boost::asio::ip::tcp::socket(executor, boost::asio::ip::tcp::v6(), fd)};
+        return {boost::asio::ip::tcp::socket(executor, boost::asio::ip::tcp::v6(), socketFd)};
       } else {
         throw std::runtime_error("Unknown address family: " + std::to_string(addr.ss_family));
       }
     } else if (soType == SOCK_DGRAM) {
-      sockaddr_storage addr;
+      sockaddr_storage addr{};
       std::remove_pointer_t<FunctionTraits<decltype(::getsockname)>::Arg<2>> addrLen = sizeof(addr);
-      if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &addrLen) < 0) {
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+      if (::getsockname(socketFd, reinterpret_cast<sockaddr*>(&addr), &addrLen) < 0) {
         throw std::runtime_error("getsockname failed: " + std::to_string(errno));
       }
       if (addr.ss_family == AF_INET) {
-        return {boost::asio::ip::udp::socket(executor, boost::asio::ip::udp::v4(), fd)};
+        return {boost::asio::ip::udp::socket(executor, boost::asio::ip::udp::v4(), socketFd)};
       } else if (addr.ss_family == AF_INET6) {
-        return {boost::asio::ip::udp::socket(executor, boost::asio::ip::udp::v6(), fd)};
+        return {boost::asio::ip::udp::socket(executor, boost::asio::ip::udp::v6(), socketFd)};
       } else {
         throw std::runtime_error("Unknown address family: " + std::to_string(addr.ss_family));
       }
@@ -116,22 +120,22 @@ auto RunChannel(boost::asio::any_io_executor executor, InitiateQuery&& initiateQ
 
   std::unordered_map<ares_socket_t, SocketTracker> trackers;
 
-  auto OnSocketStateChange = [&](ares_socket_t fd, int readable, int writable) -> auto {
-    auto it = trackers.find(fd);
+  auto OnSocketStateChange = [&](ares_socket_t socketFd, int readable, int writable) -> auto {
+    auto trackerIt = trackers.find(socketFd);
     if (!readable && !writable) {
-      if (it != trackers.end()) {
-        trackers.erase(it);
+      if (trackerIt != trackers.end()) {
+        trackers.erase(trackerIt);
       }
       return;
     }
 
-    if (it == trackers.end()) {
-      auto [newIt, inserted] =
-          trackers.emplace(std::piecewise_construct, std::forward_as_tuple(fd), std::forward_as_tuple(executor, fd));
-      it = newIt;
+    if (trackerIt == trackers.end()) {
+      auto [newIt, inserted] = trackers.emplace(std::piecewise_construct, std::forward_as_tuple(socketFd),
+                                                std::forward_as_tuple(executor, socketFd));
+      trackerIt = newIt;
     }
 
-    auto& tracker = it->second;
+    auto& tracker = trackerIt->second;
     tracker.ReadableInterest = readable;
     tracker.WritableInterest = writable;
   };
@@ -148,27 +152,27 @@ auto RunChannel(boost::asio::any_io_executor executor, InitiateQuery&& initiateQ
     co_return make_error_code(boost::asio::error::no_recovery);
   }
 
-  ErrorCode err = initiateQuery(channel);
+  ErrorCode err = std::forward<InitiateQuery>(initiateQuery)(channel);
   while (!err) {
     Omni::Fiber::SelectPairList<Omni::Fiber::AsioResult<boost::system::error_code>,
                                 std::function<void(std::tuple<boost::system::error_code>)>>
         list;
 
     boost::asio::steady_timer timer(executor);
-    struct timeval tv;
-    struct timeval* tvPtr = ares_timeout(channel, nullptr, &tv);
+    struct timeval timeoutVal;
+    struct timeval* tvPtr = ares_timeout(channel, nullptr, &timeoutVal);
     if (tvPtr) {
-      auto duration = std::chrono::seconds(tv.tv_sec) + std::chrono::microseconds(tv.tv_usec);
+      auto duration = std::chrono::seconds(timeoutVal.tv_sec) + std::chrono::microseconds(timeoutVal.tv_usec);
       timer.expires_after(duration);
       list.Add(timer.async_wait(Omni::Fiber::AsioUseFiber), [channel](auto const& tuple) -> auto {
-        auto [ec] = tuple;
-        if (!ec) {
+        auto [errCode] = tuple;
+        if (!errCode) {
           ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
         }
       });
     }
 
-    for (auto& [fd, tracker] : trackers) {
+    for (auto& [socketFd, tracker] : trackers) {
       if (tracker.ReadableInterest) {
         list.Add(std::visit(
                      [](auto& descriptor) -> auto {
@@ -176,11 +180,11 @@ auto RunChannel(boost::asio::any_io_executor executor, InitiateQuery&& initiateQ
                                                     Omni::Fiber::AsioUseFiber);
                      },
                      tracker.Descriptor),
-                 [channel, fd](auto const& tuple) -> auto {
-                   auto [ec] = tuple;
-                   if (!ec) {
-                     ares_process_fd(channel, fd, ARES_SOCKET_BAD);
-                   } else if (ec != boost::asio::error::operation_aborted) {
+                 [channel, socketFd = socketFd](auto const& tuple) -> auto {
+                   auto [errCode] = tuple;
+                   if (!errCode) {
+                     ares_process_fd(channel, socketFd, ARES_SOCKET_BAD);
+                   } else if (errCode != boost::asio::error::operation_aborted) {
                      ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
                    }
                  });
@@ -192,11 +196,11 @@ auto RunChannel(boost::asio::any_io_executor executor, InitiateQuery&& initiateQ
                                                     Omni::Fiber::AsioUseFiber);
                      },
                      tracker.Descriptor),
-                 [channel, fd](auto const& tuple) -> auto {
-                   auto [ec] = tuple;
-                   if (!ec) {
-                     ares_process_fd(channel, ARES_SOCKET_BAD, fd);
-                   } else if (ec != boost::asio::error::operation_aborted) {
+                 [channel, socketFd = socketFd](auto const& tuple) -> auto {
+                   auto [errCode] = tuple;
+                   if (!errCode) {
+                     ares_process_fd(channel, ARES_SOCKET_BAD, socketFd);
+                   } else if (errCode != boost::asio::error::operation_aborted) {
                      ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
                    }
                  });
@@ -211,7 +215,7 @@ auto RunChannel(boost::asio::any_io_executor executor, InitiateQuery&& initiateQ
         co_await Omni::Fiber::Select(list, Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] -> auto {}));
 
     // Cancel outstanding waits
-    for (auto& [fd, tracker] : trackers) {
+    for (auto& [socketFd, tracker] : trackers) {
       std::visit([](auto& descriptor) -> auto { descriptor.cancel(); }, tracker.Descriptor);
     }
     timer.cancel();
@@ -231,8 +235,7 @@ auto AresResolver::ResolveIp(boost::asio::any_io_executor executor, const std::s
     -> Omni::Fiber::Coroutine<std::expected<std::vector<boost::asio::ip::address_v6>, ErrorCode>> {
   std::expected<std::vector<boost::asio::ip::address_v6>, ErrorCode> result;
 
-  struct ares_addrinfo_hints hints;
-  std::memset(&hints, 0, sizeof(hints));
+  struct ares_addrinfo_hints hints{};
   hints.ai_family = AF_UNSPEC;
   hints.ai_socktype = SOCK_DGRAM;
 
@@ -249,13 +252,15 @@ auto AresResolver::ResolveIp(boost::asio::any_io_executor executor, const std::s
       }
       for (struct ares_addrinfo_node* node = list->nodes; node != nullptr; node = node->ai_next) {
         if (node->ai_family == AF_INET) {
-          auto* addrIn = reinterpret_cast<struct sockaddr_in*>(node->ai_addr);
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+          auto* addrIn = reinterpret_cast<sockaddr_in*>(node->ai_addr);
           boost::asio::ip::address_v4::bytes_type bytes;
           std::memcpy(bytes.data(), &addrIn->sin_addr, sizeof(bytes));
           boost::asio::ip::address_v4 addr(bytes);
           result->push_back(MapToV6(boost::asio::ip::address(addr)));
         } else if (node->ai_family == AF_INET6) {
-          auto* addrIn6 = reinterpret_cast<struct sockaddr_in6*>(node->ai_addr);
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+          auto* addrIn6 = reinterpret_cast<sockaddr_in6*>(node->ai_addr);
           boost::asio::ip::address_v6::bytes_type bytes;
           std::memcpy(bytes.data(), &addrIn6->sin6_addr, sizeof(bytes));
           boost::asio::ip::address_v6 addr(bytes);
@@ -268,7 +273,7 @@ auto AresResolver::ResolveIp(boost::asio::any_io_executor executor, const std::s
     }
   };
 
-  auto ec = co_await RunChannel(
+  auto errCode = co_await RunChannel(
       executor,
       [&](ares_channel_t* channel) -> ErrorCode {
         ares_getaddrinfo(channel, host.c_str(), nullptr, &hints,
@@ -277,8 +282,8 @@ auto AresResolver::ResolveIp(boost::asio::any_io_executor executor, const std::s
       },
       cancel);
 
-  if (ec) {
-    co_return std::unexpected(ec);
+  if (errCode) {
+    co_return std::unexpected(errCode);
   }
 
   co_return result;
@@ -302,10 +307,10 @@ auto AresResolver::ResolveSrv(boost::asio::any_io_executor executor, const std::
       }
       size_t count = ares_dns_record_rr_cnt(dnsrec, ARES_SECTION_ANSWER);
       for (size_t idx = 0; idx < count; ++idx) {
-        const ares_dns_rr_t* rr = ares_dns_record_rr_get_const(dnsrec, ARES_SECTION_ANSWER, idx);
-        if (rr && ares_dns_rr_get_type(rr) == ARES_REC_TYPE_SRV) {
-          const char* target = ares_dns_rr_get_str(rr, ARES_RR_SRV_TARGET);
-          unsigned short port = ares_dns_rr_get_u16(rr, ARES_RR_SRV_PORT);
+        const ares_dns_rr_t* dnsRr = ares_dns_record_rr_get_const(dnsrec, ARES_SECTION_ANSWER, idx);
+        if (dnsRr && ares_dns_rr_get_type(dnsRr) == ARES_REC_TYPE_SRV) {
+          const char* target = ares_dns_rr_get_str(dnsRr, ARES_RR_SRV_TARGET);
+          unsigned short port = ares_dns_rr_get_u16(dnsRr, ARES_RR_SRV_PORT);
           if (target) {
             result->push_back({std::string(target), port});
           }
@@ -314,7 +319,7 @@ auto AresResolver::ResolveSrv(boost::asio::any_io_executor executor, const std::
     }
   };
 
-  auto ec = co_await RunChannel(
+  auto errCode = co_await RunChannel(
       executor,
       [&](ares_channel_t* channel) -> ErrorCode {
         ares_dns_record_t* dnsrecQuery = nullptr;
@@ -343,8 +348,8 @@ auto AresResolver::ResolveSrv(boost::asio::any_io_executor executor, const std::
       },
       cancel);
 
-  if (ec) {
-    co_return std::unexpected(ec);
+  if (errCode) {
+    co_return std::unexpected(errCode);
   }
 
   co_return result;

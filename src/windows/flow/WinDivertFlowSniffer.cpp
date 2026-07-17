@@ -53,6 +53,7 @@ auto WinDivertFlowSniffer::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode>
   if (_ReadObject.has_value()) {
     _ReadObject->close();
     _ReadObject.reset();
+    _ReadEvent = nullptr;
   }
 
   if (_ReadEvent != nullptr) {

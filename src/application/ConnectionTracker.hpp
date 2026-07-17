@@ -112,7 +112,7 @@ public:
     Selector(Selector&&) = delete;
     auto operator=(Selector&&) -> Selector& = delete;
 
-    virtual auto operator()(const ConnectionKey&) -> std::shared_ptr<ConnectionMark> = 0;
+    virtual auto SelectConnectionMark(const ConnectionKey&) -> std::shared_ptr<ConnectionMark> = 0;
   };
 
   explicit ConnectionTracker(boost::asio::any_io_executor executor);

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <boost/asio.hpp>
+#include <boost/log/trivial.hpp>
+#include <cstdint>
 #include <expected>
 
 #include "Coroutine.hpp"
@@ -9,56 +11,101 @@
 
 namespace gh {
 
+struct SrvResult {
+  std::string Target;
+  uint16_t Port;
+};
+
 class ResolveFor {
 public:
-  enum class Protocol { Unspecified, Tcp, Udp };
+  enum class Protocol : uint8_t { Unspecified, Tcp, Udp };
 
+  explicit ResolveFor() = default;
   virtual ~ResolveFor() = default;
+
+  ResolveFor(const ResolveFor&) = default;
+  auto operator=(const ResolveFor&) -> ResolveFor& = default;
+  ResolveFor(ResolveFor&&) = delete;
+  auto operator=(ResolveFor&&) -> ResolveFor& = delete;
+
   virtual auto GetExecutor() -> boost::asio::any_io_executor = 0;
   virtual auto GetService() -> std::string = 0;
   virtual auto GetProtocol() -> Protocol = 0;
 };
 
-class ResolverBase : public ServiceBase {
+class Resolver : public ServiceBase {
 public:
-  virtual ~ResolverBase() override = default;
+  explicit Resolver() = default;
+  virtual ~Resolver() override = default;
+
+  Resolver(const Resolver&) = delete;
+  auto operator=(const Resolver&) -> Resolver& = delete;
+  Resolver(Resolver&&) = delete;
+  auto operator=(Resolver&&) -> Resolver& = delete;
+
+  template <typename Self>
+  auto Resolve(this Self& self, Cancel& cancel)
+      -> Omni::Fiber::Coroutine<std::expected<typename Self::ResultType, ErrorCode>> {
+    BOOST_LOG_TRIVIAL(trace) << self.GetName() << " resolving...";
+    if (auto err = co_await self.DoResolve(cancel)) {
+      BOOST_LOG_TRIVIAL(trace) << self.GetName() << " resolution failed: " << err.message();
+      co_return std::unexpected(err);
+    } else {
+      auto result = self.GetResolverResult();
+      BOOST_LOG_TRIVIAL(trace) << self.GetName() << " resolved " << result;
+      co_return result;
+    }
+  }
 
 protected:
-  auto DoResolve(Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode>;
+  auto DoResolve(Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode>;
 
   ErrorCode _ResolveError;
 };
 
-template <typename ResultType> class Resolver : public ResolverBase {
-public:
-  virtual ~Resolver() override = default;
-
-  virtual auto GetResolverResult() const -> ResultType = 0;
-
-  auto Resolve(Cancel& c) -> Omni::Fiber::Coroutine<std::expected<ResultType, ErrorCode>> {
-    if (auto err = co_await DoResolve(c)) {
-      co_return std::unexpected(err);
-    }
-    co_return GetResolverResult();
-  }
-};
-
 // ==================== ResolverIp ====================
-class ResolverIp : public Resolver<boost::asio::ip::address_v6> {
+class ResolverIp : public Resolver {
 public:
+  explicit ResolverIp() = default;
   virtual ~ResolverIp() override = default;
+
+  ResolverIp(const ResolverIp&) = delete;
+  auto operator=(const ResolverIp&) -> ResolverIp& = delete;
+  ResolverIp(ResolverIp&&) = delete;
+  auto operator=(ResolverIp&&) -> ResolverIp& = delete;
+
+  using ResultType = boost::asio::ip::address_v6;
+  virtual auto GetResolverResult() const -> ResultType = 0;
 };
 
 // ==================== ResolverPort ====================
-class ResolverPort : public Resolver<uint16_t> {
+class ResolverPort : public Resolver {
 public:
+  explicit ResolverPort() = default;
   virtual ~ResolverPort() override = default;
+
+  ResolverPort(const ResolverPort&) = delete;
+  auto operator=(const ResolverPort&) -> ResolverPort& = delete;
+  ResolverPort(ResolverPort&&) = delete;
+  auto operator=(ResolverPort&&) -> ResolverPort& = delete;
+
+  using ResultType = uint16_t;
+  virtual auto GetResolverResult() const -> ResultType = 0;
 };
 
 // ==================== ResolverEndpoint ====================
-class ResolverEndpoint : public Resolver<boost::asio::ip::udp::endpoint> {
+class ResolverEndpoint : public Resolver {
 public:
+  explicit ResolverEndpoint() = default;
   virtual ~ResolverEndpoint() override = default;
+
+  ResolverEndpoint(const ResolverEndpoint&) = delete;
+  auto operator=(const ResolverEndpoint&) -> ResolverEndpoint& = delete;
+  ResolverEndpoint(ResolverEndpoint&&) = delete;
+  auto operator=(ResolverEndpoint&&) -> ResolverEndpoint& = delete;
+
+  using ResultType = boost::asio::ip::udp::endpoint;
+  virtual auto GetResolverResult() const -> ResultType = 0;
 };
 
 } // namespace gh

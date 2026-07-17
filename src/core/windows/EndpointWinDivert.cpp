@@ -81,10 +81,12 @@ auto WinDivert::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   if (_ReadObjectHandle.has_value()) {
     _ReadObjectHandle->close();
     _ReadObjectHandle.reset();
+    _ReadEvent = nullptr;
   }
   if (_WriteObjectHandle.has_value()) {
     _WriteObjectHandle->close();
     _WriteObjectHandle.reset();
+    _WriteEvent = nullptr;
   }
 
   if (_ReadEvent != nullptr) {
@@ -114,6 +116,7 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
     auto res = _InjectedPacketPipe.GetConsumer().AwaitValue();
     if (res.has_value()) {
       packet = std::move(res.value());
+      BOOST_LOG_TRIVIAL(trace) << GetName() << ": Read (injected) packet size=" << packet.Data().size();
       co_return ErrorCode{};
     }
   }
@@ -160,6 +163,7 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
           DWORD transferred = 0;
           GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, TRUE);
           packet = std::move(injectedPacket);
+          BOOST_LOG_TRIVIAL(trace) << GetName() << ": Read (injected) packet size=" << packet.Data().size();
           co_return ErrorCode{};
         }
 
@@ -190,6 +194,10 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
 
     winPacket._Length = recvLen;
     auto route = _RouteCallback.WinDivertRoute(winPacket, addr);
+    BOOST_LOG_TRIVIAL(trace) << GetName() << ": Read packet size=" << winPacket.Data().size() << " route="
+                             << (route == WinDivertRouteCallback::Result::Bypass
+                                     ? "Bypass"
+                                     : (route == WinDivertRouteCallback::Result::Discard ? "Discard" : "Accept"));
     if (route == WinDivertRouteCallback::Result::Bypass) {
       UINT sendLen = 0;
       if (WinDivertSendEx(_WinDivertHandle, winPacket.Data().data(), winPacket.Data().size(), &sendLen, 0, &addr,
@@ -211,6 +219,8 @@ auto WinDivert::Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<
   if (cancel.IsTriggered()) {
     co_return Error(AppErrorCategory::kOperationAborted);
   }
+
+  BOOST_LOG_TRIVIAL(trace) << GetName() << ": Write packet size=" << packet.Data().size();
 
   OVERLAPPED overlapped = {};
   overlapped.hEvent = _WriteEvent;
@@ -250,6 +260,7 @@ auto WinDivert::Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<
 }
 
 auto WinDivert::Inject(Packet&& packet) -> Omni::Fiber::Coroutine<void> {
+  BOOST_LOG_TRIVIAL(trace) << GetName() << ": Injecting packet size=" << packet.Data().size();
   auto result = co_await _InjectedPacketPipe.GetProducer().Put(std::move(packet));
   if (!result.has_value()) {
     BOOST_LOG_TRIVIAL(warning) << "WinDivert: failed to inject packet";

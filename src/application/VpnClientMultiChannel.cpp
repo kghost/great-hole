@@ -39,7 +39,8 @@ public:
   SessionSelector(SessionSelector&&) = delete;
   auto operator=(SessionSelector&&) -> SessionSelector& = delete;
 
-  auto operator()(const ConnectionTracker::ConnectionKey& /*unused*/) -> std::shared_ptr<ConnectionMark> override {
+  auto SelectConnectionMark(const ConnectionTracker::ConnectionKey& /*unused*/)
+      -> std::shared_ptr<ConnectionMark> override {
     return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
   }
 

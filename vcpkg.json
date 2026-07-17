@@ -1,8 +1,19 @@
 {
   "dependencies": [
-    "boost",
+    "boost-asio",
+    "boost-describe",
+    "boost-exception",
+    "boost-filesystem",
+    "boost-format",
+    "boost-lexical-cast",
+    "boost-log",
+    "boost-process",
+    "boost-program-options",
+    "boost-system",
+    "boost-thread",
     "c-ares",
     "detours",
-    "gtest"
+    "gtest",
+    "pkgconf"
   ]
 }

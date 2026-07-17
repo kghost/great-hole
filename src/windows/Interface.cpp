@@ -33,8 +33,10 @@ public:
   PlatformImpl(PlatformImpl&&) = delete;
   auto operator=(PlatformImpl&&) -> PlatformImpl& = delete;
 
-  auto Start(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code override;
-  auto Stop() -> std::error_code override;
+  auto StartEngine() -> std::error_code override;
+  auto StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code override;
+  auto StopEngine() -> std::error_code override;
+  auto StopVpn() -> std::error_code override;
 
   auto AddEndpoint(const std::array<uint8_t, 16>& psk, const std::string& address) -> VpnEndpoint override;
   void RemoveEndpoint(VpnEndpoint endpoint) override;
@@ -63,7 +65,8 @@ private:
 PlatformImpl::PlatformImpl(DataPlaneCallbacks& callbacks) : _Callbacks(callbacks) {}
 PlatformImpl::~PlatformImpl() {}
 
-auto PlatformImpl::Start(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code {
+auto PlatformImpl::StartEngine() -> std::error_code {
+  _Stop.store(false);
   _AsioThread = std::thread([this]() -> void {
     boost::asio::io_context ioContext;
     auto ioExecutor = ioContext.get_executor();
@@ -94,27 +97,19 @@ auto PlatformImpl::Start(int32_t mtu, std::span<uint8_t> encryption_key) -> std:
 
   std::promise<ErrorCode> promise;
   auto future = promise.get_future();
-  std::vector<char> key(encryption_key.begin(), encryption_key.end());
 
-  _TaskQueue.Push([this, &promise, mtu, key = std::move(key)](const auto& policyEngine,
-                                                              const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
-    auto err = co_await policyEngine->Start();
-    if (err) {
-      promise.set_value(err);
-      _Stop.store(true);
-      co_return;
-    }
+  _TaskQueue.Push(
+      [this, &promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        auto err = co_await policyEngine->Start();
+        if (err) {
+          promise.set_value(err);
+          _Stop.store(true);
+          co_return;
+        }
 
-    err = co_await dataPlane->Start(mtu, key);
-    if (err) {
-      promise.set_value(err);
-      _Stop.store(true);
-      co_return;
-    }
-
-    promise.set_value(ErrorCode{});
-    co_return;
-  });
+        promise.set_value(ErrorCode{});
+        co_return;
+      });
 
   auto err = future.get();
   if (err) {
@@ -127,27 +122,61 @@ auto PlatformImpl::Start(int32_t mtu, std::span<uint8_t> encryption_key) -> std:
   return ErrorCode{};
 }
 
-auto PlatformImpl::Stop() -> std::error_code {
+auto PlatformImpl::StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code {
   std::promise<ErrorCode> promise;
   auto future = promise.get_future();
+  std::vector<char> key(encryption_key.begin(), encryption_key.end());
 
-  _TaskQueue.Push([this, &promise](const auto& policyEngine, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
-    auto err = co_await dataPlane->Stop();
-    if (err) {
-      promise.set_value(err);
-      co_return;
-    }
-
-    err = co_await policyEngine->Stop();
+  _TaskQueue.Push([&promise, mtu, key = std::move(key)](const auto& /*policyEngine*/,
+                                                        const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
+    auto err = co_await dataPlane->Start(mtu, key);
     if (err) {
       promise.set_value(err);
       co_return;
     }
 
     promise.set_value(ErrorCode{});
-    _Stop.store(true);
     co_return;
   });
+
+  return future.get();
+}
+
+auto PlatformImpl::StopVpn() -> std::error_code {
+  std::promise<ErrorCode> promise;
+  auto future = promise.get_future();
+
+  _TaskQueue.Push([&promise](const auto& policyEngine, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
+    policyEngine->GetPolicySelector().ClearInjector();
+    auto err = co_await dataPlane->Stop();
+    if (err) {
+      promise.set_value(err);
+      co_return;
+    }
+
+    promise.set_value(ErrorCode{});
+    co_return;
+  });
+
+  return future.get();
+}
+
+auto PlatformImpl::StopEngine() -> std::error_code {
+  std::promise<ErrorCode> promise;
+  auto future = promise.get_future();
+
+  _TaskQueue.Push(
+      [this, &promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        auto err = co_await policyEngine->Stop();
+        if (err) {
+          promise.set_value(err);
+          co_return;
+        }
+
+        promise.set_value(ErrorCode{});
+        _Stop.store(true);
+        co_return;
+      });
 
   auto err = future.get();
   if (err) {

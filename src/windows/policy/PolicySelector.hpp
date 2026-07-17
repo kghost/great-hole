@@ -23,10 +23,11 @@ public:
   auto operator=(PolicySelector&&) -> PolicySelector& = delete;
 
   void SetInjector(DeferredPacketInjector& injector) { _Injector = injector; }
+  void ClearInjector() { _Injector = std::nullopt; }
   auto GetProcessTreeTracker() -> ProcessTreeTracker& { return *_TreeTracker; }
   auto GetFlowTracker() -> FlowTracker& { return _FlowTracker; }
 
-  auto operator()(const ConnectionTracker::ConnectionKey& key) -> std::shared_ptr<ConnectionMark> override;
+  auto SelectConnectionMark(const ConnectionTracker::ConnectionKey& key) -> std::shared_ptr<ConnectionMark> override;
 
   [[nodiscard]] auto ResolvePolicy(const ConnectionTracker::ConnectionKey& key) -> std::shared_ptr<ConnectionMark>;
   auto FlowTrackerContinue(const std::shared_ptr<VpnClientMultiChannel::Mark>& mark, DWORD pid)

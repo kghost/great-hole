@@ -7,6 +7,23 @@ option(GREAT_HOLE_RELATIVE_PATHS "Use relative paths" OFF)
 option(BUILD_WITH_LIBCXX "Build with libc++" OFF)
 option(BUILD_TESTING "Build unit tests" ON)
 option(BUILD_WITH_CLANG_TIDY "Build with clang tidy" OFF)
+option(SKIP_ASAN "Skip building ASan targets" OFF)
+option(SKIP_NON_ASAN "Skip building non-ASan targets" OFF)
+
+if(SKIP_ASAN)
+  set(BUILD_TESTING OFF CACHE BOOL "Build unit tests" FORCE)
+endif()
+
+if(SKIP_NON_ASAN)
+  if(MSVC)
+    add_compile_options(/fsanitize=address)
+    add_link_options(/fsanitize=address)
+  else()
+    add_compile_options(-fsanitize=address)
+    add_link_options(-fsanitize=address)
+  endif()
+endif()
+
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -58,7 +75,7 @@ if(WIN32)
 endif()
 
 # Dependencies
-find_package(Boost REQUIRED COMPONENTS log program_options)
+find_package(Boost REQUIRED COMPONENTS log program_options filesystem thread)
 
 if(ANDROID)
   # Find CARES manually
@@ -77,7 +94,9 @@ if(NOT ANDROID AND NOT WIN32)
   pkg_check_modules(LUA REQUIRED IMPORTED_TARGET lua-5.4)
 endif()
 
-pkg_check_modules(CARES REQUIRED IMPORTED_TARGET libcares)
+if(NOT WIN32)
+  pkg_check_modules(CARES REQUIRED IMPORTED_TARGET libcares)
+endif()
 
 if(BUILD_TESTING)
   enable_testing()

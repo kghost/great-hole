@@ -11,6 +11,13 @@ add_custom_command(
 )
 
 foreach(suffix "" "-asan")
+  if(suffix STREQUAL "-asan" AND SKIP_ASAN)
+    continue()
+  endif()
+  if(suffix STREQUAL "" AND SKIP_NON_ASAN)
+    continue()
+  endif()
+
   set(target_exe "great-hole${suffix}")
 
   add_executable(${target_exe}

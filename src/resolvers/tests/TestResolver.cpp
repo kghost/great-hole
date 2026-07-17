@@ -4,6 +4,11 @@
 #include <boost/asio.hpp>
 #include <gtest/gtest.h>
 
+#ifdef _WIN32
+#include "WindowsAsyncResolver.hpp"
+#else
+#include "AresResolver.hpp"
+#endif
 #include "Asio.hpp"
 #include "Coroutine.hpp"
 #include "ErrorCode.hpp"
@@ -362,3 +367,127 @@ TEST(ResolverTest, ResolverHelperTest) {
   RunEventLoop(io);
   EXPECT_TRUE(testPassed);
 }
+
+#ifndef _WIN32
+TEST(ResolverTest, AresResolverResolveIpRealDomain) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
+    Cancel c;
+    auto res = co_await AresResolver::ResolveIp(io.get_executor(), "example.com", c);
+    if (!res.has_value()) {
+      EXPECT_EQ(res.error(), make_error_code(boost::asio::error::host_not_found))
+          << "ResolveIp failed with unexpected error: " << res.error().message();
+    } else {
+      EXPECT_FALSE(res.value().empty());
+      for (const auto& addr : res.value()) {
+        EXPECT_FALSE(addr.is_unspecified());
+      }
+    }
+
+    co_await current.WaitAll();
+    testPassed = true;
+    co_return;
+  });
+
+  RunEventLoop(io);
+  EXPECT_TRUE(testPassed);
+}
+
+TEST(ResolverTest, AresResolverResolveSrvRealDomain) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
+    Cancel c;
+    auto res = co_await AresResolver::ResolveSrv(io.get_executor(), "_sip._tcp.example.com", c);
+    if (!res.has_value()) {
+      EXPECT_EQ(res.error(), make_error_code(boost::asio::error::host_not_found))
+          << "ResolveSrv failed with unexpected error: " << res.error().message();
+    } else {
+      EXPECT_FALSE(res.value().empty());
+      for (const auto& srv : res.value()) {
+        EXPECT_FALSE(srv.Target.empty());
+        EXPECT_GT(srv.Port, 0);
+      }
+    }
+
+    co_await current.WaitAll();
+    testPassed = true;
+    co_return;
+  });
+
+  RunEventLoop(io);
+  EXPECT_TRUE(testPassed);
+}
+#else
+TEST(ResolverTest, WindowsAsyncResolverResolveIpRealDomain) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
+    Cancel c;
+    auto res = co_await WindowsAsyncResolver::ResolveIp(io.get_executor(), "example.com", c);
+    if (!res.has_value()) {
+      EXPECT_EQ(res.error(), make_error_code(boost::asio::error::host_not_found))
+          << "ResolveIp failed with unexpected error: " << res.error().message();
+    } else {
+      EXPECT_FALSE(res.value().empty());
+      for (const auto& addr : res.value()) {
+        EXPECT_FALSE(addr.is_unspecified());
+      }
+    }
+
+    co_await current.WaitAll();
+    testPassed = true;
+    co_return;
+  });
+
+  RunEventLoop(io);
+  EXPECT_TRUE(testPassed);
+}
+
+TEST(ResolverTest, WindowsAsyncResolverResolveSrvRealDomain) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
+    Cancel c;
+    auto res = co_await WindowsAsyncResolver::ResolveSrv(io.get_executor(), "_sip._tcp.example.com", c);
+    if (!res.has_value()) {
+      EXPECT_EQ(res.error(), make_error_code(boost::asio::error::host_not_found))
+          << "ResolveSrv failed with unexpected error: " << res.error().message();
+    } else {
+      EXPECT_FALSE(res.value().empty());
+      for (const auto& srv : res.value()) {
+        EXPECT_FALSE(srv.Target.empty());
+        EXPECT_GT(srv.Port, 0);
+      }
+    }
+
+    co_await current.WaitAll();
+    testPassed = true;
+    co_return;
+  });
+
+  RunEventLoop(io);
+  EXPECT_TRUE(testPassed);
+}
+#endif

@@ -77,8 +77,10 @@ public:
   PlatformInterface(PlatformInterface&&) = delete;
   auto operator=(PlatformInterface&&) -> PlatformInterface& = delete;
 
-  virtual auto Start(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code = 0;
-  virtual auto Stop() -> std::error_code = 0;
+  virtual auto StartEngine() -> std::error_code = 0;
+  virtual auto StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code = 0;
+  virtual auto StopEngine() -> std::error_code = 0;
+  virtual auto StopVpn() -> std::error_code = 0;
 
   virtual auto AddEndpoint(const std::array<uint8_t, 16>& psk, const std::string& address) -> VpnEndpoint = 0;
   virtual void RemoveEndpoint(VpnEndpoint endpoint) = 0;

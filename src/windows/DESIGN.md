@@ -7,7 +7,7 @@ This document details the internal design, architecture, thread boundaries, and 
 ## 1. System Architecture & Threading Model
 
 The GreatHole Windows platform module coordinates interactions between the public platform interface and the underlying async components:
-- **Client Application Thread (Caller)**: Invokes the synchronous control methods of `PlatformInterface` (e.g. `Start`, `Stop`, `AddEndpoint`).
+- **Client Application Thread (Caller)**: Invokes the synchronous control methods of `PlatformInterface` (e.g. `StartEngine`, `StartVpn`, `StopEngine`, `StopVpn`, `AddEndpoint`).
 - **C++ Backend (Boost.Asio)**: Intercepts packets, tracks connections, routes VPN packets, and listens for ETW process events. Execution runs sequentially on a single-threaded Boost.Asio event loop to achieve lock-free safety for trackers.
 
 To prevent race conditions, deadlocks, and thread safety violations on core C++ structures, **all platform operations that modify backend state must be executed on the Boost.Asio executor thread.**
@@ -29,17 +29,27 @@ sequenceDiagram
     participant DP as gh::TunnelDataPlane
     participant PE as gh::policy::PolicyEngine
 
-    Note over Client, Asio: Starting the Data Plane
-    Client->>Impl: Start(mtu, key)
+    Note over Client, Asio: Stage 1: Starting the Engine
+    Client->>Impl: StartEngine()
     Impl->>Queue: Push(lambda task)
     Client->>Client: future.get() (Blocks)
     
     Asio->>Queue: co_await Task
     Queue-->>Asio: Pop Task
     Asio->>PE: Start()
+    Asio->>Client: promise.set_value() (Unblocks)
+    Client-->>Client: Returns std::error_code
+
+    Note over Client, Asio: Stage 2: Starting the VPN Data Plane
+    Client->>Impl: StartVpn(mtu, key)
+    Impl->>Queue: Push(lambda task)
+    Client->>Client: future.get() (Blocks)
+    
+    Asio->>Queue: co_await Task
+    Queue-->>Asio: Pop Task
     Asio->>DP: Start(mtu, key)
     Asio->>Client: promise.set_value() (Unblocks)
-    Client-->>Client: Returns void
+    Client-->>Client: Returns std::error_code
 ```
 
 ---

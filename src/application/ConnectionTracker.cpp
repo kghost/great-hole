@@ -75,16 +75,17 @@ auto ConnectionTracker::LookupAndUpdate(const Packet& packet, ConnectionTracker:
         if (type == PacketType::kRealPacket) {
           using EntryType = typename std::decay_t<decltype(table)>::mapped_type;
           auto [iterator, inserted] = table.try_emplace(
-              key, std::in_place_type<Direction>, [&] -> std::shared_ptr<ConnectionMark> { return selector(key); }, now,
-              keyExtra);
+              key, std::in_place_type<Direction>,
+              [&] -> std::shared_ptr<ConnectionMark> { return selector.SelectConnectionMark(key); }, now, keyExtra);
           auto& entry = iterator->second;
           if (!inserted) {
             if (entry.IsExpired(now)) {
               entry = EntryType{std::in_place_type<Direction>,
-                                [&] -> std::shared_ptr<ConnectionMark> { return selector(key); }, now, keyExtra};
+                                [&] -> std::shared_ptr<ConnectionMark> { return selector.SelectConnectionMark(key); },
+                                now, keyExtra};
             } else {
               if (!entry.ConnectionEntryMark->Validate()) {
-                entry.ConnectionEntryMark = selector(key);
+                entry.ConnectionEntryMark = selector.SelectConnectionMark(key);
               }
               entry.LastActive = now;
               entry.template UpdateState<Direction>(keyExtra);
