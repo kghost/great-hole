@@ -21,6 +21,51 @@
 
 namespace gh::policy {
 
+namespace {
+
+void StopOrphanedSessions() {
+  constexpr unsigned kMaxSessionNameLen = 1024;
+  constexpr unsigned kMaxLogfilePathLen = 1024;
+  constexpr unsigned kPropertiesSize =
+      sizeof(EVENT_TRACE_PROPERTIES) + (kMaxSessionNameLen * sizeof(WCHAR)) + (kMaxLogfilePathLen * sizeof(WCHAR));
+
+  ULONG sessionCount = 64;
+  std::vector<EVENT_TRACE_PROPERTIES*> sessions;
+  std::vector<BYTE> buffer;
+  ULONG status = ERROR_SUCCESS;
+
+  do {
+    sessions.resize(sessionCount);
+    buffer.resize(kPropertiesSize * sessionCount);
+
+    for (size_t i = 0; i != sessions.size(); i += 1) {
+      sessions[i] = reinterpret_cast<EVENT_TRACE_PROPERTIES*>(&buffer[i * kPropertiesSize]);
+      sessions[i]->Wnode.BufferSize = kPropertiesSize;
+      sessions[i]->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
+      sessions[i]->LogFileNameOffset = sizeof(EVENT_TRACE_PROPERTIES) + (kMaxSessionNameLen * sizeof(WCHAR));
+    }
+
+    status = QueryAllTracesW(sessions.data(), sessionCount, &sessionCount);
+  } while (status == ERROR_MORE_DATA);
+
+  if (status == ERROR_SUCCESS) {
+    for (ULONG i = 0; i < sessionCount; i++) {
+      if (sessions[i]->LoggerNameOffset != 0) {
+        const auto* loggerName = reinterpret_cast<const wchar_t*>(reinterpret_cast<const char*>(sessions[i]) +
+                                                                  sessions[i]->LoggerNameOffset);
+        std::wstring name(loggerName);
+        if (name.starts_with(L"DesktopHoleProcessTrace_")) {
+          BOOST_LOG_TRIVIAL(info) << "ProcessTreeTracker: Stopping orphaned session: "
+                                  << gh::ToString(name).value_or("");
+          ControlTraceW(0, loggerName, sessions[i], EVENT_TRACE_CONTROL_STOP);
+        }
+      }
+    }
+  }
+}
+
+} // namespace
+
 ProcessTreeTracker::ProcessTreeTracker(boost::asio::any_io_executor executor,
                                        ProcessTreeTrackerDeferredCallback& callback, PolicyRegistry& registry)
     : _Executor(std::move(executor)), _Callback(callback), _Registry(registry) {}
@@ -31,6 +76,8 @@ auto ProcessTreeTracker::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   if (_Running) {
     co_return ErrorCode{};
   }
+
+  StopOrphanedSessions();
 
   _SessionName = std::format("DesktopHoleProcessTrace_{}", GetCurrentProcessId());
 
@@ -344,7 +391,7 @@ void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
     FILETIME CreateTime{};
     uint32_t ParentProcessId{};
     uint32_t SessionId{};
-    std::array<WCHAR, 0> ImageName;
+    WCHAR ImageName[0]; // NOLINT(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
   };
 
   struct ProcessStopEvent {
@@ -356,7 +403,7 @@ void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
     uint32_t HandleCount{};
     uint64_t CommitCharge{};
     uint64_t CommitPeak{};
-    std::array<char, 0> ImageName;
+    char ImageName[0]; // NOLINT(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
   };
 
   auto eventId = record->EventHeader.EventDescriptor.Id;
@@ -368,7 +415,8 @@ void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
       uint32_t pid = data->ProcessId;
       uint32_t parentPid = data->ParentProcessId;
       auto execPath =
-          ToString(std::wstring_view(data->ImageName.data(),
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+          ToString(std::wstring_view(data->ImageName,
                                      (record->UserDataLength - ProcessStartEventHeaderSize) / sizeof(WCHAR)))
               .value_or("");
       boost::asio::post(_Executor, [this, pid, parentPid, execPath]() -> void {
