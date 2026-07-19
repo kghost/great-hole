@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <variant>
 
@@ -41,6 +42,12 @@ protected:
     tracker.ClearAllMock();
     RunPending();
   }
+
+  auto HasPolicy(DWORD pid) const -> bool {
+    auto tree = tracker.GetProcessTree();
+    auto it = std::find_if(tree.begin(), tree.end(), [pid](const auto& info) { return info.ProcessId == pid; });
+    return it != tree.end() && it->Policy.has_value();
+  }
 };
 
 TEST_F(TestProcessTreeTracker, ProcessTreeInheritance) {
@@ -51,22 +58,22 @@ TEST_F(TestProcessTreeTracker, ProcessTreeInheritance) {
   reg.AddPathRule("C:\\VSCode\\code.exe", subtreeRule);
 
   tracker.AddProcess(1000, 0, "C:\\VSCode\\code.exe");
-  auto policy1000 = tracker.GetPolicy(1000);
-  ASSERT_TRUE(policy1000.has_value());
-  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(policy1000->Action));
-  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(policy1000->Action).Endpoint.lock(), session99);
+  auto action1000 = tracker.GetAction(1000);
+  ASSERT_TRUE(action1000.has_value());
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(action1000.value()));
+  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(action1000.value()).Endpoint.lock(), session99);
 
   tracker.AddProcess(1001, 1000, "C:\\Windows\\System32\\cmd.exe");
-  auto policy1001 = tracker.GetPolicy(1001);
-  ASSERT_TRUE(policy1001.has_value());
-  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(policy1001->Action));
-  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(policy1001->Action).Endpoint.lock(), session99);
+  auto action1001 = tracker.GetAction(1001);
+  ASSERT_TRUE(action1001.has_value());
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(action1001.value()));
+  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(action1001.value()).Endpoint.lock(), session99);
 
   tracker.AddProcess(1002, 1001, "C:\\Git\\bin\\git.exe");
-  auto policy1002 = tracker.GetPolicy(1002);
-  ASSERT_TRUE(policy1002.has_value());
-  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(policy1002->Action));
-  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(policy1002->Action).Endpoint.lock(), session99);
+  auto action1002 = tracker.GetAction(1002);
+  ASSERT_TRUE(action1002.has_value());
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(action1002.value()));
+  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(action1002.value()).Endpoint.lock(), session99);
 }
 
 TEST_F(TestProcessTreeTracker, ProcessTreeSingleProcessScopeNoInheritance) {
@@ -76,13 +83,12 @@ TEST_F(TestProcessTreeTracker, ProcessTreeSingleProcessScopeNoInheritance) {
   reg.AddPathRule("C:\\App\\app.exe", singleRule);
 
   tracker.AddProcess(2000, 0, "C:\\App\\app.exe");
-  auto policy2000 = tracker.GetPolicy(2000);
-  ASSERT_TRUE(policy2000.has_value());
-  EXPECT_TRUE(std::holds_alternative<PolicyRule::ByPassRoute>(policy2000->Action));
+  auto action2000 = tracker.GetAction(2000);
+  ASSERT_TRUE(action2000.has_value());
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::ByPassRoute>(action2000.value()));
 
   tracker.AddProcess(2001, 2000, "C:\\Windows\\System32\\cmd.exe");
-  auto policy2001 = tracker.GetPolicy(2001);
-  EXPECT_FALSE(policy2001.has_value());
+  EXPECT_FALSE(HasPolicy(2001));
 }
 
 TEST_F(TestProcessTreeTracker, SubtreeParentExitedButNewDescendantSpawns) {
@@ -97,19 +103,19 @@ TEST_F(TestProcessTreeTracker, SubtreeParentExitedButNewDescendantSpawns) {
 
   // 2. Parent spawns Child 1 (PID 4001)
   tracker.AddProcess(4001, 4000, "C:\\App\\child1.exe");
-  auto policy4001 = tracker.GetPolicy(4001);
-  ASSERT_TRUE(policy4001.has_value());
-  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(policy4001->Action));
+  auto action4001 = tracker.GetAction(4001);
+  ASSERT_TRUE(action4001.has_value());
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(action4001.value()));
 
   // 3. Parent exits (PID 4000 is removed)
   tracker.RemoveProcess(4000);
 
   // 4. Child 1 spawns Child 2 (PID 4002) after parent exited
   tracker.AddProcess(4002, 4001, "C:\\App\\child2.exe");
-  auto policy4002 = tracker.GetPolicy(4002);
-  ASSERT_TRUE(policy4002.has_value());
-  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(policy4002->Action));
-  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(policy4002->Action).Endpoint.lock(), session42);
+  auto action4002 = tracker.GetAction(4002);
+  ASSERT_TRUE(action4002.has_value());
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(action4002.value()));
+  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(action4002.value()).Endpoint.lock(), session42);
 }
 
 TEST_F(TestProcessTreeTracker, ProcessTreePolicyCascading) {
@@ -118,9 +124,9 @@ TEST_F(TestProcessTreeTracker, ProcessTreePolicyCascading) {
   tracker.AddProcess(1001, 1000, "C:\\App\\child.exe");
   tracker.AddProcess(1002, 1001, "C:\\App\\grandchild.exe");
 
-  EXPECT_FALSE(tracker.GetPolicy(1000).has_value());
-  EXPECT_FALSE(tracker.GetPolicy(1001).has_value());
-  EXPECT_FALSE(tracker.GetPolicy(1002).has_value());
+  EXPECT_FALSE(HasPolicy(1000));
+  EXPECT_FALSE(HasPolicy(1001));
+  EXPECT_FALSE(HasPolicy(1002));
 
   // 2. Register subtree policy on parent A
   auto session88 = std::make_shared<VpnClientMultiChannelSession>();
@@ -129,21 +135,21 @@ TEST_F(TestProcessTreeTracker, ProcessTreePolicyCascading) {
   RunPending();
 
   // Verify all inherited the policy because of cascading
-  auto policyA = tracker.GetPolicy(1000);
-  auto policyB = tracker.GetPolicy(1001);
-  auto policyC = tracker.GetPolicy(1002);
+  auto actionA = tracker.GetAction(1000);
+  auto actionB = tracker.GetAction(1001);
+  auto actionC = tracker.GetAction(1002);
 
-  ASSERT_TRUE(policyA.has_value());
-  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(policyA->Action));
-  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(policyA->Action).Endpoint.lock(), session88);
+  ASSERT_TRUE(actionA.has_value());
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(actionA.value()));
+  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(actionA.value()).Endpoint.lock(), session88);
 
-  ASSERT_TRUE(policyB.has_value());
-  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(policyB->Action));
-  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(policyB->Action).Endpoint.lock(), session88);
+  ASSERT_TRUE(actionB.has_value());
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(actionB.value()));
+  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(actionB.value()).Endpoint.lock(), session88);
 
-  ASSERT_TRUE(policyC.has_value());
-  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(policyC->Action));
-  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(policyC->Action).Endpoint.lock(), session88);
+  ASSERT_TRUE(actionC.has_value());
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(actionC.value()));
+  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(actionC.value()).Endpoint.lock(), session88);
 }
 
 TEST_F(TestProcessTreeTracker, ProcessTreeReparentingOnExit) {
@@ -166,8 +172,7 @@ TEST_F(TestProcessTreeTracker, ProcessTreeReparentingOnExit) {
   tracker.TestReEvaluatePolicy(5002);
 
   // Verify Child C is unaffected by the new process reusing PID 5001 (reparented to 0)
-  auto policyC = tracker.GetPolicy(5002);
-  EXPECT_FALSE(policyC.has_value());
+  EXPECT_FALSE(HasPolicy(5002));
 }
 
 TEST_F(TestProcessTreeTracker, ExposeProcessTree) {

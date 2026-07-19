@@ -182,10 +182,10 @@ TEST_F(TestPolicySelector, OutOfOrder_F_P_Pr) {
 
     // 3. Process starts/policy resolved (simulated event)
     selector.GetProcessTreeTracker().AddProcess(pid, 0, "C:\\App\\bypass.exe");
-    auto policy = selector.GetProcessTreeTracker().GetPolicy(pid);
-    EXPECT_TRUE(policy.has_value());
-    if (policy.has_value() && vpnMark != nullptr) {
-      co_await selector.ProcessTreeTrackerContinue(vpnMark, policy->Action);
+    auto action = selector.GetProcessTreeTracker().GetAction(pid);
+    EXPECT_TRUE(action.has_value());
+    if (action.has_value() && vpnMark != nullptr) {
+      co_await selector.ProcessTreeTrackerContinue(vpnMark, action.value());
     }
 
     // Verification: mark should now be Bypass and the packet should be injected
@@ -330,10 +330,10 @@ TEST_F(TestPolicySelector, OutOfOrder_P_F_Pr) {
 
     // 3. Process starts/policy resolved (simulated event)
     selector.GetProcessTreeTracker().AddProcess(pid, 0, "C:\\App\\bypass.exe");
-    auto policy = selector.GetProcessTreeTracker().GetPolicy(pid);
-    EXPECT_TRUE(policy.has_value());
-    if (policy.has_value() && vpnMark != nullptr) {
-      co_await selector.ProcessTreeTrackerContinue(vpnMark, policy->Action);
+    auto action = selector.GetProcessTreeTracker().GetAction(pid);
+    EXPECT_TRUE(action.has_value());
+    if (action.has_value() && vpnMark != nullptr) {
+      co_await selector.ProcessTreeTrackerContinue(vpnMark, action.value());
     }
 
     // Verification: mark should now be Bypass and the packet should be injected

@@ -194,7 +194,7 @@ public:
     auto RegisterPidPolicy(DWORD pid, const PolicyRule& rule) -> bool;
     auto AddProcess(DWORD pid, DWORD parentPid, const std::string& path) -> const ProcessNode&;
     void RemoveProcess(DWORD pid);
-    auto GetPolicy(DWORD pid) const -> std::optional<PolicyRule>;
+    auto GetAction(DWORD pid) const -> std::optional<PolicyRule::RoutingAction>;
     void AddPendingMark(DWORD pid, const std::shared_ptr<VpnClientMultiChannel::Mark>& mark);
 
 private:

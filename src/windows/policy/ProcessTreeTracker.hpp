@@ -62,7 +62,7 @@ public:
   auto AddProcess(DWORD pid, DWORD parentPid, const std::string& path) -> const ProcessNode&;
   void RemoveProcess(DWORD pid);
   void ClearAllMock();
-  [[nodiscard]] auto GetPolicy(DWORD pid) const -> std::optional<PolicyRule>;
+  [[nodiscard]] auto GetAction(DWORD pid) const -> std::optional<PolicyRule::RoutingAction>;
   [[nodiscard]] auto GetProcessTree() const -> std::vector<Interface::ProcessInfo>;
   void TestReEvaluatePolicy(DWORD pid);
 

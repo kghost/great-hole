@@ -26,14 +26,14 @@ auto PolicySelector::SelectConnectionMark(const ConnectionTracker::ConnectionKey
 auto PolicySelector::ResolvePolicy(const ConnectionTracker::ConnectionKey& key) -> std::shared_ptr<ConnectionMark> {
   auto pid = _FlowTracker.GetPidForConnection(key);
   if (pid.has_value()) {
-    auto policy = _TreeTracker->GetPolicy(pid.value());
-    if (policy.has_value()) {
+    auto action = _TreeTracker->GetAction(pid.value());
+    if (action.has_value()) {
       BOOST_LOG_TRIVIAL(trace) << "ResolvePolicy: key=" << key << " pid=" << pid.value()
-                               << " resolved to policy=" << PolicyRuleToString(policy.value());
-      return ToConnectionMark(policy.value().Action);
+                               << " resolved to action=" << PolicyActionToString(action.value());
+      return ToConnectionMark(action.value());
     } else {
       BOOST_LOG_TRIVIAL(trace) << "ResolvePolicy: key=" << key << " pid=" << pid.value()
-                               << " - no policy found, deferring";
+                               << " - no action found, deferring";
       auto mark = std::make_shared<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Deferred{});
       _TreeTracker->AddPendingMark(pid.value(), mark);
       return mark;
@@ -49,13 +49,13 @@ auto PolicySelector::ResolvePolicy(const ConnectionTracker::ConnectionKey& key) 
 auto PolicySelector::FlowTrackerContinue(const std::shared_ptr<VpnClientMultiChannel::Mark>& mark, DWORD pid)
     -> Omni::Fiber::Coroutine<void> {
   assert(std::holds_alternative<VpnClientMultiChannel::Mark::Deferred>(mark->GetValue()));
-  auto policy = _TreeTracker->GetPolicy(pid);
-  if (policy.has_value()) {
+  auto action = _TreeTracker->GetAction(pid);
+  if (action.has_value()) {
     BOOST_LOG_TRIVIAL(trace) << "FlowTrackerContinue: pid=" << pid
-                             << " - policy found, continuing to ProcessTreeTrackerContinue";
-    co_await ProcessTreeTrackerContinue(mark, policy.value().Action);
+                             << " - action found, continuing to ProcessTreeTrackerContinue";
+    co_await ProcessTreeTrackerContinue(mark, action.value());
   } else {
-    BOOST_LOG_TRIVIAL(trace) << "FlowTrackerContinue: pid=" << pid << " - no policy found, adding pending mark";
+    BOOST_LOG_TRIVIAL(trace) << "FlowTrackerContinue: pid=" << pid << " - no action found, adding pending mark";
     _TreeTracker->AddPendingMark(pid, mark);
   }
   co_return;

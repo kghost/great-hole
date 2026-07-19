@@ -274,10 +274,15 @@ void ProcessTreeTracker::AddPendingMark(DWORD pid, const std::shared_ptr<VpnClie
   _PendingProcessMarks.try_emplace(pid, mark);
 }
 
-auto ProcessTreeTracker::GetPolicy(DWORD pid) const -> std::optional<PolicyRule> {
+auto ProcessTreeTracker::GetAction(DWORD pid) const -> std::optional<PolicyRule::RoutingAction> {
   auto iterator = _ProcessMap.find(pid);
   if (iterator != _ProcessMap.end()) {
-    return iterator->second.Policy;
+    const auto& policy = iterator->second.Policy;
+    if (policy.has_value()) {
+      return policy.value().Action;
+    } else {
+      return _Registry.GetDefaultAction();
+    }
   }
   return std::nullopt;
 }

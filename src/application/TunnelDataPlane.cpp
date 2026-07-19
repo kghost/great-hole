@@ -144,7 +144,7 @@ auto TunnelDataPlane::WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& ad
   if (addr.Loopback || !addr.Outbound) {
     return WinDivertRouteCallback::Result::Normal;
   }
-  auto result = _ConnectionTracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(packet, _Selector);
+  auto result = _ConnectionTracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(packet, _Selector);
   if (result.has_value()) {
     auto mark = std::dynamic_pointer_cast<VpnClientMultiChannel::Mark>(result.value());
     packet.SetMark(mark);
