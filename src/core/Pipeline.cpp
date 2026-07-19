@@ -2,8 +2,6 @@
 
 #include <memory>
 
-#include "PipielineUsageCounter.hpp"
-
 #include <boost/asio/buffer.hpp>
 #include <boost/log/trivial.hpp>
 
@@ -11,6 +9,7 @@
 #include "ErrorCode.hpp"
 #include "Filter.hpp"
 #include "GetCurrentOmniFiber.hpp"
+#include "PipielineUsageCounter.hpp"
 
 namespace gh {
 
@@ -33,14 +32,14 @@ auto Pipeline::Start() -> Omni::Fiber::Coroutine<ErrorCode> {
   co_return ErrorCode{};
 }
 
-auto Pipeline::RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoint> out, Pipeline::Direction direction)
-    -> Omni::Fiber::Coroutine<void> {
+auto Pipeline::RunDirection(std::shared_ptr<Endpoint> input, std::shared_ptr<Endpoint> output,
+                            Pipeline::Direction direction) -> Omni::Fiber::Coroutine<void> {
   BOOST_LOG_TRIVIAL(info) << std::format("{} direction started", GetNameWithDirection(direction));
   struct ActivePipelineGuard {
     PipielineUsageCounter& In;
     PipielineUsageCounter& Out;
-    ActivePipelineGuard(Endpoint& in, Endpoint& out)
-        : In(in.GetPipielineUsageCounter()), Out(out.GetPipielineUsageCounter()) {
+    ActivePipelineGuard(Endpoint& input, Endpoint& output)
+        : In(input.GetPipielineUsageCounter()), Out(output.GetPipielineUsageCounter()) {
       In.AddPipeline();
       Out.AddPipeline();
     }
@@ -48,11 +47,11 @@ auto Pipeline::RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoi
       In.RemovePipeline();
       Out.RemovePipeline();
     }
-  } guard(*in, *out);
+  } guard(*input, *output);
 
   while (!_Stop.IsTriggered()) {
     Packet p;
-    auto errRead = co_await in->Read(p, _Stop);
+    auto errRead = co_await input->Read(p, _Stop);
     if (errRead) {
       if (errRead == Error(AppErrorCategory::kOperationAborted)) {
         BOOST_LOG_TRIVIAL(info) << std::format("{} read cancelled detected", GetNameWithDirection(direction));
@@ -86,7 +85,7 @@ auto Pipeline::RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoi
         }
       }
     }
-    auto errWrite = co_await out->Write(p, _Stop);
+    auto errWrite = co_await output->Write(p, _Stop);
     if (errWrite) {
       if (errWrite == Error(AppErrorCategory::kOperationAborted)) {
         BOOST_LOG_TRIVIAL(info) << std::format("{} write cancelled detected", GetNameWithDirection(direction));
@@ -125,23 +124,24 @@ auto Pipeline::Stop() -> Omni::Fiber::Coroutine<ErrorCode> {
   co_return ErrorCode{};
 }
 
-auto Pipeline::IsCritical(const ErrorCode& ec) -> bool {
-  if (!ec) {
+auto Pipeline::IsCritical(const ErrorCode& err) -> bool {
+  if (!err || err.category() == AppMinorErrorCategory::kErrorCategory) {
     return false;
-  } else if (ec.category() == boost::system::system_category()) {
-    switch (ec.value()) {
+  } else if (err.category() == boost::system::system_category()) {
+    switch (err.value()) {
     case boost::system::errc::invalid_argument:
     case boost::system::errc::io_error:
     case boost::system::errc::connection_refused:
     case boost::system::errc::network_unreachable:
     case boost::system::errc::host_unreachable:
     case boost::system::errc::operation_canceled:
+#ifdef WIN32
+    case ERROR_OPERATION_ABORTED:
+#endif
       return false;
     default:
       return true;
     }
-  } else if (ec.category() == AppMinorErrorCategory::kErrorCategory) {
-    return false;
   } else {
     return true;
   }

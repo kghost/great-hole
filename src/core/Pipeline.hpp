@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -17,7 +18,7 @@ using TrafficStats = Interface::TrafficStats;
 
 class Pipeline : public std::enable_shared_from_this<Pipeline>, public Service {
 public:
-  enum class Direction {
+  enum class Direction : uint8_t {
     Forward,
     Backward,
   };
@@ -26,6 +27,11 @@ public:
            std::shared_ptr<Endpoint> ep2);
   ~Pipeline() override {}
 
+  Pipeline(const Pipeline&) = delete;
+  auto operator=(const Pipeline&) -> Pipeline& = delete;
+  Pipeline(Pipeline&&) = delete;
+  auto operator=(Pipeline&&) -> Pipeline& = delete;
+
   auto GetName() -> std::string { return std::format("Pipeline[{}:{}]", _Ep1->GetName(), _Ep2->GetName()); }
   auto Start() -> Omni::Fiber::Coroutine<ErrorCode> override;
   auto Stop() -> Omni::Fiber::Coroutine<ErrorCode> override;
@@ -33,8 +39,8 @@ public:
   auto GetTrafficStats() const -> TrafficStats { return _TrafficStats; }
 
 private:
-  auto IsCritical(const ErrorCode& ec) -> bool;
-  auto RunDirection(std::shared_ptr<Endpoint> in, std::shared_ptr<Endpoint> out, Direction direction)
+  auto IsCritical(const ErrorCode& err) -> bool;
+  auto RunDirection(std::shared_ptr<Endpoint> input, std::shared_ptr<Endpoint> output, Direction direction)
       -> Omni::Fiber::Coroutine<void>;
   auto GetNameWithDirection(Direction direction) -> std::string {
     if (direction == Direction::Forward) {
