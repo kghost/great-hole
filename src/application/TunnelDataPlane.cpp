@@ -118,25 +118,16 @@ auto TunnelDataPlane::Stop() -> Omni::Fiber::Coroutine<ErrorCode> {
 }
 
 auto TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address)
-    -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannelSession>> {
+    -> Omni::Fiber::Coroutine<std::weak_ptr<VpnClientMultiChannelSession>> {
   auto session = co_await _Client->RegisterChannel(psk, address);
-  _Endpoints.insert(session);
   co_return session;
 }
 
-auto TunnelDataPlane::RemoveEndpoint(std::shared_ptr<VpnClientMultiChannelSession> session)
+auto TunnelDataPlane::RemoveEndpoint(std::weak_ptr<VpnClientMultiChannelSession> session)
     -> Omni::Fiber::Coroutine<void> {
-  _Endpoints.erase(session);
-  co_await _Client->UnregisterChannel(session);
-}
-
-auto TunnelDataPlane::FindSessionByHandle(VpnClientMultiChannelSession* session)
-    -> std::shared_ptr<VpnClientMultiChannelSession> {
-  auto iterator = _Endpoints.find(session);
-  if (iterator != _Endpoints.end()) {
-    return *iterator;
+  if (auto sharedSession = session.lock()) {
+    co_await _Client->UnregisterChannel(sharedSession);
   }
-  return nullptr;
 }
 
 #ifdef _WIN32
@@ -179,23 +170,23 @@ auto TunnelDataPlane::GetTrafficStats(const std::shared_ptr<VpnClientMultiChanne
   return VpnClientMultiChannel::GetStats(session);
 }
 
-void TunnelDataPlane::OnSessionStarting(const std::shared_ptr<VpnClientMultiChannelSession>& session) {
+void TunnelDataPlane::OnSessionStarting(const std::weak_ptr<VpnClientMultiChannelSession>& session) {
   _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Starting, "");
 }
 
-void TunnelDataPlane::OnSessionRunning(const std::shared_ptr<VpnClientMultiChannelSession>& session) {
+void TunnelDataPlane::OnSessionRunning(const std::weak_ptr<VpnClientMultiChannelSession>& session) {
   _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Running, "");
 }
 
-void TunnelDataPlane::OnSessionStopping(const std::shared_ptr<VpnClientMultiChannelSession>& session) {
+void TunnelDataPlane::OnSessionStopping(const std::weak_ptr<VpnClientMultiChannelSession>& session) {
   _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Stopping, "");
 }
 
-void TunnelDataPlane::OnSessionStopped(const std::shared_ptr<VpnClientMultiChannelSession>& session) {
+void TunnelDataPlane::OnSessionStopped(const std::weak_ptr<VpnClientMultiChannelSession>& session) {
   _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Stopped, "");
 }
 
-void TunnelDataPlane::OnSessionFailed(const std::shared_ptr<VpnClientMultiChannelSession>& session,
+void TunnelDataPlane::OnSessionFailed(const std::weak_ptr<VpnClientMultiChannelSession>& session,
                                       const std::string& error) {
   _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Failed, error);
 }

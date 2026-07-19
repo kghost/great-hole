@@ -2,7 +2,6 @@
 
 #include <memory>
 #include <optional>
-#include <set>
 #include <string>
 #include <vector>
 
@@ -13,7 +12,6 @@
 #include "EndpointUdpDynMux.hpp"
 #include "ErrorCode.hpp"
 #include "Interface.hpp"
-#include "Utils/Comparator.hpp"
 #include "VpnClientMultiChannel.hpp"
 
 #ifdef _WIN32
@@ -36,11 +34,11 @@ public:
                   DataPlaneCallbacks& callbacks);
   ~TunnelDataPlane();
 
-  void OnSessionStarting(const std::shared_ptr<VpnClientMultiChannelSession>& session) override;
-  void OnSessionRunning(const std::shared_ptr<VpnClientMultiChannelSession>& session) override;
-  void OnSessionStopping(const std::shared_ptr<VpnClientMultiChannelSession>& session) override;
-  void OnSessionStopped(const std::shared_ptr<VpnClientMultiChannelSession>& session) override;
-  void OnSessionFailed(const std::shared_ptr<VpnClientMultiChannelSession>& session, const std::string& error) override;
+  void OnSessionStarting(const std::weak_ptr<VpnClientMultiChannelSession>& session) override;
+  void OnSessionRunning(const std::weak_ptr<VpnClientMultiChannelSession>& session) override;
+  void OnSessionStopping(const std::weak_ptr<VpnClientMultiChannelSession>& session) override;
+  void OnSessionStopped(const std::weak_ptr<VpnClientMultiChannelSession>& session) override;
+  void OnSessionFailed(const std::weak_ptr<VpnClientMultiChannelSession>& session, const std::string& error) override;
 
   TunnelDataPlane(const TunnelDataPlane&) = delete;
   auto operator=(const TunnelDataPlane&) -> TunnelDataPlane& = delete;
@@ -57,11 +55,8 @@ public:
 #endif
   auto Stop() -> Omni::Fiber::Coroutine<ErrorCode>;
   auto AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address)
-      -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannelSession>>;
-  auto RemoveEndpoint(std::shared_ptr<VpnClientMultiChannelSession> session) -> Omni::Fiber::Coroutine<void>;
-
-  // TODO: remove this function
-  auto FindSessionByHandle(VpnClientMultiChannelSession* session) -> std::shared_ptr<VpnClientMultiChannelSession>;
+      -> Omni::Fiber::Coroutine<std::weak_ptr<VpnClientMultiChannelSession>>;
+  auto RemoveEndpoint(std::weak_ptr<VpnClientMultiChannelSession> session) -> Omni::Fiber::Coroutine<void>;
 
   static auto GetTrafficStats(const std::shared_ptr<VpnClientMultiChannelSession>& session)
       -> std::optional<VpnTrafficStats>;
@@ -74,10 +69,7 @@ private:
   std::shared_ptr<ConnectionTracker> _ConnectionTracker;
   std::shared_ptr<WinDivert> _WinDivert;
 #endif
-
   std::shared_ptr<VpnClientMultiChannel> _Client;
-
-  std::set<std::shared_ptr<VpnClientMultiChannelSession>, SharedPtrCompare> _Endpoints;
   bool _Running = false;
 };
 

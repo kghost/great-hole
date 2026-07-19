@@ -392,11 +392,16 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
 
     // Register channel on server side first so it can receive client initiates
     auto session = (co_await connTrack->RegisterChannel(psk, ""));
-    EXPECT_NE(session->Channel, nullptr);
-    if (session->Channel == nullptr) {
+    auto sharedSession = session.lock();
+    EXPECT_NE(sharedSession, nullptr);
+    if (sharedSession == nullptr) {
       co_return;
     }
-    resolvedSession = session;
+    EXPECT_NE(sharedSession->Channel, nullptr);
+    if (sharedSession->Channel == nullptr) {
+      co_return;
+    }
+    resolvedSession = sharedSession;
 
     // Connect client to server
     auto resolver = std::make_shared<ResolverStaticEndpoint>(udpServer->LocalEndpoint());
@@ -541,9 +546,16 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
 
     // Register channel
     auto session = co_await connTrack->RegisterChannel(psk, "");
-    EXPECT_NE(session, nullptr);
-    EXPECT_NE(session->Channel, nullptr);
-    resolvedSession = session;
+    auto sharedSession = session.lock();
+    EXPECT_NE(sharedSession, nullptr);
+    if (sharedSession == nullptr) {
+      co_return;
+    }
+    EXPECT_NE(sharedSession->Channel, nullptr);
+    if (sharedSession->Channel == nullptr) {
+      co_return;
+    }
+    resolvedSession = sharedSession;
 
     // Connect client to server
     auto resolver = std::make_shared<ResolverStaticEndpoint>(udpServer->LocalEndpoint());
@@ -712,9 +724,16 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
 
     // Before session channel is established/registered, stats should be nullopt
     auto session = co_await connTrack->RegisterChannel(psk, "");
-    EXPECT_NE(session, nullptr);
-    EXPECT_NE(session->Channel, nullptr);
-    resolvedSession = session;
+    auto sharedSession = session.lock();
+    EXPECT_NE(sharedSession, nullptr);
+    if (sharedSession == nullptr) {
+      co_return;
+    }
+    EXPECT_NE(sharedSession->Channel, nullptr);
+    if (sharedSession->Channel == nullptr) {
+      co_return;
+    }
+    resolvedSession = sharedSession;
 
     auto initialStats = connTrack->GetStats(session);
     EXPECT_FALSE(initialStats.has_value());

@@ -194,7 +194,7 @@ auto PlatformImpl::StopEngine() -> std::error_code {
 }
 
 auto PlatformImpl::AddEndpoint(const std::array<uint8_t, 16>& psk, const std::string& address) -> VpnEndpoint {
-  std::promise<std::shared_ptr<gh::VpnClientMultiChannelSession>> promise;
+  std::promise<std::weak_ptr<gh::VpnClientMultiChannelSession>> promise;
   auto future = promise.get_future();
 
   _TaskQueue.Push(

@@ -31,7 +31,7 @@ namespace gh {
 
 class SessionSelector : public ConnectionTracker::Selector {
 public:
-  explicit SessionSelector(std::shared_ptr<VpnClientMultiChannelSession> session) : _Session(std::move(session)) {}
+  explicit SessionSelector(std::weak_ptr<VpnClientMultiChannelSession> session) : _Session(std::move(session)) {}
   ~SessionSelector() override = default;
 
   SessionSelector(const SessionSelector&) = delete;
@@ -45,7 +45,7 @@ public:
   }
 
 private:
-  std::shared_ptr<VpnClientMultiChannelSession> _Session;
+  std::weak_ptr<VpnClientMultiChannelSession> _Session;
 };
 
 auto VpnClientMultiChannel::Mark::GetDescription() const -> std::string {
@@ -137,7 +137,7 @@ class VpnClientMultiChannel::TunSideEndpoint : public Endpoint {
 public:
   struct QueueEntry {
     Packet PacketData;
-    std::shared_ptr<VpnClientMultiChannelSession> PacketSession;
+    std::weak_ptr<VpnClientMultiChannelSession> PacketSession;
   };
 
   explicit TunSideEndpoint(VpnClientMultiChannel& parent, ConnectionTracker& tracker,
@@ -154,7 +154,7 @@ public:
     return std::format("VpnClientMultiChannel:TunSide:{}", _Parent.GetName());
   }
 
-  auto PushIncoming(Packet packet, std::shared_ptr<VpnClientMultiChannelSession> session)
+  auto PushIncoming(Packet packet, std::weak_ptr<VpnClientMultiChannelSession> session)
       -> Omni::Fiber::Coroutine<std::expected<void, Omni::Fiber::PipeClosed>> {
     co_return co_await _Pipe.GetProducer().Put(QueueEntry{.PacketData = std::move(packet), .PacketSession = session});
   }
@@ -391,7 +391,7 @@ auto VpnClientMultiChannel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode
 }
 
 auto VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, const std::string& address)
-    -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannelSession>> {
+    -> Omni::Fiber::Coroutine<std::weak_ptr<VpnClientMultiChannelSession>> {
   auto [iterator, inserted] = _Sessions.emplace(psk, nullptr);
   if (inserted) {
     iterator->second = std::make_shared<VpnClientMultiChannelSession>();
@@ -410,18 +410,20 @@ auto VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, const
   co_return iterator->second;
 }
 
-auto VpnClientMultiChannel::UnregisterChannel(std::shared_ptr<VpnClientMultiChannelSession> session)
+auto VpnClientMultiChannel::UnregisterChannel(std::weak_ptr<VpnClientMultiChannelSession> session)
     -> Omni::Fiber::Coroutine<void> {
-  _StateListener.get().OnSessionStopping(session);
-  session->Running = false;
-  if (session->Channel) {
-    auto psk = session->Channel->GetPsk();
-    co_await _UdpDynMux->RemoveChannel(psk);
-    _StateListener.get().OnSessionStopped(session);
-    _Sessions.erase(psk);
-  } else {
-    _StateListener.get().OnSessionStopped(session);
-    std::erase_if(_Sessions, [&](const auto& pair) -> auto { return pair.second == session; });
+  if (auto sharedSession = session.lock(); sharedSession) {
+    _StateListener.get().OnSessionStopping(sharedSession);
+    sharedSession->Running = false;
+    if (sharedSession->Channel) {
+      auto psk = sharedSession->Channel->GetPsk();
+      co_await _UdpDynMux->RemoveChannel(psk);
+      _StateListener.get().OnSessionStopped(sharedSession);
+      _Sessions.erase(psk);
+    } else {
+      _StateListener.get().OnSessionStopped(sharedSession);
+      std::erase_if(_Sessions, [&](const auto& pair) -> auto { return pair.second == sharedSession; });
+    }
   }
 }
 
@@ -545,14 +547,16 @@ auto VpnClientMultiChannel::MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni
   }
 }
 
-auto VpnClientMultiChannel::GetStats(const std::shared_ptr<VpnClientMultiChannelSession>& session)
+auto VpnClientMultiChannel::GetStats(const std::weak_ptr<VpnClientMultiChannelSession>& session)
     -> std::optional<VpnTrafficStats> {
-  if (session->SessionPipeline) {
-    int64_t rttMs = -1;
-    if (session->Channel) {
-      rttMs = session->Channel->GetRoundTripTime().count();
+  if (auto sharedSession = session.lock(); sharedSession) {
+    if (sharedSession->SessionPipeline) {
+      int64_t rttMs = -1;
+      if (sharedSession->Channel) {
+        rttMs = sharedSession->Channel->GetRoundTripTime().count();
+      }
+      return VpnTrafficStats{sharedSession->SessionPipeline->GetTrafficStats(), rttMs};
     }
-    return VpnTrafficStats{session->SessionPipeline->GetTrafficStats(), rttMs};
   }
   return std::nullopt;
 }

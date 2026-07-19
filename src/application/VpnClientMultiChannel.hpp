@@ -48,7 +48,7 @@ public:
     explicit Mark(Bypass /*unused*/) : _Value(Bypass{}) {}
     explicit Mark(Discard /*unused*/) : _Value(Discard{}) {}
     explicit Mark(Deferred deferred) : _Value(std::move(deferred)) {}
-    explicit Mark(std::shared_ptr<VpnClientMultiChannelSession> session) : _Value(std::move(session)) {}
+    explicit Mark(std::weak_ptr<VpnClientMultiChannelSession> session) : _Value(std::move(session)) {}
     ~Mark() override = default;
 
     Mark(const Mark&) = delete;
@@ -75,11 +75,11 @@ public:
     SessionStateListener(SessionStateListener&&) = delete;
     auto operator=(SessionStateListener&&) -> SessionStateListener& = delete;
 
-    virtual void OnSessionStarting(const std::shared_ptr<VpnClientMultiChannelSession>& session) = 0;
-    virtual void OnSessionRunning(const std::shared_ptr<VpnClientMultiChannelSession>& session) = 0;
-    virtual void OnSessionStopping(const std::shared_ptr<VpnClientMultiChannelSession>& session) = 0;
-    virtual void OnSessionStopped(const std::shared_ptr<VpnClientMultiChannelSession>& session) = 0;
-    virtual void OnSessionFailed(const std::shared_ptr<VpnClientMultiChannelSession>& session,
+    virtual void OnSessionStarting(const std::weak_ptr<VpnClientMultiChannelSession>& session) = 0;
+    virtual void OnSessionRunning(const std::weak_ptr<VpnClientMultiChannelSession>& session) = 0;
+    virtual void OnSessionStopping(const std::weak_ptr<VpnClientMultiChannelSession>& session) = 0;
+    virtual void OnSessionStopped(const std::weak_ptr<VpnClientMultiChannelSession>& session) = 0;
+    virtual void OnSessionFailed(const std::weak_ptr<VpnClientMultiChannelSession>& session,
                                  const std::string& error) = 0;
   };
 
@@ -93,11 +93,11 @@ public:
     NoopSessionStateListener(NoopSessionStateListener&&) = delete;
     auto operator=(NoopSessionStateListener&&) -> NoopSessionStateListener& = delete;
 
-    void OnSessionStarting(const std::shared_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
-    void OnSessionRunning(const std::shared_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
-    void OnSessionStopping(const std::shared_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
-    void OnSessionStopped(const std::shared_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
-    void OnSessionFailed(const std::shared_ptr<VpnClientMultiChannelSession>& /*session*/,
+    void OnSessionStarting(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
+    void OnSessionRunning(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
+    void OnSessionStopping(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
+    void OnSessionStopped(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
+    void OnSessionFailed(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/,
                          const std::string& /*error*/) override {}
   };
   static NoopSessionStateListener _NoopSessionStateListener;
@@ -116,11 +116,11 @@ public:
   auto GetName() const -> std::string override;
 
   auto RegisterChannel(const UdpDynMux::PskType& psk, const std::string& address)
-      -> Omni::Fiber::Coroutine<std::shared_ptr<VpnClientMultiChannelSession>>;
-  auto UnregisterChannel(std::shared_ptr<VpnClientMultiChannelSession> session) -> Omni::Fiber::Coroutine<void>;
+      -> Omni::Fiber::Coroutine<std::weak_ptr<VpnClientMultiChannelSession>>;
+  auto UnregisterChannel(std::weak_ptr<VpnClientMultiChannelSession> session) -> Omni::Fiber::Coroutine<void>;
   auto MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni::Fiber::Coroutine<ErrorCode>;
 
-  static auto GetStats(const std::shared_ptr<VpnClientMultiChannelSession>& session) -> std::optional<VpnTrafficStats>;
+  static auto GetStats(const std::weak_ptr<VpnClientMultiChannelSession>& session) -> std::optional<VpnTrafficStats>;
 
   auto OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override;
   auto OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override;
