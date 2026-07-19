@@ -15,7 +15,7 @@
 #include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
 #include "ErrorCode.hpp"
-#include "EventQueue.hpp"
+#include "ExternalQueue.hpp"
 #include "Fiber.hpp"
 #include "Manager.hpp"
 #include "PolicyEngine.hpp"
@@ -59,20 +59,22 @@ private:
                                                                 const std::unique_ptr<gh::TunnelDataPlane>&)>;
 
   DataPlaneCallbacks& _Callbacks;
+  boost::asio::io_context _IoContext;
   std::thread _AsioThread;
-  // TODO: EventQueue is not thread-safe
-  Omni::Fiber::EventQueue<BridgeTask> _TaskQueue;
+  Omni::Fiber::ExternalQueue<BridgeTask> _TaskQueue;
   std::atomic<bool> _Stop = false;
 };
 
-PlatformImpl::PlatformImpl(DataPlaneCallbacks& callbacks) : _Callbacks(callbacks) {}
+PlatformImpl::PlatformImpl(DataPlaneCallbacks& callbacks)
+    : _Callbacks(callbacks), _TaskQueue(_IoContext.get_executor()) {}
 PlatformImpl::~PlatformImpl() {}
 
 auto PlatformImpl::StartEngine() -> std::error_code {
   _Stop.store(false);
+  _IoContext.restart();
+
   _AsioThread = std::thread([this]() -> void {
-    boost::asio::io_context ioContext;
-    auto ioExecutor = ioContext.get_executor();
+    auto ioExecutor = _IoContext.get_executor();
     Omni::Fiber::AsioExecutor executor(ioExecutor);
     Omni::Fiber::Manager manager(executor);
 
@@ -95,7 +97,7 @@ auto PlatformImpl::StartEngine() -> std::error_code {
       co_return;
     });
 
-    ioContext.run();
+    _IoContext.run();
   });
 
   std::promise<ErrorCode> promise;

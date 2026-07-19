@@ -68,7 +68,7 @@ void StopOrphanedSessions() {
 
 ProcessTreeTracker::ProcessTreeTracker(boost::asio::any_io_executor executor,
                                        ProcessTreeTrackerDeferredCallback& callback, PolicyRegistry& registry)
-    : _Executor(std::move(executor)), _Callback(callback), _Registry(registry) {}
+    : _Executor(std::move(executor)), _TaskQueue(_Executor), _Callback(callback), _Registry(registry) {}
 
 ProcessTreeTracker::~ProcessTreeTracker() { assert(!_Running); }
 
@@ -432,15 +432,13 @@ void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
           ToString(std::wstring_view(data->ImageName,
                                      (record->UserDataLength - ProcessStartEventHeaderSize) / sizeof(WCHAR)))
               .value_or("");
-      boost::asio::post(_Executor, [this, pid, parentPid, execPath]() -> void {
-        _TaskQueue.Push([this, pid, parentPid, execPath]() -> Omni::Fiber::Coroutine<void> {
-          const auto& node = AddProcess(pid, parentPid, execPath);
-          if (auto pending = _PendingProcessMarks.find(pid); pending != _PendingProcessMarks.end()) {
-            const auto policy = node.Policy;
-            auto action = policy.has_value() ? policy.value().Action : _Registry.GetDefaultAction();
-            co_await _Callback.ProcessTreeTrackerContinue(pending->second, action);
-          }
-        });
+      _TaskQueue.Push([this, pid, parentPid, execPath]() -> Omni::Fiber::Coroutine<void> {
+        const auto& node = AddProcess(pid, parentPid, execPath);
+        if (auto pending = _PendingProcessMarks.find(pid); pending != _PendingProcessMarks.end()) {
+          const auto policy = node.Policy;
+          auto action = policy.has_value() ? policy.value().Action : _Registry.GetDefaultAction();
+          co_await _Callback.ProcessTreeTrackerContinue(pending->second, action);
+        }
       });
     }
   } else if (eventId == 2) {
@@ -448,11 +446,9 @@ void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
       auto* data = reinterpret_cast<ProcessStopEvent*>(record->UserData);
       uint32_t pid = data->ProcessId;
-      boost::asio::post(_Executor, [this, pid]() -> void {
-        _TaskQueue.Push([this, pid]() -> Omni::Fiber::Coroutine<void> {
-          RemoveProcess(pid);
-          co_return;
-        });
+      _TaskQueue.Push([this, pid]() -> Omni::Fiber::Coroutine<void> {
+        RemoveProcess(pid);
+        co_return;
       });
     }
   }

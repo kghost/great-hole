@@ -22,7 +22,7 @@
 #include <boost/log/trivial.hpp>
 #include <boost/make_shared.hpp>
 
-#include <EventQueue.hpp>
+#include <ExternalQueue.hpp>
 #include <MoveOnlyFunction.hpp>
 
 #include "Asio.hpp"
@@ -81,10 +81,8 @@ public:
   std::optional<VpnTrafficStats> GetTrafficStats(jlong endpointHandle);
 
   template <typename Func> void PostTask(Func&& func) {
-    _IoContext.post([this, func = std::forward<Func>(func)]() mutable {
-      _TaskQueue.Push([func = std::move(func)](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
-        co_await func(dp, stop);
-      });
+    _TaskQueue.Push([func = std::forward<Func>(func)](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+      co_await func(dp, stop);
     });
   }
 
@@ -95,7 +93,7 @@ private:
   std::thread _Thread;
 
   std::unique_ptr<JniSelector> _Selector;
-  Omni::Fiber::EventQueue<Task> _TaskQueue;
+  Omni::Fiber::ExternalQueue<Task> _TaskQueue;
   TunnelDataPlane* _DataPlane = nullptr;
 
   std::atomic<bool> _Stopped{false};
@@ -198,7 +196,8 @@ std::shared_ptr<ConnectionMark> JniSelector::SelectConnectionMark(const Connecti
 
 // JniSession Implementation
 
-JniSession::JniSession(JNIEnv* env, jobject callbacks, jobject connectivityManager) {
+JniSession::JniSession(JNIEnv* env, jobject callbacks, jobject connectivityManager)
+    : _TaskQueue(_IoContext.get_executor()) {
   _Callbacks = env->NewGlobalRef(callbacks);
   _ConnectivityManager = env->NewGlobalRef(connectivityManager);
 

@@ -11,7 +11,7 @@
 #include <evntrace.h>
 #include <windows.h>
 
-#include "EventQueue.hpp"
+#include "ExternalQueue.hpp"
 #include "PolicyRegistry.hpp"
 #include "ServiceBase.hpp"
 #include "VpnClientMultiChannel.hpp"
@@ -82,7 +82,7 @@ private:
   using Task = Omni::Fiber::move_only_function<Omni::Fiber::Coroutine<void>()>;
 
   boost::asio::any_io_executor _Executor;
-  Omni::Fiber::EventQueue<Task> _TaskQueue;
+  Omni::Fiber::ExternalQueue<Task> _TaskQueue;
   ProcessTreeTrackerDeferredCallback& _Callback;
   PolicyRegistry& _Registry;
 
