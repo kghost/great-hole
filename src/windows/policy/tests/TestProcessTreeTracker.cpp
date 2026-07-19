@@ -6,6 +6,7 @@
 
 #include "PolicyRegistry.hpp"
 #include "ProcessTreeTracker.hpp"
+#include "VpnClientMultiChannel.hpp"
 
 using namespace gh;
 using namespace gh::policy;
@@ -167,4 +168,36 @@ TEST_F(TestProcessTreeTracker, ProcessTreeReparentingOnExit) {
   // Verify Child C is unaffected by the new process reusing PID 5001 (reparented to 0)
   auto policyC = tracker.GetPolicy(5002);
   EXPECT_FALSE(policyC.has_value());
+}
+
+TEST_F(TestProcessTreeTracker, ExposeProcessTree) {
+  tracker.AddProcess(6000, 0, "C:\\App\\grandparent.exe");
+  tracker.AddProcess(6001, 6000, "C:\\App\\parent.exe");
+
+  auto session = std::make_shared<VpnClientMultiChannelSession>();
+  PolicyRule rule{.Action = PolicyRule::EndpointRoute{session}, .Scope = PolicyScope::ProcessSubtree};
+  tracker.RegisterPidPolicy(6000, rule);
+
+  auto tree = tracker.GetProcessTree();
+  ASSERT_EQ(tree.size(), 2);
+
+  bool found6000 = false;
+  bool found6001 = false;
+  for (const auto& entry : tree) {
+    if (entry.ProcessId == 6000) {
+      found6000 = true;
+      EXPECT_EQ(entry.ParentProcessId, 0);
+      ASSERT_TRUE(entry.Policy.has_value());
+      EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(entry.Policy->Action));
+      EXPECT_EQ(entry.Policy->Scope, PolicyScope::ProcessSubtree);
+    } else if (entry.ProcessId == 6001) {
+      found6001 = true;
+      EXPECT_EQ(entry.ParentProcessId, 6000);
+      ASSERT_TRUE(entry.Policy.has_value());
+      EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(entry.Policy->Action));
+      EXPECT_EQ(entry.Policy->Scope, PolicyScope::ProcessSubtree);
+    }
+  }
+  EXPECT_TRUE(found6000);
+  EXPECT_TRUE(found6001);
 }

@@ -1,5 +1,8 @@
 #include "PolicyRegistry.hpp"
 
+#include "Utils/Overload.hpp"
+#include "VpnClientMultiChannel.hpp"
+
 namespace gh::policy {
 
 void PolicyRegistry::Clear() {
@@ -34,3 +37,22 @@ auto PolicyRegistry::GetDefaultAction() const -> PolicyRule::RoutingAction {
 }
 
 } // namespace gh::policy
+
+namespace gh::Interface {
+
+auto PolicyRule::ToString() const -> std::string {
+  return std::visit(
+      Overload{
+          [](ByPassRoute) -> std::string { return "ByPass"; },
+          [](const EndpointRoute& route) -> std::string {
+            if (auto session = route.Endpoint.lock()) {
+              return std::format("Endpoint[{}]", session->GetDescription());
+            } else {
+              return "Endpoint[Invalid]";
+            }
+          },
+      },
+      Action);
+}
+
+} // namespace gh::Interface

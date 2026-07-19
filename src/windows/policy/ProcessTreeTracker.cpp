@@ -281,6 +281,19 @@ auto ProcessTreeTracker::GetPolicy(DWORD pid) const -> std::optional<PolicyRule>
   return std::nullopt;
 }
 
+auto ProcessTreeTracker::GetProcessTree() const -> std::vector<Interface::ProcessInfo> {
+  std::vector<Interface::ProcessInfo> list;
+  list.reserve(_ProcessMap.size());
+  for (const auto& [pid, node] : _ProcessMap) {
+    list.push_back(Interface::ProcessInfo{
+        .ProcessId = node.ProcessId,
+        .ParentProcessId = node.ParentProcessId,
+        .Policy = node.Policy,
+    });
+  }
+  return list;
+}
+
 void ProcessTreeTracker::BuildInitialSnapshot() {
   HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   if (hSnapshot == INVALID_HANDLE_VALUE) {

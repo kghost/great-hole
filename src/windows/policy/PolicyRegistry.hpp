@@ -1,45 +1,17 @@
 #pragma once
 
-#include <format>
 #include <optional>
 #include <string>
 #include <unordered_map>
-#include <variant>
 
 #include <windows.h>
 
 #include "Interface.hpp"
-#include "Utils/Overload.hpp"
-#include "VpnClientMultiChannel.hpp"
 
 namespace gh::policy {
 
 using PolicyScope = Interface::PolicyScope;
-
-struct PolicyRule {
-  struct ByPassRoute {};
-  struct EndpointRoute {
-    Interface::VpnEndpoint Endpoint;
-  };
-
-  using RoutingAction = std::variant<ByPassRoute, EndpointRoute>;
-  [[nodiscard]] auto ToString() const -> std::string {
-    return std::visit(Overload{
-                          [](ByPassRoute) -> std::string { return "ByPass"; },
-                          [](const EndpointRoute& route) -> std::string {
-                            if (auto session = route.Endpoint.lock()) {
-                              return std::format("Endpoint[{}]", session->GetDescription());
-                            } else {
-                              return "Endpoint[Invalid]";
-                            }
-                          },
-                      },
-                      Action);
-  }
-
-  RoutingAction Action;
-  PolicyScope Scope = PolicyScope::SingleProcess;
-};
+using PolicyRule = Interface::PolicyRule;
 
 class PolicyRegistry {
 public:

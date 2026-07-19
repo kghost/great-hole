@@ -14,6 +14,7 @@
 #include "EventQueue.hpp"
 #include "PolicyRegistry.hpp"
 #include "ServiceBase.hpp"
+#include "VpnClientMultiChannel.hpp"
 
 namespace gh::policy {
 
@@ -62,6 +63,7 @@ public:
   void RemoveProcess(DWORD pid);
   void ClearAllMock();
   [[nodiscard]] auto GetPolicy(DWORD pid) const -> std::optional<PolicyRule>;
+  [[nodiscard]] auto GetProcessTree() const -> std::vector<Interface::ProcessInfo>;
   void TestReEvaluatePolicy(DWORD pid);
 
   void AddPendingMark(DWORD pid, const std::shared_ptr<VpnClientMultiChannel::Mark>& mark);

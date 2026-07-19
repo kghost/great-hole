@@ -52,6 +52,7 @@ public:
   void SetDefaultBypass() override;
   void LaunchWithPolicy(const std::string& command_line, VpnEndpoint endpoint, PolicyScope scope) override;
   auto GetFlows() -> std::vector<FlowInfo> override;
+  auto GetProcessTree() -> std::vector<ProcessInfo> override;
 
 private:
   using BridgeTask = std::function<Omni::Fiber::Coroutine<void>(const std::shared_ptr<gh::policy::PolicyEngine>&,
@@ -381,6 +382,21 @@ auto PlatformImpl::GetFlows() -> std::vector<FlowInfo> {
           flows.push_back(std::move(info));
         }
         promise.set_value(std::move(flows));
+        co_return;
+      });
+  return future.get();
+}
+
+auto PlatformImpl::GetProcessTree() -> std::vector<ProcessInfo> {
+  if (_Stop.load()) {
+    return {};
+  }
+  std::promise<std::vector<ProcessInfo>> promise;
+  auto future = promise.get_future();
+  _TaskQueue.Push(
+      [&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        auto processes = policyEngine->GetPolicySelector().GetProcessTreeTracker().GetProcessTree();
+        promise.set_value(std::move(processes));
         co_return;
       });
   return future.get();

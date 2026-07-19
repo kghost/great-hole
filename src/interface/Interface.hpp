@@ -2,9 +2,11 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <system_error>
+#include <variant>
 #include <vector>
 
 #if defined(_WIN32)
@@ -62,6 +64,26 @@ struct FlowInfo {
 
 using VpnEndpoint = std::weak_ptr<VpnClientMultiChannelSession>;
 
+struct PolicyRule {
+  struct ByPassRoute {};
+  struct EndpointRoute {
+    VpnEndpoint Endpoint;
+  };
+
+  using RoutingAction = std::variant<ByPassRoute, EndpointRoute>;
+
+  RoutingAction Action;
+  PolicyScope Scope = PolicyScope::SingleProcess;
+
+  [[nodiscard]] auto ToString() const -> std::string;
+};
+
+struct ProcessInfo {
+  uint32_t ProcessId{0};
+  uint32_t ParentProcessId{0};
+  std::optional<PolicyRule> Policy;
+};
+
 class DataPlaneCallbacks {
 public:
   explicit DataPlaneCallbacks() = default;
@@ -105,6 +127,7 @@ public:
   virtual void SetDefaultBypass() = 0;
   virtual void LaunchWithPolicy(const std::string& command_line, VpnEndpoint endpoint, PolicyScope scope) = 0;
   virtual auto GetFlows() -> std::vector<FlowInfo> = 0;
+  virtual auto GetProcessTree() -> std::vector<ProcessInfo> = 0;
 };
 
 GREAT_HOLE_INTERFACE_API auto CreatePlatform(DataPlaneCallbacks& callbacks) -> std::shared_ptr<PlatformInterface>;
