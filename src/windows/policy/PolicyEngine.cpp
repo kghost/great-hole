@@ -45,7 +45,7 @@ auto PolicyEngine::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   co_return ErrorCode{};
 }
 
-void PolicyEngine::ClearRegistry() { _Registry.Clear(); }
+void PolicyEngine::ClearPathRegistry() { _Registry.Clear(); }
 
 void PolicyEngine::AddPathPolicy(const std::string& path, const PolicyRule& policy) {
   _Registry.AddPathRule(path, policy);

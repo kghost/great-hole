@@ -26,7 +26,7 @@ public:
   [[nodiscard]] auto GetPolicyRegistry() -> PolicyRegistry& { return _Registry; }
   [[nodiscard]] auto GetPolicySelector() -> PolicySelector& { return _Selector; }
 
-  void ClearRegistry();
+  void ClearPathRegistry();
   void AddPathPolicy(const std::string& path, const PolicyRule& policy);
   void RemovePathPolicy(const std::string& path);
   void AddPidPolicy(DWORD pid, const PolicyRule& policy);

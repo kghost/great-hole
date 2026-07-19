@@ -117,7 +117,7 @@ A policy rule is defined by the following schema:
 The `PolicyEngine` is implemented as a `ServiceBase` subclass and exposes the following public member functions for policy registration and lifecycle management:
 
 - `Start()` / `Stop()`: Standard `ServiceBase` service controls. Starting `PolicyEngine` automatically initializes and launches both the `ProcessTreeTracker` (ETW session) and `WinDivertFlowSniffer` sub-services.
-- `ClearRegistry()`: Clears all registered path routing rules and resets the default route.
+- `ClearPathRegistry()`: Clears all registered path routing rules and resets the default route.
 - `AddPathPolicy(const std::string& path, const PolicyRule& policy)`: Registers a routing policy for a specific executable path.
 - `RemovePathPolicy(const std::string& path)`: Removes the registered policy for the given executable path.
 - `AddPidPolicy(DWORD pid, const PolicyRule& policy)`: Registers a dynamic policy rule for a running process.

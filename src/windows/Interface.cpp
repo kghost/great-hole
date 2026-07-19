@@ -43,7 +43,7 @@ public:
   void RemoveEndpoint(VpnEndpoint endpoint) override;
 
   // Policy Interface
-  void ClearRegistry() override;
+  void ClearPathRegistry() override;
   void AddPathPolicy(const std::string& path, const PolicyRule& policy) override;
   void RemovePathPolicy(const std::string& path) override;
   void AddPidPolicy(uint32_t pid, const PolicyRule& policy) override;
@@ -224,11 +224,11 @@ void PlatformImpl::RemoveEndpoint(VpnEndpoint endpoint) {
   future.get();
 }
 
-void PlatformImpl::ClearRegistry() {
+void PlatformImpl::ClearPathRegistry() {
   std::promise<void> promise;
   auto future = promise.get_future();
   _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-    policyEngine->ClearRegistry();
+    policyEngine->ClearPathRegistry();
     promise.set_value();
     co_return;
   });

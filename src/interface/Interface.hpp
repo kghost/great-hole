@@ -116,7 +116,7 @@ public:
   virtual void RemoveEndpoint(VpnEndpoint endpoint) = 0;
 
   // Policy Interface
-  virtual void ClearRegistry() = 0;
+  virtual void ClearPathRegistry() = 0;
   virtual void AddPathPolicy(const std::string& path, const PolicyRule& policy) = 0;
   virtual void RemovePathPolicy(const std::string& path) = 0;
   virtual void AddPidPolicy(uint32_t pid, const PolicyRule& policy) = 0;
