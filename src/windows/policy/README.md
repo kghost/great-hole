@@ -118,13 +118,11 @@ The `PolicyEngine` is implemented as a `ServiceBase` subclass and exposes the fo
 
 - `Start()` / `Stop()`: Standard `ServiceBase` service controls. Starting `PolicyEngine` automatically initializes and launches both the `ProcessTreeTracker` (ETW session) and `WinDivertFlowSniffer` sub-services.
 - `ClearRegistry()`: Clears all registered path routing rules and resets the default route.
-- `AddPathBypassRule(const std::string& path, PolicyScope scope)`: Registers a bypass rule for a specific executable path.
-- `AddPathEndpointRule(const std::string& path, const std::shared_ptr<Session>& endpoint, PolicyScope scope)`: Registers a custom VPN tunnel endpoint route rule for a specific executable path.
-- `RemovePathRule(const std::string& path)`: Removes the registered rule for the given executable path.
-- `AddPidEndpointRule(DWORD pid, const std::shared_ptr<Session>& endpoint, PolicyScope scope)`: Directly registers a policy rule for a running process.
-- `SetDefaultEndpoint(const std::shared_ptr<Session>& endpoint)`: Configures the default fallback routing endpoint.
-- `SetDefaultBypass()`: Configures the default fallback routing to bypass the VPN.
-- `LaunchWithPolicy(const std::string& commandLine, const std::shared_ptr<Session>& endpoint, PolicyScope scope)`: Spawns a process suspended, registers its process ID and rule with the trackers, and resumes the thread to guarantee atomic, leak-free routing.
+- `AddPathPolicy(const std::string& path, const PolicyRule& policy)`: Registers a routing policy for a specific executable path.
+- `RemovePathPolicy(const std::string& path)`: Removes the registered policy for the given executable path.
+- `AddPidPolicy(DWORD pid, const PolicyRule& policy)`: Registers a dynamic policy rule for a running process.
+- `SetDefaultPolicy(const PolicyRule& policy)`: Configures the default fallback routing policy.
+- `LaunchWithPolicy(const std::string& commandLine, const PolicyRule& policy)`: Spawns a process suspended, registers its process ID and rule with the trackers, and resumes the thread to guarantee atomic, leak-free routing.
 
 ---
 

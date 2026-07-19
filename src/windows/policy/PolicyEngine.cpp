@@ -47,40 +47,19 @@ auto PolicyEngine::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
 
 void PolicyEngine::ClearRegistry() { _Registry.Clear(); }
 
-void PolicyEngine::AddPathBypassRule(const std::string& path, PolicyScope scope) {
-  PolicyRule rule{
-      .Action = PolicyRule::ByPassRoute{},
-      .Scope = scope,
-  };
-  _Registry.AddPathRule(path, rule);
+void PolicyEngine::AddPathPolicy(const std::string& path, const PolicyRule& policy) {
+  _Registry.AddPathRule(path, policy);
 }
 
-void PolicyEngine::AddPathEndpointRule(const std::string& path,
-                                       const std::shared_ptr<gh::VpnClientMultiChannelSession>& endpoint,
-                                       PolicyScope scope) {
-  PolicyRule rule{.Action = PolicyRule::EndpointRoute{endpoint}, .Scope = scope};
-  _Registry.AddPathRule(path, rule);
+void PolicyEngine::RemovePathPolicy(const std::string& path) { _Registry.RemovePathRule(path); }
+
+void PolicyEngine::AddPidPolicy(DWORD pid, const PolicyRule& policy) {
+  _Selector.GetProcessTreeTracker().RegisterPidPolicy(pid, policy);
 }
 
-void PolicyEngine::RemovePathRule(const std::string& path) { _Registry.RemovePathRule(path); }
+void PolicyEngine::SetDefaultPolicy(const PolicyRule& policy) { _Registry.SetDefaultAction(policy.Action); }
 
-void PolicyEngine::AddPidEndpointRule(DWORD pid, const std::shared_ptr<gh::VpnClientMultiChannelSession>& endpoint,
-                                      PolicyScope scope) {
-  PolicyRule rule{.Action = PolicyRule::EndpointRoute{endpoint}, .Scope = scope};
-  _Selector.GetProcessTreeTracker().RegisterPidPolicy(pid, rule);
-}
-
-void PolicyEngine::SetDefaultEndpoint(const std::shared_ptr<gh::VpnClientMultiChannelSession>& endpoint) {
-  _Registry.SetDefaultAction(PolicyRule::EndpointRoute{endpoint});
-}
-
-void PolicyEngine::SetDefaultBypass() { _Registry.SetDefaultAction(PolicyRule::ByPassRoute{}); }
-
-auto PolicyEngine::LaunchWithPolicy(const std::string& commandLine,
-                                    const std::shared_ptr<gh::VpnClientMultiChannelSession>& endpoint,
-                                    PolicyScope scope) -> uint32_t {
-  PolicyRule rule{.Action = PolicyRule::EndpointRoute{endpoint}, .Scope = scope};
-
+auto PolicyEngine::LaunchWithPolicy(const std::string& commandLine, const PolicyRule& policy) -> uint32_t {
   STARTUPINFOW startupInfo{};
   startupInfo.cb = sizeof(startupInfo);
   PROCESS_INFORMATION processInfo{};
@@ -97,7 +76,7 @@ auto PolicyEngine::LaunchWithPolicy(const std::string& commandLine,
   }
 
   _Selector.GetProcessTreeTracker().AddProcess(processInfo.dwProcessId, GetCurrentProcessId(), commandLine);
-  _Selector.GetProcessTreeTracker().RegisterPidPolicy(processInfo.dwProcessId, rule);
+  _Selector.GetProcessTreeTracker().RegisterPidPolicy(processInfo.dwProcessId, policy);
 
   ResumeThread(processInfo.hThread);
 

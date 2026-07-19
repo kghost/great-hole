@@ -27,17 +27,11 @@ public:
   [[nodiscard]] auto GetPolicySelector() -> PolicySelector& { return _Selector; }
 
   void ClearRegistry();
-  void AddPathBypassRule(const std::string& path, PolicyScope scope);
-  void AddPathEndpointRule(const std::string& path, const std::shared_ptr<gh::VpnClientMultiChannelSession>& endpoint,
-                           PolicyScope scope);
-  void RemovePathRule(const std::string& path);
-  void AddPidEndpointRule(DWORD pid, const std::shared_ptr<gh::VpnClientMultiChannelSession>& endpoint,
-                          PolicyScope scope);
-  void SetDefaultEndpoint(const std::shared_ptr<gh::VpnClientMultiChannelSession>& endpoint);
-  void SetDefaultBypass();
-  auto LaunchWithPolicy(const std::string& commandLine,
-                        const std::shared_ptr<gh::VpnClientMultiChannelSession>& endpoint, PolicyScope scope)
-      -> uint32_t;
+  void AddPathPolicy(const std::string& path, const PolicyRule& policy);
+  void RemovePathPolicy(const std::string& path);
+  void AddPidPolicy(DWORD pid, const PolicyRule& policy);
+  void SetDefaultPolicy(const PolicyRule& policy);
+  auto LaunchWithPolicy(const std::string& commandLine, const PolicyRule& policy) -> uint32_t;
 
 protected:
   auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;

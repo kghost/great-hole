@@ -44,13 +44,11 @@ public:
 
   // Policy Interface
   void ClearRegistry() override;
-  void AddPathBypassRule(const std::string& path, PolicyScope scope) override;
-  void AddPathEndpointRule(const std::string& path, VpnEndpoint endpoint, PolicyScope scope) override;
-  void RemovePathRule(const std::string& path) override;
-  void AddPidEndpointRule(uint32_t pid, VpnEndpoint endpoint, PolicyScope scope) override;
-  void SetDefaultEndpoint(VpnEndpoint endpoint) override;
-  void SetDefaultBypass() override;
-  void LaunchWithPolicy(const std::string& command_line, VpnEndpoint endpoint, PolicyScope scope) override;
+  void AddPathPolicy(const std::string& path, const PolicyRule& policy) override;
+  void RemovePathPolicy(const std::string& path) override;
+  void AddPidPolicy(uint32_t pid, const PolicyRule& policy) override;
+  void SetDefaultPolicy(const PolicyRule& policy) override;
+  void LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy) override;
   auto GetFlows() -> std::vector<FlowInfo> override;
   auto GetProcessTree() -> std::vector<ProcessInfo> override;
 
@@ -237,87 +235,60 @@ void PlatformImpl::ClearRegistry() {
   future.get();
 }
 
-void PlatformImpl::AddPathBypassRule(const std::string& path, PolicyScope scope) {
+void PlatformImpl::AddPathPolicy(const std::string& path, const PolicyRule& policy) {
   std::promise<void> promise;
   auto future = promise.get_future();
   _TaskQueue.Push(
-      [&promise, path, scope](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-        policyEngine->AddPathBypassRule(path, scope);
+      [&promise, path, policy](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        policyEngine->AddPathPolicy(path, policy);
         promise.set_value();
         co_return;
       });
   future.get();
 }
 
-void PlatformImpl::AddPathEndpointRule(const std::string& path, VpnEndpoint endpoint, PolicyScope scope) {
-  std::promise<void> promise;
-  auto future = promise.get_future();
-  auto session = endpoint.lock();
-  _TaskQueue.Push([&promise, path, session, scope](const auto& policyEngine,
-                                                   const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-    policyEngine->AddPathEndpointRule(path, session, scope);
-    promise.set_value();
-    co_return;
-  });
-  future.get();
-}
-
-void PlatformImpl::RemovePathRule(const std::string& path) {
+void PlatformImpl::RemovePathPolicy(const std::string& path) {
   std::promise<void> promise;
   auto future = promise.get_future();
   _TaskQueue.Push(
       [&promise, path](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-        policyEngine->RemovePathRule(path);
+        policyEngine->RemovePathPolicy(path);
         promise.set_value();
         co_return;
       });
   future.get();
 }
 
-void PlatformImpl::AddPidEndpointRule(uint32_t pid, VpnEndpoint endpoint, PolicyScope scope) {
+void PlatformImpl::AddPidPolicy(uint32_t pid, const PolicyRule& policy) {
   std::promise<void> promise;
   auto future = promise.get_future();
-  auto session = endpoint.lock();
-  _TaskQueue.Push([&promise, pid, session, scope](const auto& policyEngine,
-                                                  const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-    policyEngine->AddPidEndpointRule(pid, session, scope);
-    promise.set_value();
-    co_return;
-  });
-  future.get();
-}
-
-void PlatformImpl::SetDefaultEndpoint(VpnEndpoint endpoint) {
-  std::promise<void> promise;
-  auto future = promise.get_future();
-  auto session = endpoint.lock();
   _TaskQueue.Push(
-      [&promise, session](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-        policyEngine->SetDefaultEndpoint(session);
+      [&promise, pid, policy](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        policyEngine->AddPidPolicy(pid, policy);
         promise.set_value();
         co_return;
       });
   future.get();
 }
 
-void PlatformImpl::SetDefaultBypass() {
+void PlatformImpl::SetDefaultPolicy(const PolicyRule& policy) {
   std::promise<void> promise;
   auto future = promise.get_future();
-  _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-    policyEngine->SetDefaultBypass();
-    promise.set_value();
-    co_return;
-  });
+  _TaskQueue.Push(
+      [&promise, policy](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        policyEngine->SetDefaultPolicy(policy);
+        promise.set_value();
+        co_return;
+      });
   future.get();
 }
 
-void PlatformImpl::LaunchWithPolicy(const std::string& command_line, VpnEndpoint endpoint, PolicyScope scope) {
+void PlatformImpl::LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy) {
   std::promise<void> promise;
   auto future = promise.get_future();
-  auto session = endpoint.lock();
-  _TaskQueue.Push([&promise, command_line, session, scope](const auto& policyEngine,
-                                                           const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-    auto pid = policyEngine->LaunchWithPolicy(command_line, session, scope);
+  _TaskQueue.Push([&promise, command_line, policy](const auto& policyEngine,
+                                                   const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+    auto pid = policyEngine->LaunchWithPolicy(command_line, policy);
     if (pid == 0) {
       promise.set_exception(std::make_exception_ptr(std::runtime_error("LaunchWithPolicy failed")));
     } else {
@@ -331,61 +302,60 @@ void PlatformImpl::LaunchWithPolicy(const std::string& command_line, VpnEndpoint
 auto PlatformImpl::GetFlows() -> std::vector<FlowInfo> {
   std::promise<std::vector<FlowInfo>> promise;
   auto future = promise.get_future();
-  _TaskQueue.Push(
-      [&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-        auto trackedFlows = policyEngine->GetPolicySelector().GetFlowTracker().GetFlows();
-        std::vector<FlowInfo> flows;
-        flows.reserve(trackedFlows.size());
-        for (const auto& flow : trackedFlows) {
-          FlowInfo info;
-          info.ProcessId = flow.ProcessId;
-          std::visit(
-              [&info](const auto& key) -> void {
-                using T = std::decay_t<decltype(key)>;
-                if constexpr (std::is_same_v<T, ConnectionTracker::Ip4TcpKey>) {
-                  info.Protocol = "TCPv4";
-                  info.LocalAddress = key.LocalAddress.to_string();
-                  info.LocalPort = key.LocalPort;
-                  info.RemoteAddress = key.RemoteAddress.to_string();
-                  info.RemotePort = key.RemotePort;
-                } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip6TcpKey>) {
-                  info.Protocol = "TCPv6";
-                  info.LocalAddress = key.LocalAddress.to_string();
-                  info.LocalPort = key.LocalPort;
-                  info.RemoteAddress = key.RemoteAddress.to_string();
-                  info.RemotePort = key.RemotePort;
-                } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip4UdpKey>) {
-                  info.Protocol = "UDPv4";
-                  info.LocalAddress = key.LocalAddress.to_string();
-                  info.LocalPort = key.LocalPort;
-                  info.RemoteAddress = key.RemoteAddress.to_string();
-                  info.RemotePort = key.RemotePort;
-                } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip6UdpKey>) {
-                  info.Protocol = "UDPv6";
-                  info.LocalAddress = key.LocalAddress.to_string();
-                  info.LocalPort = key.LocalPort;
-                  info.RemoteAddress = key.RemoteAddress.to_string();
-                  info.RemotePort = key.RemotePort;
-                } else if constexpr (std::is_same_v<T, ConnectionTracker::IcmpKey>) {
-                  info.Protocol = "ICMPv4";
-                  info.LocalAddress = key.LocalAddress.to_string();
-                  info.RemoteAddress = key.RemoteAddress.to_string();
-                  info.LocalPort = key.Id;
-                  info.RemotePort = 0;
-                } else if constexpr (std::is_same_v<T, ConnectionTracker::Icmp6Key>) {
-                  info.Protocol = "ICMPv6";
-                  info.LocalAddress = key.LocalAddress.to_string();
-                  info.RemoteAddress = key.RemoteAddress.to_string();
-                  info.LocalPort = key.Id;
-                  info.RemotePort = 0;
-                }
-              },
-              flow.Key);
-          flows.push_back(std::move(info));
-        }
-        promise.set_value(std::move(flows));
-        co_return;
-      });
+  _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+    auto trackedFlows = policyEngine->GetPolicySelector().GetFlowTracker().GetFlows();
+    std::vector<FlowInfo> flows;
+    flows.reserve(trackedFlows.size());
+    for (const auto& flow : trackedFlows) {
+      FlowInfo info;
+      info.ProcessId = flow.ProcessId;
+      std::visit(
+          [&info](const auto& key) -> void {
+            using T = std::decay_t<decltype(key)>;
+            if constexpr (std::is_same_v<T, ConnectionTracker::Ip4TcpKey>) {
+              info.Protocol = "TCPv4";
+              info.LocalAddress = key.LocalAddress.to_string();
+              info.LocalPort = key.LocalPort;
+              info.RemoteAddress = key.RemoteAddress.to_string();
+              info.RemotePort = key.RemotePort;
+            } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip6TcpKey>) {
+              info.Protocol = "TCPv6";
+              info.LocalAddress = key.LocalAddress.to_string();
+              info.LocalPort = key.LocalPort;
+              info.RemoteAddress = key.RemoteAddress.to_string();
+              info.RemotePort = key.RemotePort;
+            } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip4UdpKey>) {
+              info.Protocol = "UDPv4";
+              info.LocalAddress = key.LocalAddress.to_string();
+              info.LocalPort = key.LocalPort;
+              info.RemoteAddress = key.RemoteAddress.to_string();
+              info.RemotePort = key.RemotePort;
+            } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip6UdpKey>) {
+              info.Protocol = "UDPv6";
+              info.LocalAddress = key.LocalAddress.to_string();
+              info.LocalPort = key.LocalPort;
+              info.RemoteAddress = key.RemoteAddress.to_string();
+              info.RemotePort = key.RemotePort;
+            } else if constexpr (std::is_same_v<T, ConnectionTracker::IcmpKey>) {
+              info.Protocol = "ICMPv4";
+              info.LocalAddress = key.LocalAddress.to_string();
+              info.RemoteAddress = key.RemoteAddress.to_string();
+              info.LocalPort = key.Id;
+              info.RemotePort = 0;
+            } else if constexpr (std::is_same_v<T, ConnectionTracker::Icmp6Key>) {
+              info.Protocol = "ICMPv6";
+              info.LocalAddress = key.LocalAddress.to_string();
+              info.RemoteAddress = key.RemoteAddress.to_string();
+              info.LocalPort = key.Id;
+              info.RemotePort = 0;
+            }
+          },
+          flow.Key);
+      flows.push_back(std::move(info));
+    }
+    promise.set_value(std::move(flows));
+    co_return;
+  });
   return future.get();
 }
 
@@ -395,12 +365,11 @@ auto PlatformImpl::GetProcessTree() -> std::vector<ProcessInfo> {
   }
   std::promise<std::vector<ProcessInfo>> promise;
   auto future = promise.get_future();
-  _TaskQueue.Push(
-      [&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-        auto processes = policyEngine->GetPolicySelector().GetProcessTreeTracker().GetProcessTree();
-        promise.set_value(std::move(processes));
-        co_return;
-      });
+  _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+    auto processes = policyEngine->GetPolicySelector().GetProcessTreeTracker().GetProcessTree();
+    promise.set_value(std::move(processes));
+    co_return;
+  });
   return future.get();
 }
 

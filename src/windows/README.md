@@ -36,13 +36,11 @@ public:
 
   // Policy Interface
   virtual void ClearRegistry() = 0;
-  virtual void AddPathBypassRule(const std::string& path, PolicyScope scope) = 0;
-  virtual void AddPathEndpointRule(const std::string& path, VpnEndpoint endpoint, PolicyScope scope) = 0;
-  virtual void RemovePathRule(const std::string& path) = 0;
-  virtual void AddPidEndpointRule(uint32_t pid, VpnEndpoint endpoint, PolicyScope scope) = 0;
-  virtual void SetDefaultEndpoint(VpnEndpoint endpoint) = 0;
-  virtual void SetDefaultBypass() = 0;
-  virtual void LaunchWithPolicy(const std::string& command_line, VpnEndpoint endpoint, PolicyScope scope) = 0;
+  virtual void AddPathPolicy(const std::string& path, const PolicyRule& policy) = 0;
+  virtual void RemovePathPolicy(const std::string& path) = 0;
+  virtual void AddPidPolicy(uint32_t pid, const PolicyRule& policy) = 0;
+  virtual void SetDefaultPolicy(const PolicyRule& policy) = 0;
+  virtual void LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy) = 0;
   virtual auto GetFlows() -> std::vector<FlowInfo> = 0;
 };
 
