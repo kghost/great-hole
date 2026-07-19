@@ -216,26 +216,30 @@ public:
         -> Omni::Fiber::Coroutine<void> = 0;
 };
 
-class FlowTracker {
+struct FlowRecord {
+  ConnectionTracker::ConnectionKey Key;
+  DWORD ProcessId;
+};
+
+class FlowTracker : public WinDivertFlowSnifferCallback {
 public:
-    explicit FlowTracker(boost::asio::any_io_executor executor, FlowTrackerDeferredCallback& callback);
-    ~FlowTracker();
+  explicit FlowTracker(FlowTrackerDeferredCallback& callback);
+  ~FlowTracker() override;
 
-    void Start();
-    void Stop();
+  auto OnFlowEstablished(const ConnectionTracker::ConnectionKey& conn, uint32_t pid)
+      -> Omni::Fiber::Coroutine<void> override;
+  auto OnFlowDeleted(const ConnectionTracker::ConnectionKey& conn) -> Omni::Fiber::Coroutine<void> override;
 
-    auto GetPidForConnection(const ConnectionTracker::ConnectionKey& key) -> std::optional<DWORD>;
-    void AddPendingMark(const ConnectionTracker::ConnectionKey& key,
-                        const std::shared_ptr<VpnClientMultiChannel::Mark>& mark);
+  auto GetPidForConnection(const ConnectionTracker::ConnectionKey& key) -> std::optional<DWORD>;
+  void AddPendingMark(const ConnectionTracker::ConnectionKey& key,
+                      const std::shared_ptr<VpnClientMultiChannel::Mark>& mark);
+
+  auto GetFlows() const -> std::vector<FlowRecord>;
 
 private:
-    boost::asio::any_io_executor _Executor;
-    FlowTrackerDeferredCallback& _Callback;
-    HANDLE _WinDivertFlowHandle = INVALID_HANDLE_VALUE;
-    HANDLE _ReadEvent = nullptr;
-    std::optional<boost::asio::windows::object_handle> _ReadObject;
-    std::map<ConnectionTracker::ConnectionKey, DWORD> _FlowToPid;
-    std::map<ConnectionTracker::ConnectionKey, std::shared_ptr<VpnClientMultiChannel::Mark>> _PendingFlowResumers;
+  FlowTrackerDeferredCallback& _Callback;
+  std::map<ConnectionTracker::ConnectionKey, DWORD> _FlowToPid;
+  std::map<ConnectionTracker::ConnectionKey, std::shared_ptr<VpnClientMultiChannel::Mark>> _PendingFlowResumers;
 };
 
 } // namespace gh::policy

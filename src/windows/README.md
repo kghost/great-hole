@@ -43,6 +43,16 @@ public:
   virtual void SetDefaultEndpoint(VpnEndpoint endpoint) = 0;
   virtual void SetDefaultBypass() = 0;
   virtual void LaunchWithPolicy(const std::string& command_line, VpnEndpoint endpoint, PolicyScope scope) = 0;
+  virtual auto GetFlows() -> std::vector<FlowInfo> = 0;
+};
+
+struct FlowInfo {
+  std::string Protocol;
+  std::string LocalAddress;
+  std::string RemoteAddress;
+  uint16_t LocalPort{0};
+  uint16_t RemotePort{0};
+  uint32_t ProcessId{0};
 };
 
 // Factory function to create the platform-specific implementation

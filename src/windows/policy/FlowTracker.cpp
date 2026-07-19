@@ -47,4 +47,13 @@ auto FlowTracker::OnFlowDeleted(const ConnectionTracker::ConnectionKey& conn) ->
   co_return;
 }
 
+auto FlowTracker::GetFlows() const -> std::vector<FlowRecord> {
+  std::vector<FlowRecord> flows;
+  flows.reserve(_FlowToPid.size());
+  for (const auto& [key, pid] : _FlowToPid) {
+    flows.push_back({.Key = key, .ProcessId = pid});
+  }
+  return flows;
+}
+
 } // namespace gh::policy

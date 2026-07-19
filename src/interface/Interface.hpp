@@ -5,6 +5,7 @@
 #include <span>
 #include <string>
 #include <system_error>
+#include <vector>
 
 #if defined(_WIN32)
 #if defined(GREAT_HOLE_WINDOWS_BUILD_DLL)
@@ -48,6 +49,15 @@ struct VpnTrafficStats : public TrafficStats {
   explicit VpnTrafficStats(const TrafficStats& stats, int64_t rttMs = -1) : TrafficStats(stats), RttMs(rttMs) {}
 
   int64_t RttMs{-1};
+};
+
+struct FlowInfo {
+  std::string Protocol;
+  std::string LocalAddress;
+  std::string RemoteAddress;
+  uint16_t LocalPort{0};
+  uint16_t RemotePort{0};
+  uint32_t ProcessId{0};
 };
 
 using VpnEndpoint = std::weak_ptr<VpnClientMultiChannelSession>;
@@ -94,6 +104,7 @@ public:
   virtual void SetDefaultEndpoint(VpnEndpoint endpoint) = 0;
   virtual void SetDefaultBypass() = 0;
   virtual void LaunchWithPolicy(const std::string& command_line, VpnEndpoint endpoint, PolicyScope scope) = 0;
+  virtual auto GetFlows() -> std::vector<FlowInfo> = 0;
 };
 
 GREAT_HOLE_INTERFACE_API auto CreatePlatform(DataPlaneCallbacks& callbacks) -> std::shared_ptr<PlatformInterface>;

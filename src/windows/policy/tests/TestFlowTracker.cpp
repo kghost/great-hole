@@ -71,3 +71,67 @@ TEST_F(TestFlowTracker, FlowTracking) {
   ioContext.run();
   EXPECT_TRUE(testDone);
 }
+
+TEST_F(TestFlowTracker, GetFlows) {
+  Omni::Fiber::AsioExecutor executor(ioContext.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  bool testDone = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    boost::asio::ip::address localIp = boost::asio::ip::make_address("127.0.0.1");
+    boost::asio::ip::address remoteIp = boost::asio::ip::make_address("8.8.8.8");
+    ConnectionTracker::Ip4TcpKey key1{
+        .LocalAddress = localIp.to_v4(), .RemoteAddress = remoteIp.to_v4(), .LocalPort = 11111, .RemotePort = 80};
+    ConnectionTracker::Ip4TcpKey key2{
+        .LocalAddress = localIp.to_v4(), .RemoteAddress = remoteIp.to_v4(), .LocalPort = 22222, .RemotePort = 443};
+
+    // No flows initially
+    auto flows = tracker.GetFlows();
+    EXPECT_TRUE(flows.empty());
+
+    // Add key1
+    co_await tracker.OnFlowEstablished(key1, 1001);
+    flows = tracker.GetFlows();
+    EXPECT_EQ(flows.size(), 1);
+    if (!flows.empty()) {
+      EXPECT_EQ(flows[0].ProcessId, 1001);
+      EXPECT_EQ(std::get<ConnectionTracker::Ip4TcpKey>(flows[0].Key).LocalPort, 11111);
+    }
+
+    // Add key2
+    co_await tracker.OnFlowEstablished(key2, 1002);
+    flows = tracker.GetFlows();
+    EXPECT_EQ(flows.size(), 2);
+    DWORD pid1 = 0;
+    DWORD pid2 = 0;
+    for (const auto& flow : flows) {
+      if (std::holds_alternative<ConnectionTracker::Ip4TcpKey>(flow.Key)) {
+        auto tcpKey = std::get<ConnectionTracker::Ip4TcpKey>(flow.Key);
+        if (tcpKey.LocalPort == 11111) {
+          pid1 = flow.ProcessId;
+        } else if (tcpKey.LocalPort == 22222) {
+          pid2 = flow.ProcessId;
+        }
+      }
+    }
+    EXPECT_EQ(pid1, 1001);
+    EXPECT_EQ(pid2, 1002);
+
+    // Delete key1
+    co_await tracker.OnFlowDeleted(key1);
+    flows = tracker.GetFlows();
+    EXPECT_EQ(flows.size(), 1);
+    if (!flows.empty()) {
+      EXPECT_EQ(flows[0].ProcessId, 1002);
+      EXPECT_EQ(std::get<ConnectionTracker::Ip4TcpKey>(flows[0].Key).LocalPort, 22222);
+    }
+
+    testDone = true;
+    co_return;
+  });
+
+  ioContext.restart();
+  ioContext.run();
+  EXPECT_TRUE(testDone);
+}

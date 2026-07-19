@@ -12,6 +12,7 @@
 #include <boost/asio.hpp>
 
 #include "Asio.hpp"
+#include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
 #include "ErrorCode.hpp"
 #include "EventQueue.hpp"
@@ -50,6 +51,7 @@ public:
   void SetDefaultEndpoint(VpnEndpoint endpoint) override;
   void SetDefaultBypass() override;
   void LaunchWithPolicy(const std::string& command_line, VpnEndpoint endpoint, PolicyScope scope) override;
+  auto GetFlows() -> std::vector<FlowInfo> override;
 
 private:
   using BridgeTask = std::function<Omni::Fiber::Coroutine<void>(const std::shared_ptr<gh::policy::PolicyEngine>&,
@@ -321,6 +323,67 @@ void PlatformImpl::LaunchWithPolicy(const std::string& command_line, VpnEndpoint
     co_return;
   });
   future.get();
+}
+
+auto PlatformImpl::GetFlows() -> std::vector<FlowInfo> {
+  std::promise<std::vector<FlowInfo>> promise;
+  auto future = promise.get_future();
+  _TaskQueue.Push(
+      [&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        auto trackedFlows = policyEngine->GetPolicySelector().GetFlowTracker().GetFlows();
+        std::vector<FlowInfo> flows;
+        flows.reserve(trackedFlows.size());
+        for (const auto& flow : trackedFlows) {
+          FlowInfo info;
+          info.ProcessId = flow.ProcessId;
+          std::visit(
+              [&info](const auto& key) -> void {
+                using T = std::decay_t<decltype(key)>;
+                if constexpr (std::is_same_v<T, ConnectionTracker::Ip4TcpKey>) {
+                  info.Protocol = "TCPv4";
+                  info.LocalAddress = key.LocalAddress.to_string();
+                  info.LocalPort = key.LocalPort;
+                  info.RemoteAddress = key.RemoteAddress.to_string();
+                  info.RemotePort = key.RemotePort;
+                } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip6TcpKey>) {
+                  info.Protocol = "TCPv6";
+                  info.LocalAddress = key.LocalAddress.to_string();
+                  info.LocalPort = key.LocalPort;
+                  info.RemoteAddress = key.RemoteAddress.to_string();
+                  info.RemotePort = key.RemotePort;
+                } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip4UdpKey>) {
+                  info.Protocol = "UDPv4";
+                  info.LocalAddress = key.LocalAddress.to_string();
+                  info.LocalPort = key.LocalPort;
+                  info.RemoteAddress = key.RemoteAddress.to_string();
+                  info.RemotePort = key.RemotePort;
+                } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip6UdpKey>) {
+                  info.Protocol = "UDPv6";
+                  info.LocalAddress = key.LocalAddress.to_string();
+                  info.LocalPort = key.LocalPort;
+                  info.RemoteAddress = key.RemoteAddress.to_string();
+                  info.RemotePort = key.RemotePort;
+                } else if constexpr (std::is_same_v<T, ConnectionTracker::IcmpKey>) {
+                  info.Protocol = "ICMPv4";
+                  info.LocalAddress = key.LocalAddress.to_string();
+                  info.RemoteAddress = key.RemoteAddress.to_string();
+                  info.LocalPort = key.Id;
+                  info.RemotePort = 0;
+                } else if constexpr (std::is_same_v<T, ConnectionTracker::Icmp6Key>) {
+                  info.Protocol = "ICMPv6";
+                  info.LocalAddress = key.LocalAddress.to_string();
+                  info.RemoteAddress = key.RemoteAddress.to_string();
+                  info.LocalPort = key.Id;
+                  info.RemotePort = 0;
+                }
+              },
+              flow.Key);
+          flows.push_back(std::move(info));
+        }
+        promise.set_value(std::move(flows));
+        co_return;
+      });
+  return future.get();
 }
 
 auto CreatePlatform(DataPlaneCallbacks& callbacks) -> std::shared_ptr<PlatformInterface> {

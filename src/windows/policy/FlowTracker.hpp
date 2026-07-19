@@ -4,6 +4,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <vector>
 #include <windows.h>
 
 #include "ConnectionTracker.hpp"
@@ -11,6 +12,11 @@
 #include "WinDivertFlowSniffer.hpp"
 
 namespace gh::policy {
+
+struct FlowRecord {
+  ConnectionTracker::ConnectionKey Key;
+  DWORD ProcessId{};
+};
 
 class FlowTrackerDeferredCallback {
 public:
@@ -44,6 +50,8 @@ public:
   [[nodiscard]] auto GetPidForConnection(const ConnectionTracker::ConnectionKey& key) -> std::optional<DWORD>;
   void AddPendingMark(const ConnectionTracker::ConnectionKey& key,
                       const std::shared_ptr<VpnClientMultiChannel::Mark>& mark);
+
+  [[nodiscard]] auto GetFlows() const -> std::vector<FlowRecord>;
 
 private:
   FlowTrackerDeferredCallback& _Callback;
