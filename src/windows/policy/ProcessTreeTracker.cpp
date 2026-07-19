@@ -157,7 +157,7 @@ void ProcessTreeTracker::ApplyPolicyToDescendantsLocked(const std::set<DWORD>& c
     auto childIt = _ProcessMap.find(childPid);
     if (childIt != _ProcessMap.end()) {
       BOOST_LOG_TRIVIAL(info) << "PID[" << childPid << ":" << childIt->second.ExecutablePath << "] Applying policy "
-                              << rule.ToString();
+                              << PolicyRuleToString(rule);
       childIt->second.Policy = rule;
       ApplyPolicyToDescendantsLocked(childIt->second.Children, rule);
     }
@@ -171,7 +171,8 @@ void ProcessTreeTracker::EvaluatePolicyLocked(ProcessNode& node) {
     if (parentIt != _ProcessMap.end() && parentIt->second.Policy.has_value() &&
         parentIt->second.Policy.value().Scope == PolicyScope::ProcessSubtree) {
       BOOST_LOG_TRIVIAL(info) << "PID[" << node.ProcessId << ":" << node.ExecutablePath
-                              << "] Inheriting policy from parent " << parentIt->second.Policy.value().ToString();
+                              << "] Inheriting policy from parent "
+                              << PolicyRuleToString(parentIt->second.Policy.value());
       node.Policy = parentIt->second.Policy.value();
       ApplyPolicyToDescendantsLocked(node.Children, parentIt->second.Policy.value());
       inherited = true;
@@ -182,7 +183,7 @@ void ProcessTreeTracker::EvaluatePolicyLocked(ProcessNode& node) {
     auto rule = _Registry.GetRuleForPath(node.ExecutablePath);
     if (rule.has_value()) {
       BOOST_LOG_TRIVIAL(info) << "PID[" << node.ProcessId << ":" << node.ExecutablePath << "] Applying policy "
-                              << rule.value().ToString();
+                              << PolicyRuleToString(rule.value());
       node.Policy = rule;
       if (rule.value().Scope == PolicyScope::ProcessSubtree) {
         ApplyPolicyToDescendantsLocked(node.Children, rule.value());
@@ -222,7 +223,7 @@ auto ProcessTreeTracker::RegisterPidPolicy(DWORD pid, const PolicyRule& rule) ->
   }
 
   BOOST_LOG_TRIVIAL(info) << "PID[" << pid << ":" << iterator->second.ExecutablePath << "] Register PID policy "
-                          << rule.ToString();
+                          << PolicyRuleToString(rule);
   iterator->second.Policy = rule;
   if (rule.Scope == PolicyScope::ProcessSubtree) {
     ApplyPolicyToDescendantsLocked(iterator->second.Children, rule);
@@ -335,7 +336,7 @@ void ProcessTreeTracker::BuildInitialSnapshot() {
     auto rule = _Registry.GetRuleForPath(node.ExecutablePath);
     if (rule.has_value()) {
       BOOST_LOG_TRIVIAL(info) << "PID[" << pid << ":" << node.ExecutablePath << "] Initial policy "
-                              << rule.value().ToString();
+                              << PolicyRuleToString(rule.value());
       node.Policy = rule;
       if (rule.value().Scope == PolicyScope::ProcessSubtree) {
         ApplyPolicyToDescendantsLocked(node.Children, rule.value());

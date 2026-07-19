@@ -9,6 +9,7 @@
 #include <boost/log/trivial.hpp>
 
 #include "Coroutine.hpp"
+#include "PolicyRegistry.hpp"
 #include "Utils/Overload.hpp"
 #include "VpnClientMultiChannel.hpp"
 
@@ -28,7 +29,7 @@ auto PolicySelector::ResolvePolicy(const ConnectionTracker::ConnectionKey& key) 
     auto policy = _TreeTracker->GetPolicy(pid.value());
     if (policy.has_value()) {
       BOOST_LOG_TRIVIAL(trace) << "ResolvePolicy: key=" << key << " pid=" << pid.value()
-                               << " resolved to policy=" << policy.value().ToString();
+                               << " resolved to policy=" << PolicyRuleToString(policy.value());
       return ToConnectionMark(policy.value().Action);
     } else {
       BOOST_LOG_TRIVIAL(trace) << "ResolvePolicy: key=" << key << " pid=" << pid.value()
@@ -67,8 +68,8 @@ auto PolicySelector::ProcessTreeTrackerContinue(const std::shared_ptr<VpnClientM
   auto newMark = ToConnectionMark(action);
   mark->Swap(*newMark);
   auto& packets = std::get<VpnClientMultiChannel::Mark::Deferred>(newMark->GetValue()).Packets;
-  BOOST_LOG_TRIVIAL(trace) << "ProcessTreeTrackerContinue: action=" << PolicyRule{action}.ToString()
-                           << " injecting " << packets.size() << " packets";
+  BOOST_LOG_TRIVIAL(trace) << "ProcessTreeTrackerContinue: action=" << PolicyActionToString(action) << " injecting "
+                           << packets.size() << " packets";
   for (auto& packet : packets) {
     packet.SetMark(mark);
     if (_Injector) {

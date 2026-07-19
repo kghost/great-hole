@@ -37,4 +37,7 @@ private:
   PolicyRule::RoutingAction _DefaultRoute = PolicyRule::ByPassRoute{};
 };
 
+auto PolicyRuleToString(const PolicyRule& rule) -> std::string;
+auto PolicyActionToString(const PolicyRule::RoutingAction& action) -> std::string;
+
 } // namespace gh::policy

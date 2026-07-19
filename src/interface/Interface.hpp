@@ -74,8 +74,6 @@ struct PolicyRule {
 
   RoutingAction Action;
   PolicyScope Scope = PolicyScope::SingleProcess;
-
-  [[nodiscard]] auto ToString() const -> std::string;
 };
 
 struct ProcessInfo {

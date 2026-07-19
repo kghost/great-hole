@@ -42,3 +42,12 @@ TEST_F(TestPolicyRegistry, RegistryPathMatching) {
   auto match4 = reg.GetRuleForPath("C:\\Windows\\explorer.exe");
   EXPECT_FALSE(match4.has_value());
 }
+
+TEST_F(TestPolicyRegistry, PolicyRuleToStringFormat) {
+  PolicyRule bypassRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::SingleProcess};
+  EXPECT_EQ(PolicyRuleToString(bypassRule), "Rule(Action=ByPass, Scope=SingleProcess)");
+
+  PolicyRule endpointRule{.Action = PolicyRule::EndpointRoute{}, .Scope = PolicyScope::ProcessSubtree};
+  EXPECT_EQ(PolicyRuleToString(endpointRule), "Rule(Action=Endpoint[Invalid], Scope=ProcessSubtree)");
+}
+

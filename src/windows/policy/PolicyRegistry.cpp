@@ -1,5 +1,7 @@
 #include "PolicyRegistry.hpp"
 
+#include <format>
+
 #include "Utils/Overload.hpp"
 #include "VpnClientMultiChannel.hpp"
 
@@ -14,9 +16,7 @@ void PolicyRegistry::AddPathRule(const std::string& pathPattern, const PolicyRul
   _PathRules[pathPattern] = rule;
 }
 
-void PolicyRegistry::RemovePathRule(const std::string& pathPattern) {
-  _PathRules.erase(pathPattern);
-}
+void PolicyRegistry::RemovePathRule(const std::string& pathPattern) { _PathRules.erase(pathPattern); }
 
 auto PolicyRegistry::GetRuleForPath(const std::string& path) const -> std::optional<PolicyRule> {
   // Try exact match first
@@ -28,31 +28,38 @@ auto PolicyRegistry::GetRuleForPath(const std::string& path) const -> std::optio
   return std::nullopt;
 }
 
-void PolicyRegistry::SetDefaultAction(const PolicyRule::RoutingAction& action) {
-  _DefaultRoute = action;
+void PolicyRegistry::SetDefaultAction(const PolicyRule::RoutingAction& action) { _DefaultRoute = action; }
+
+auto PolicyRegistry::GetDefaultAction() const -> PolicyRule::RoutingAction { return _DefaultRoute; }
+
+auto PolicyRuleToString(const PolicyRule& rule) -> std::string {
+  std::string scopeStr;
+  switch (rule.Scope) {
+    case PolicyScope::SingleProcess:
+      scopeStr = "SingleProcess";
+      break;
+    case PolicyScope::ProcessSubtree:
+      scopeStr = "ProcessSubtree";
+      break;
+    default:
+      scopeStr = "Unknown";
+      break;
+  }
+  return std::format("Rule(Action={}, Scope={})", PolicyActionToString(rule.Action), scopeStr);
 }
 
-auto PolicyRegistry::GetDefaultAction() const -> PolicyRule::RoutingAction {
-  return _DefaultRoute;
+auto PolicyActionToString(const PolicyRule::RoutingAction& action) -> std::string {
+  return std::visit(Overload{
+                        [](PolicyRule::ByPassRoute) -> std::string { return "ByPass"; },
+                        [](const PolicyRule::EndpointRoute& route) -> std::string {
+                          if (auto session = route.Endpoint.lock()) {
+                            return std::format("Endpoint[{}]", session->GetDescription());
+                          } else {
+                            return "Endpoint[Invalid]";
+                          }
+                        },
+                    },
+                    action);
 }
 
 } // namespace gh::policy
-
-namespace gh::Interface {
-
-auto PolicyRule::ToString() const -> std::string {
-  return std::visit(
-      Overload{
-          [](ByPassRoute) -> std::string { return "ByPass"; },
-          [](const EndpointRoute& route) -> std::string {
-            if (auto session = route.Endpoint.lock()) {
-              return std::format("Endpoint[{}]", session->GetDescription());
-            } else {
-              return "Endpoint[Invalid]";
-            }
-          },
-      },
-      Action);
-}
-
-} // namespace gh::Interface
