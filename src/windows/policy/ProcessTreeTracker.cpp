@@ -267,6 +267,9 @@ void ProcessTreeTracker::RemoveProcess(DWORD pid) {
       }
     }
     _ProcessMap.erase(iterator);
+  } else {
+    BOOST_LOG_TRIVIAL(warning) << "ProcessTreeTracker: Process " << pid << " not found in process map";
+    _PendingProcessMarks.erase(pid);
   }
 }
 
@@ -517,10 +520,12 @@ void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
     if (pid != 0) {
       _TaskQueue.Push([this, pid, parentPid, execPath]() -> Omni::Fiber::Coroutine<void> {
         const auto& node = AddProcess(pid, parentPid, execPath);
-        if (auto pending = _PendingProcessMarks.find(pid); pending != _PendingProcessMarks.end()) {
+        if (auto pendingIt = _PendingProcessMarks.find(pid); pendingIt != _PendingProcessMarks.end()) {
+          auto mark = std::move(pendingIt->second);
+          _PendingProcessMarks.erase(pendingIt);
           const auto policy = node.Policy;
           auto action = policy.has_value() ? policy.value().Action : _Registry.GetDefaultAction();
-          co_await _Callback.ProcessTreeTrackerContinue(pending->second, action);
+          co_await _Callback.ProcessTreeTrackerContinue(mark, action);
         }
       });
     }

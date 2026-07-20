@@ -35,15 +35,19 @@ auto FlowTracker::OnFlowEstablished(const ConnectionTracker::ConnectionKey& conn
   auto [iterator, inserted] = _FlowToPid.try_emplace(conn, pid);
   if (inserted) {
     if (auto resumerIter = _PendingFlowResumers.find(conn); resumerIter != _PendingFlowResumers.end()) {
-      co_await _Callback.FlowTrackerContinue(resumerIter->second, pid);
+      auto mark = std::move(resumerIter->second);
       _PendingFlowResumers.erase(resumerIter);
+      co_await _Callback.FlowTrackerContinue(mark, pid);
     }
   }
   co_return;
 }
 
 auto FlowTracker::OnFlowDeleted(const ConnectionTracker::ConnectionKey& conn) -> Omni::Fiber::Coroutine<void> {
-  _FlowToPid.erase(conn);
+  auto removed = _FlowToPid.erase(conn);
+  if (removed == 0) {
+    _PendingFlowResumers.erase(conn);
+  }
   co_return;
 }
 

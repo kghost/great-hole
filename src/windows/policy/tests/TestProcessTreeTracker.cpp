@@ -227,7 +227,8 @@ TEST_F(TestProcessTreeTracker, GetPendingProcesses) {
     EXPECT_EQ(pending[0].QueueSize.value_or(0), 3);
   }
 
-  // Once process is added, pending mark should be handled (mock callback handles it, but in real it resolves/removes it)
-  // Let's manually remove it to test cleanup or simulate what happens.
-  // Actually, let's verify that the mark is correctly registered.
+  // Remove the process and verify that the pending mark is cleaned up
+  tracker.RemoveProcess(7000);
+  pending = tracker.GetPendingProcesses();
+  EXPECT_TRUE(pending.empty());
 }

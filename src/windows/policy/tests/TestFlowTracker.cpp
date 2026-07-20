@@ -176,3 +176,43 @@ TEST_F(TestFlowTracker, GetPendingFlows) {
   ioContext.run();
   EXPECT_TRUE(testDone);
 }
+
+TEST_F(TestFlowTracker, DeletePendingFlow) {
+  Omni::Fiber::AsioExecutor executor(ioContext.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  bool testDone = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    boost::asio::ip::address localIp = boost::asio::ip::make_address("127.0.0.1");
+    boost::asio::ip::address remoteIp = boost::asio::ip::make_address("8.8.8.8");
+    ConnectionTracker::Ip4TcpKey key1{
+        .LocalAddress = localIp.to_v4(), .RemoteAddress = remoteIp.to_v4(), .LocalPort = 11111, .RemotePort = 80};
+
+    // Initially no pending flows
+    auto pending = tracker.GetPendingFlows();
+    EXPECT_TRUE(pending.empty());
+
+    // Add key1 with a deferred mark containing 2 packets
+    VpnClientMultiChannel::Mark::Deferred deferred;
+    deferred.Packets.push_back(Packet{});
+    deferred.Packets.push_back(Packet{});
+    auto mark = std::make_shared<VpnClientMultiChannel::Mark>(std::move(deferred));
+    tracker.AddPendingMark(key1, mark);
+
+    pending = tracker.GetPendingFlows();
+    EXPECT_EQ(pending.size(), 1);
+
+    // On flow deleted, pending mark is removed
+    co_await tracker.OnFlowDeleted(key1);
+    pending = tracker.GetPendingFlows();
+    EXPECT_TRUE(pending.empty());
+
+    testDone = true;
+    co_return;
+  });
+
+  ioContext.restart();
+  ioContext.run();
+  EXPECT_TRUE(testDone);
+}
