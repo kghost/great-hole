@@ -15,23 +15,22 @@
 #include "VpnClientMultiChannel.hpp"
 
 #ifdef _WIN32
-#include "DeferredPacketInjector.hpp"
 #include "EndpointWinDivert.hpp"
-
 #endif
 
 namespace gh {
 
 using DataPlaneCallbacks = Interface::DataPlaneCallbacks;
 
-class TunnelDataPlane :
-#ifdef _WIN32
-    public WinDivertRouteCallback,
-#endif
-    public VpnClientMultiChannel::SessionStateListener {
+class TunnelDataPlane : public VpnClientMultiChannel::SessionStateListener {
 public:
+#ifdef _WIN32
+  TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
+                  WinDivertRouteCallback& routeCallback, DataPlaneCallbacks& callbacks);
+#else
   TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
                   DataPlaneCallbacks& callbacks);
+#endif
   ~TunnelDataPlane();
 
   void OnSessionStarting(const std::weak_ptr<VpnClientMultiChannelSession>& session) override;
@@ -47,7 +46,9 @@ public:
 
 #ifdef _WIN32
   auto Start(int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>;
-  auto WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> WinDivertRouteCallback::Result override;
+  [[nodiscard]] auto GetConnectionTracker() const -> const std::shared_ptr<ConnectionTracker>& {
+    return _ConnectionTracker;
+  }
   [[nodiscard]] auto GetInjector() const -> DeferredPacketInjector& { return *_WinDivert; }
 #else
   auto Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void>;

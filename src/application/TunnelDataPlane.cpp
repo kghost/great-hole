@@ -15,7 +15,6 @@
 #include "EndpointUdpDynMux.hpp"
 #include "ErrorCode.hpp"
 #include "FilterXor.hpp"
-#include "Utils/Overload.hpp"
 #include "VpnClientMultiChannel.hpp"
 
 #ifdef _WIN32
@@ -28,17 +27,18 @@ namespace gh {
 
 using TunnelState = Interface::TunnelState;
 
-TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
-                                 DataPlaneCallbacks& callbacks)
-    : _Executor(std::move(executor)), _Selector(selector), _Callbacks(callbacks)
 #ifdef _WIN32
-      ,
+TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
+                                 WinDivertRouteCallback& routeCallback, DataPlaneCallbacks& callbacks)
+    : _Executor(std::move(executor)), _Selector(selector), _Callbacks(callbacks),
       _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor)),
       // TODO: pass interface index
-      _WinDivert(std::make_shared<WinDivert>(_Executor, "WinDivert", 0, 0, *this))
+      _WinDivert(std::make_shared<WinDivert>(_Executor, "WinDivert", 0, 0, routeCallback)) {}
+#else
+TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
+                                 DataPlaneCallbacks& callbacks)
+    : _Executor(std::move(executor)), _Selector(selector), _Callbacks(callbacks) {}
 #endif
-{
-}
 
 TunnelDataPlane::~TunnelDataPlane() { assert(!_Running); }
 
@@ -130,43 +130,6 @@ auto TunnelDataPlane::RemoveEndpoint(std::weak_ptr<VpnClientMultiChannelSession>
     co_await _Client->UnregisterChannel(sharedSession);
   }
 }
-
-#ifdef _WIN32
-auto TunnelDataPlane::WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> WinDivertRouteCallback::Result {
-  if (addr.Loopback || !addr.Outbound) {
-    return WinDivertRouteCallback::Result::Normal;
-  }
-  auto result = _ConnectionTracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(packet, _Selector);
-  if (result.has_value()) {
-    auto mark = std::dynamic_pointer_cast<VpnClientMultiChannel::Mark>(result.value());
-    packet.SetMark(mark);
-
-    return std::visit(
-        Overload{
-            [](VpnClientMultiChannel::Mark::ToBeSelected) -> gh::WinDivertRouteCallback::Result {
-              return WinDivertRouteCallback::Result::Normal;
-            },
-            [](VpnClientMultiChannel::Mark::Bypass) -> gh::WinDivertRouteCallback::Result {
-              return WinDivertRouteCallback::Result::Bypass;
-            },
-            [](VpnClientMultiChannel::Mark::Discard) -> gh::WinDivertRouteCallback::Result {
-              return WinDivertRouteCallback::Result::Discard;
-            },
-            [&packet](VpnClientMultiChannel::Mark::Deferred& deferred) -> gh::WinDivertRouteCallback::Result {
-              deferred.Packets.push_back(std::move(packet));
-              return WinDivertRouteCallback::Result::Discard;
-            },
-            [](const std::weak_ptr<VpnClientMultiChannelSession>&) -> gh::WinDivertRouteCallback::Result {
-              return WinDivertRouteCallback::Result::Normal;
-            },
-        },
-        mark->GetValue());
-  } else {
-    BOOST_LOG_TRIVIAL(warning) << "WinDivert: LookupAndUpdate bypass failed: " << result.error().message();
-    return WinDivertRouteCallback::Result::Normal;
-  }
-}
-#endif
 
 auto TunnelDataPlane::GetTrafficStats(const std::shared_ptr<VpnClientMultiChannelSession>& session)
     -> std::optional<VpnTrafficStats> {

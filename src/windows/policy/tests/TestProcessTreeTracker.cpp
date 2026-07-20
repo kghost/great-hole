@@ -12,6 +12,11 @@
 using namespace gh;
 using namespace gh::policy;
 
+struct MockDeferredPacket : public VpnClientMultiChannel::Mark::Deferred::DeferredPacket {
+  Packet Pkt;
+  MockDeferredPacket(Packet pkt) : Pkt(std::move(pkt)) {}
+};
+
 class TestProcessTreeTracker : public ::testing::Test, public ProcessTreeTrackerDeferredCallback {
 protected:
   boost::asio::io_context ioContext;
@@ -212,11 +217,10 @@ TEST_F(TestProcessTreeTracker, GetPendingProcesses) {
   auto pending = tracker.GetPendingProcesses();
   EXPECT_TRUE(pending.empty());
 
-  // Add a pending mark for PID 7000 containing 3 packets
   VpnClientMultiChannel::Mark::Deferred deferred;
-  deferred.Packets.push_back(Packet{});
-  deferred.Packets.push_back(Packet{});
-  deferred.Packets.push_back(Packet{});
+  deferred.Packets.push_back(std::make_unique<MockDeferredPacket>(Packet{}));
+  deferred.Packets.push_back(std::make_unique<MockDeferredPacket>(Packet{}));
+  deferred.Packets.push_back(std::make_unique<MockDeferredPacket>(Packet{}));
   auto mark = std::make_shared<VpnClientMultiChannel::Mark>(std::move(deferred));
   tracker.AddPendingMark(7000, mark);
 

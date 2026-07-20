@@ -56,9 +56,8 @@ graph TD
     Registry -->|Associate policy to PID node| TreeTracker
 
     %% Packet Processing
-    DivertNet <-->|Intercept Packets| DataPlane
-    DataPlane <-->|Flow Queries| ConnTrack
-    ConnTrack -->|Resolve Flow| Selector
+    DivertNet <-->|Intercept Packets| Selector
+    Selector <-->|Lookup/Update Flow| ConnTrack
     Selector -->|1. Lookup PID| FlowTracker
     Selector -->|2. Get Policy| TreeTracker
 ```
@@ -109,10 +108,11 @@ The `PolicyRegistry` stores user-defined rules.
 - **Default Route**: Defines the default route when no path-specific rules match.
 
 ### 3.4. Policy Selector (`gh::policy::PolicySelector`)
-The `PolicySelector` implements the `ConnectionTracker::Selector` interface and coordinates policy resolution:
-1. It queries `FlowTracker` for the `ProcessId` of the connection key.
-2. If the PID is found, it queries `ProcessTreeTracker` for the policy associated with that PID.
-3. If either the flow mapping or the process policy isn't available yet, the selector returns a `Deferred` connection mark and registers callbacks to resume the connection once the information is resolved.
+The `PolicySelector` implements the `ConnectionTracker::Selector` and `WinDivertRouteCallback` interfaces, and coordinates policy resolution:
+1. It implements `WinDivertRouteCallback::WinDivertRoute`. When WinDivert captures outbound packets, it routes them through the `ConnectionTracker`.
+2. It queries `FlowTracker` for the `ProcessId` of the connection key.
+3. If the PID is found, it queries `ProcessTreeTracker` for the policy associated with that PID.
+4. If either the flow mapping or the process policy isn't available yet, the selector returns a `Deferred` connection mark and registers callbacks to resume the connection once the information is resolved.
 
 ---
 

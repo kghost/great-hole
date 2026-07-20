@@ -13,6 +13,11 @@
 using namespace gh;
 using namespace gh::policy;
 
+struct MockDeferredPacket : public VpnClientMultiChannel::Mark::Deferred::DeferredPacket {
+  Packet Pkt;
+  MockDeferredPacket(Packet pkt) : Pkt(std::move(pkt)) {}
+};
+
 class MockFlowTrackerCallback : public FlowTrackerDeferredCallback {
 public:
   auto FlowTrackerContinue(const std::shared_ptr<VpnClientMultiChannel::Mark>& /*mark*/, DWORD /*pid*/)
@@ -149,10 +154,9 @@ TEST_F(TestFlowTracker, GetPendingFlows) {
     auto pending = tracker.GetPendingFlows();
     EXPECT_TRUE(pending.empty());
 
-    // Add key1 with a deferred mark containing 2 packets
     VpnClientMultiChannel::Mark::Deferred deferred;
-    deferred.Packets.push_back(Packet{});
-    deferred.Packets.push_back(Packet{});
+    deferred.Packets.push_back(std::make_unique<MockDeferredPacket>(Packet{}));
+    deferred.Packets.push_back(std::make_unique<MockDeferredPacket>(Packet{}));
     auto mark = std::make_shared<VpnClientMultiChannel::Mark>(std::move(deferred));
     tracker.AddPendingMark(key1, mark);
 
@@ -193,10 +197,9 @@ TEST_F(TestFlowTracker, DeletePendingFlow) {
     auto pending = tracker.GetPendingFlows();
     EXPECT_TRUE(pending.empty());
 
-    // Add key1 with a deferred mark containing 2 packets
     VpnClientMultiChannel::Mark::Deferred deferred;
-    deferred.Packets.push_back(Packet{});
-    deferred.Packets.push_back(Packet{});
+    deferred.Packets.push_back(std::make_unique<MockDeferredPacket>(Packet{}));
+    deferred.Packets.push_back(std::make_unique<MockDeferredPacket>(Packet{}));
     auto mark = std::make_shared<VpnClientMultiChannel::Mark>(std::move(deferred));
     tracker.AddPendingMark(key1, mark);
 

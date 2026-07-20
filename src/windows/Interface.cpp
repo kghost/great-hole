@@ -79,7 +79,8 @@ auto PlatformImpl::StartEngine() -> std::error_code {
     manager.SpawnRoot("bridge_task_processor", [this, ioExecutor]() -> Omni::Fiber::Coroutine<void> {
       auto guard = boost::asio::make_work_guard(ioExecutor);
       auto policyEngine = std::make_shared<gh::policy::PolicyEngine>(ioExecutor);
-      auto dataPlane = std::make_unique<gh::TunnelDataPlane>(ioExecutor, policyEngine->GetPolicySelector(), _Callbacks);
+      auto dataPlane = std::make_unique<gh::TunnelDataPlane>(ioExecutor, policyEngine->GetPolicySelector(),
+                                                             policyEngine->GetPolicySelector(), _Callbacks);
       policyEngine->GetPolicySelector().SetInjector(dataPlane->GetInjector());
 
       while (!_Stop.load()) {
@@ -130,10 +131,12 @@ auto PlatformImpl::StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> s
   auto future = promise.get_future();
   std::vector<char> key(encryption_key.begin(), encryption_key.end());
 
-  _TaskQueue.Push([&promise, mtu, key = std::move(key)](const auto& /*policyEngine*/,
+  _TaskQueue.Push([&promise, mtu, key = std::move(key)](const auto& policyEngine,
                                                         const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
+    policyEngine->GetPolicySelector().SetConnectionTracker(dataPlane->GetConnectionTracker());
     auto err = co_await dataPlane->Start(mtu, key);
     if (err) {
+      policyEngine->GetPolicySelector().ClearConnectionTracker();
       promise.set_value(err);
       co_return;
     }
@@ -151,6 +154,7 @@ auto PlatformImpl::StopVpn() -> std::error_code {
 
   _TaskQueue.Push([&promise](const auto& policyEngine, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
     policyEngine->GetPolicySelector().ClearInjector();
+    policyEngine->GetPolicySelector().ClearConnectionTracker();
     auto err = co_await dataPlane->Stop();
     if (err) {
       promise.set_value(err);

@@ -6,7 +6,6 @@
 
 #include "Asio.hpp"
 #include "Coroutine.hpp"
-#include "DeferredPacketInjector.hpp"
 #include "Fiber.hpp"
 #include "Manager.hpp"
 #include "PolicyRegistry.hpp"
@@ -19,7 +18,7 @@ class MockDeferredPacketInjector : public DeferredPacketInjector {
 public:
   std::vector<Packet> InjectedPackets;
 
-  auto Inject(Packet&& packet) -> Omni::Fiber::Coroutine<void> override {
+  auto Inject(Packet&& packet, const WINDIVERT_ADDRESS& /*addr*/, WinDivertRouteCallback::Result /*route*/) -> Omni::Fiber::Coroutine<void> override {
     InjectedPackets.push_back(std::move(packet));
     co_return;
   }
@@ -176,7 +175,8 @@ TEST_F(TestPolicySelector, OutOfOrder_F_P_Pr) {
         // Queue a packet
         Packet packet(100);
         packet.SetMark(vpnMark);
-        std::get<VpnClientMultiChannel::Mark::Deferred>(vpnMark->GetValue()).Packets.push_back(std::move(packet));
+        std::get<VpnClientMultiChannel::Mark::Deferred>(vpnMark->GetValue())
+            .Packets.push_back(std::make_unique<WinDivertDeferredPacket>(std::move(packet), WINDIVERT_ADDRESS{}));
       }
     }
 
@@ -250,7 +250,8 @@ TEST_F(TestPolicySelector, OutOfOrder_Pr_P_F) {
         // Queue a packet
         Packet packet(100);
         packet.SetMark(vpnMark);
-        std::get<VpnClientMultiChannel::Mark::Deferred>(vpnMark->GetValue()).Packets.push_back(std::move(packet));
+        std::get<VpnClientMultiChannel::Mark::Deferred>(vpnMark->GetValue())
+            .Packets.push_back(std::make_unique<WinDivertDeferredPacket>(std::move(packet), WINDIVERT_ADDRESS{}));
       }
     }
 
@@ -316,7 +317,8 @@ TEST_F(TestPolicySelector, OutOfOrder_P_F_Pr) {
         // Queue a packet
         Packet packet(100);
         packet.SetMark(vpnMark);
-        std::get<VpnClientMultiChannel::Mark::Deferred>(vpnMark->GetValue()).Packets.push_back(std::move(packet));
+        std::get<VpnClientMultiChannel::Mark::Deferred>(vpnMark->GetValue())
+            .Packets.push_back(std::make_unique<WinDivertDeferredPacket>(std::move(packet), WINDIVERT_ADDRESS{}));
       }
     }
 
@@ -395,7 +397,8 @@ TEST_F(TestPolicySelector, OutOfOrder_P_Pr_F) {
         // Queue a packet
         Packet packet(100);
         packet.SetMark(vpnMark);
-        std::get<VpnClientMultiChannel::Mark::Deferred>(vpnMark->GetValue()).Packets.push_back(std::move(packet));
+        std::get<VpnClientMultiChannel::Mark::Deferred>(vpnMark->GetValue())
+            .Packets.push_back(std::make_unique<WinDivertDeferredPacket>(std::move(packet), WINDIVERT_ADDRESS{}));
       }
     }
 

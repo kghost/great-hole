@@ -70,10 +70,36 @@ auto PolicySelector::ProcessTreeTrackerContinue(const std::shared_ptr<VpnClientM
   auto& packets = std::get<VpnClientMultiChannel::Mark::Deferred>(newMark->GetValue()).Packets;
   BOOST_LOG_TRIVIAL(trace) << "ProcessTreeTrackerContinue: action=" << PolicyActionToString(action) << " injecting "
                            << packets.size() << " packets";
-  for (auto& packet : packets) {
-    packet.SetMark(mark);
+  for (auto& deferredPacket : packets) {
+    auto* winDivertPacket = dynamic_cast<WinDivertDeferredPacket*>(deferredPacket.get());
+    if (winDivertPacket == nullptr) {
+      continue;
+    }
+    winDivertPacket->Pkt.SetMark(mark);
+    auto route =
+        std::visit(Overload{
+                       [](VpnClientMultiChannel::Mark::ToBeSelected) -> WinDivertRouteCallback::Result {
+                         assert(false && "should not reach here");
+                         std::unreachable();
+                       },
+                       [](VpnClientMultiChannel::Mark::Bypass) -> WinDivertRouteCallback::Result {
+                         return WinDivertRouteCallback::Result::Bypass;
+                       },
+                       [](VpnClientMultiChannel::Mark::Discard) -> WinDivertRouteCallback::Result {
+                         return WinDivertRouteCallback::Result::Discard;
+                       },
+                       [](const VpnClientMultiChannel::Mark::Deferred&) -> WinDivertRouteCallback::Result {
+                         assert(false && "should not reach here");
+                         std::unreachable();
+                       },
+                       [](const std::weak_ptr<VpnClientMultiChannelSession>&) -> WinDivertRouteCallback::Result {
+                         return WinDivertRouteCallback::Result::Normal;
+                       },
+                   },
+                   mark->GetValue());
+
     if (_Injector) {
-      co_await _Injector->get().Inject(std::move(packet));
+      co_await _Injector->get().Inject(std::move(winDivertPacket->Pkt), winDivertPacket->Addr, route);
     }
   }
   co_return;
@@ -93,6 +119,43 @@ auto PolicySelector::ToConnectionMark(const PolicyRule::RoutingAction& action)
                  }
                }},
       action);
+}
+
+auto PolicySelector::WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> WinDivertRouteCallback::Result {
+  if (addr.Loopback || !addr.Outbound) {
+    return WinDivertRouteCallback::Result::Normal;
+  }
+  assert(_ConnectionTracker);
+  auto result = _ConnectionTracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(packet, *this);
+  if (result.has_value()) {
+    auto mark = std::dynamic_pointer_cast<VpnClientMultiChannel::Mark>(result.value());
+    packet.SetMark(mark);
+
+    return std::visit(
+        Overload{
+            [](VpnClientMultiChannel::Mark::ToBeSelected) -> gh::WinDivertRouteCallback::Result {
+              assert(false && "should not reach here");
+              std::unreachable();
+            },
+            [](VpnClientMultiChannel::Mark::Bypass) -> gh::WinDivertRouteCallback::Result {
+              return WinDivertRouteCallback::Result::Bypass;
+            },
+            [](VpnClientMultiChannel::Mark::Discard) -> gh::WinDivertRouteCallback::Result {
+              return WinDivertRouteCallback::Result::Discard;
+            },
+            [&packet, &addr](VpnClientMultiChannel::Mark::Deferred& deferred) -> gh::WinDivertRouteCallback::Result {
+              deferred.Packets.push_back(std::make_unique<WinDivertDeferredPacket>(std::move(packet), addr));
+              return WinDivertRouteCallback::Result::Discard;
+            },
+            [](const std::weak_ptr<VpnClientMultiChannelSession>&) -> gh::WinDivertRouteCallback::Result {
+              return WinDivertRouteCallback::Result::Normal;
+            },
+        },
+        mark->GetValue());
+  } else {
+    BOOST_LOG_TRIVIAL(warning) << "WinDivert: LookupAndUpdate bypass failed: " << result.error().message();
+    return WinDivertRouteCallback::Result::Normal;
+  }
 }
 
 } // namespace gh::policy

@@ -38,7 +38,16 @@ public:
     struct Bypass {};
     struct Discard {};
     struct Deferred {
-      std::vector<Packet> Packets;
+      struct DeferredPacket {
+        explicit DeferredPacket() = default;
+        virtual ~DeferredPacket() = default;
+
+        DeferredPacket(const DeferredPacket&) = default;
+        auto operator=(const DeferredPacket&) -> DeferredPacket& = default;
+        DeferredPacket(DeferredPacket&&) = delete;
+        auto operator=(DeferredPacket&&) -> DeferredPacket& = delete;
+      };
+      std::vector<std::unique_ptr<DeferredPacket>> Packets;
     };
 
     using ValueType =

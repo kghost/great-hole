@@ -281,7 +281,7 @@ TEST(WinDivertTest, ReadInjectedPacketPrioritized) {
     std::copy(injectMsg.begin(), injectMsg.end(), injectPacket._Data.begin() + injectPacket._Offset);
     injectPacket._Length = injectMsg.size();
 
-    co_await winDivert->Inject(std::move(injectPacket));
+    co_await winDivert->Inject(std::move(injectPacket), WINDIVERT_ADDRESS{}, WinDivertRouteCallback::Result::Normal);
 
     Packet readPacket;
     Cancel cancel;
