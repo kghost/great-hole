@@ -425,39 +425,96 @@ void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
     return;
   }
 
-  struct ProcessStartEvent {
-    uint32_t ProcessId{};
-    FILETIME CreateTime{};
-    uint32_t ParentProcessId{};
-    uint32_t SessionId{};
-    WCHAR ImageName[0]; // NOLINT(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
-  };
-
-  struct ProcessStopEvent {
-    uint32_t ProcessId{};
-    FILETIME CreateTime{};
-    FILETIME ExitTime{};
-    uint32_t ExitCode{};
-    uint32_t TokenElevationType{};
-    uint32_t HandleCount{};
-    uint64_t CommitCharge{};
-    uint64_t CommitPeak{};
-    char ImageName[0]; // NOLINT(cppcoreguidelines-avoid-c-arrays, modernize-avoid-c-arrays)
-  };
-
   auto eventId = record->EventHeader.EventDescriptor.Id;
+  auto version = record->EventHeader.EventDescriptor.Version;
+
   if (eventId == 1) {
-    constexpr size_t ProcessStartEventHeaderSize = sizeof(ProcessStartEvent);
-    if (record->UserDataLength >= ProcessStartEventHeaderSize) {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-      const auto* data = reinterpret_cast<ProcessStartEvent*>(record->UserData);
-      uint32_t pid = data->ProcessId;
-      uint32_t parentPid = data->ParentProcessId;
-      auto execPath =
-          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
-          ToString(std::wstring_view(data->ImageName,
-                                     (record->UserDataLength - ProcessStartEventHeaderSize) / sizeof(WCHAR)))
-              .value_or("");
+    uint32_t pid = 0;
+    uint32_t parentPid = 0;
+    std::string execPath;
+
+    if (version >= 3) {
+      // Version 3 and 4
+      // Fields:
+      // 1. ProcessID (UInt32) - 4 bytes
+      // 2. ProcessSequenceNumber (UInt64) - 8 bytes
+      // 3. CreateTime (FILETIME) - 8 bytes
+      // 4. ParentProcessID (UInt32) - 4 bytes
+      // 5. ParentProcessSequenceNumber (UInt64) - 8 bytes
+      // 6. SessionID (UInt32) - 4 bytes
+      // 7. Flags (UInt32) - 4 bytes
+      // 8. ProcessTokenElevationType (UInt32) - 4 bytes
+      // 9. ProcessTokenIsElevated (UInt32) - 4 bytes
+      // 10. MandatoryLabel (SID) - variable length (starts at offset 44)
+      // 11. ImageName (UnicodeString) - variable length
+      constexpr size_t kStartEventV3HeaderSize = 44;
+      constexpr size_t kStartEventV3ParentPidOffset = 24;
+      constexpr size_t kSidHeaderSize = 8;
+      constexpr size_t kSidSubAuthoritySize = 4;
+
+      if (record->UserDataLength >= kStartEventV3HeaderSize) {
+        const auto* userData = static_cast<const uint8_t*>(record->UserData);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        pid = *reinterpret_cast<const uint32_t*>(userData);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        parentPid = *reinterpret_cast<const uint32_t*>(userData + kStartEventV3ParentPidOffset);
+
+        const auto* sidPtr = userData + kStartEventV3HeaderSize;
+        if (record->UserDataLength >= kStartEventV3HeaderSize + kSidHeaderSize) {
+          // A SID starts with: Revision (1B), SubAuthorityCount (1B), IdentifierAuthority (6B)
+          uint8_t subAuthorityCount = sidPtr[1];
+          size_t sidSize = kSidHeaderSize + kSidSubAuthoritySize * subAuthorityCount;
+
+          size_t imageNameOffset = kStartEventV3HeaderSize + sidSize;
+          if (record->UserDataLength > imageNameOffset) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+            const auto* wstrPtr = reinterpret_cast<const wchar_t*>(userData + imageNameOffset);
+            size_t maxWCharLen = (record->UserDataLength - imageNameOffset) / sizeof(wchar_t);
+            size_t wCharLen = 0;
+            while (wCharLen < maxWCharLen && wstrPtr[wCharLen] != L'\0') {
+              wCharLen += 1;
+            }
+            execPath = ToString(std::wstring_view(wstrPtr, wCharLen)).value_or("");
+          }
+        }
+      }
+    } else {
+      // Legacy Version 0, 1, 2
+      // Fields:
+      // 1. ProcessID (UInt32) - 4 bytes
+      // 2. CreateTime (FILETIME) - 8 bytes
+      // 3. ParentProcessID (UInt32) - 4 bytes
+      // 4. SessionID (UInt32) - 4 bytes
+      // 5. ImageName (UnicodeString) - starts at offset 20/24
+      constexpr size_t kLegacyHeaderSize = 20;
+      constexpr size_t kLegacyParentPidOffset = 12;
+      constexpr size_t kLegacyFlagsSize = 4;
+
+      if (record->UserDataLength >= kLegacyHeaderSize) {
+        const auto* userData = static_cast<const uint8_t*>(record->UserData);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        pid = *reinterpret_cast<const uint32_t*>(userData);
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        parentPid = *reinterpret_cast<const uint32_t*>(userData + kLegacyParentPidOffset);
+
+        size_t imageNameOffset = kLegacyHeaderSize;
+        if (version == 1 || version == 2) {
+          imageNameOffset += kLegacyFlagsSize; // Skip Flags (4 bytes)
+        }
+        if (record->UserDataLength > imageNameOffset) {
+          // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+          const auto* wstrPtr = reinterpret_cast<const wchar_t*>(userData + imageNameOffset);
+          size_t maxWCharLen = (record->UserDataLength - imageNameOffset) / sizeof(wchar_t);
+          size_t wCharLen = 0;
+          while (wCharLen < maxWCharLen && wstrPtr[wCharLen] != L'\0') {
+            wCharLen += 1;
+          }
+          execPath = ToString(std::wstring_view(wstrPtr, wCharLen)).value_or("");
+        }
+      }
+    }
+
+    if (pid != 0) {
       _TaskQueue.Push([this, pid, parentPid, execPath]() -> Omni::Fiber::Coroutine<void> {
         const auto& node = AddProcess(pid, parentPid, execPath);
         if (auto pending = _PendingProcessMarks.find(pid); pending != _PendingProcessMarks.end()) {
@@ -468,10 +525,12 @@ void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
       });
     }
   } else if (eventId == 2) {
-    if (record->UserDataLength >= 4) {
+    constexpr size_t kStopEventMinSize = 4;
+    if (record->UserDataLength >= kStopEventMinSize) {
+      const auto* userData = static_cast<const uint8_t*>(record->UserData);
       // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-      auto* data = reinterpret_cast<ProcessStopEvent*>(record->UserData);
-      uint32_t pid = data->ProcessId;
+      uint32_t pid = *reinterpret_cast<const uint32_t*>(userData);
+
       _TaskQueue.Push([this, pid]() -> Omni::Fiber::Coroutine<void> {
         RemoveProcess(pid);
         co_return;
