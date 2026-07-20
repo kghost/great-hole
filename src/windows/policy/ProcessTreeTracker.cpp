@@ -308,6 +308,15 @@ auto ProcessTreeTracker::GetProcessTree() const -> std::vector<Interface::Proces
   return list;
 }
 
+auto ProcessTreeTracker::GetPendingProcesses() const -> std::vector<Interface::PendingProcessInfo> {
+  std::vector<Interface::PendingProcessInfo> pending;
+  pending.reserve(_PendingProcessMarks.size());
+  for (const auto& [pid, mark] : _PendingProcessMarks) {
+    pending.push_back({.ProcessId = pid, .QueueSize = mark->GetPendingQueueSize()});
+  }
+  return pending;
+}
+
 void ProcessTreeTracker::BuildInitialSnapshot() {
   HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
   if (hSnapshot == INVALID_HANDLE_VALUE) {

@@ -96,7 +96,7 @@ TEST_F(TestFlowTracker, GetFlows) {
     EXPECT_EQ(flows.size(), 1);
     if (!flows.empty()) {
       EXPECT_EQ(flows[0].ProcessId, 1001);
-      EXPECT_EQ(std::get<ConnectionTracker::Ip4TcpKey>(flows[0].Key).LocalPort, 11111);
+      EXPECT_EQ(flows[0].Connection.LocalPort, 11111);
     }
 
     // Add key2
@@ -106,13 +106,10 @@ TEST_F(TestFlowTracker, GetFlows) {
     DWORD pid1 = 0;
     DWORD pid2 = 0;
     for (const auto& flow : flows) {
-      if (std::holds_alternative<ConnectionTracker::Ip4TcpKey>(flow.Key)) {
-        auto tcpKey = std::get<ConnectionTracker::Ip4TcpKey>(flow.Key);
-        if (tcpKey.LocalPort == 11111) {
-          pid1 = flow.ProcessId;
-        } else if (tcpKey.LocalPort == 22222) {
-          pid2 = flow.ProcessId;
-        }
+      if (flow.Connection.LocalPort == 11111) {
+        pid1 = flow.ProcessId;
+      } else if (flow.Connection.LocalPort == 22222) {
+        pid2 = flow.ProcessId;
       }
     }
     EXPECT_EQ(pid1, 1001);
@@ -124,8 +121,52 @@ TEST_F(TestFlowTracker, GetFlows) {
     EXPECT_EQ(flows.size(), 1);
     if (!flows.empty()) {
       EXPECT_EQ(flows[0].ProcessId, 1002);
-      EXPECT_EQ(std::get<ConnectionTracker::Ip4TcpKey>(flows[0].Key).LocalPort, 22222);
+      EXPECT_EQ(flows[0].Connection.LocalPort, 22222);
     }
+
+    testDone = true;
+    co_return;
+  });
+
+  ioContext.restart();
+  ioContext.run();
+  EXPECT_TRUE(testDone);
+}
+
+TEST_F(TestFlowTracker, GetPendingFlows) {
+  Omni::Fiber::AsioExecutor executor(ioContext.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  bool testDone = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    boost::asio::ip::address localIp = boost::asio::ip::make_address("127.0.0.1");
+    boost::asio::ip::address remoteIp = boost::asio::ip::make_address("8.8.8.8");
+    ConnectionTracker::Ip4TcpKey key1{
+        .LocalAddress = localIp.to_v4(), .RemoteAddress = remoteIp.to_v4(), .LocalPort = 11111, .RemotePort = 80};
+
+    // Initially no pending flows
+    auto pending = tracker.GetPendingFlows();
+    EXPECT_TRUE(pending.empty());
+
+    // Add key1 with a deferred mark containing 2 packets
+    VpnClientMultiChannel::Mark::Deferred deferred;
+    deferred.Packets.push_back(Packet{});
+    deferred.Packets.push_back(Packet{});
+    auto mark = std::make_shared<VpnClientMultiChannel::Mark>(std::move(deferred));
+    tracker.AddPendingMark(key1, mark);
+
+    pending = tracker.GetPendingFlows();
+    EXPECT_EQ(pending.size(), 1);
+    if (!pending.empty()) {
+      EXPECT_EQ(pending[0].QueueSize.value_or(0), 2);
+      EXPECT_EQ(pending[0].Connection.LocalPort, 11111);
+    }
+
+    // On flow established, pending mark is resumed and removed
+    co_await tracker.OnFlowEstablished(key1, 1234);
+    pending = tracker.GetPendingFlows();
+    EXPECT_TRUE(pending.empty());
 
     testDone = true;
     co_return;

@@ -64,6 +64,7 @@ public:
   void ClearAllMock();
   [[nodiscard]] auto GetAction(DWORD pid) const -> std::optional<PolicyRule::RoutingAction>;
   [[nodiscard]] auto GetProcessTree() const -> std::vector<Interface::ProcessInfo>;
+  [[nodiscard]] auto GetPendingProcesses() const -> std::vector<Interface::PendingProcessInfo>;
   void TestReEvaluatePolicy(DWORD pid);
 
   void AddPendingMark(DWORD pid, const std::shared_ptr<VpnClientMultiChannel::Mark>& mark);

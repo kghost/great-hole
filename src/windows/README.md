@@ -42,15 +42,35 @@ public:
   virtual void SetDefaultPolicy(const PolicyRule& policy) = 0;
   virtual void LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy) = 0;
   virtual auto GetFlows() -> std::vector<FlowInfo> = 0;
+  virtual auto GetPendingConnections() -> PendingConnections = 0;
 };
 
-struct FlowInfo {
+struct FlowConnection {
   std::string Protocol;
   std::string LocalAddress;
   std::string RemoteAddress;
   uint16_t LocalPort{0};
   uint16_t RemotePort{0};
+};
+
+struct FlowInfo {
+  FlowConnection Connection;
   uint32_t ProcessId{0};
+};
+
+struct PendingFlowInfo {
+  FlowConnection Connection;
+  size_t QueueSize{0};
+};
+
+struct PendingProcessInfo {
+  uint32_t ProcessId{0};
+  size_t QueueSize{0};
+};
+
+struct PendingConnections {
+  std::vector<PendingFlowInfo> PendingFlows;
+  std::vector<PendingProcessInfo> PendingProcesses;
 };
 
 // Factory function to create the platform-specific implementation

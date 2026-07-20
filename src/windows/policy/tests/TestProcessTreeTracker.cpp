@@ -206,3 +206,28 @@ TEST_F(TestProcessTreeTracker, ExposeProcessTree) {
   EXPECT_TRUE(found6000);
   EXPECT_TRUE(found6001);
 }
+
+TEST_F(TestProcessTreeTracker, GetPendingProcesses) {
+  // Initially no pending processes
+  auto pending = tracker.GetPendingProcesses();
+  EXPECT_TRUE(pending.empty());
+
+  // Add a pending mark for PID 7000 containing 3 packets
+  VpnClientMultiChannel::Mark::Deferred deferred;
+  deferred.Packets.push_back(Packet{});
+  deferred.Packets.push_back(Packet{});
+  deferred.Packets.push_back(Packet{});
+  auto mark = std::make_shared<VpnClientMultiChannel::Mark>(std::move(deferred));
+  tracker.AddPendingMark(7000, mark);
+
+  pending = tracker.GetPendingProcesses();
+  EXPECT_EQ(pending.size(), 1);
+  if (!pending.empty()) {
+    EXPECT_EQ(pending[0].ProcessId, 7000);
+    EXPECT_EQ(pending[0].QueueSize.value_or(0), 3);
+  }
+
+  // Once process is added, pending mark should be handled (mock callback handles it, but in real it resolves/removes it)
+  // Let's manually remove it to test cleanup or simulate what happens.
+  // Actually, let's verify that the mark is correctly registered.
+}

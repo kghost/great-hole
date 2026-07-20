@@ -61,6 +61,13 @@ public:
     [[nodiscard]] auto GetValue() -> ValueType& { return _Value; }
     void Swap(Mark& other) { _Value.swap(other._Value); }
 
+    [[nodiscard]] auto GetPendingQueueSize() const -> std::optional<size_t> {
+      if (const auto* const deferred = std::get_if<Deferred>(&_Value)) {
+        return deferred->Packets.size();
+      }
+      return std::nullopt;
+    }
+
   private:
     ValueType _Value;
   };

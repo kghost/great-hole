@@ -13,11 +13,6 @@
 
 namespace gh::policy {
 
-struct FlowRecord {
-  ConnectionTracker::ConnectionKey Key;
-  DWORD ProcessId{};
-};
-
 class FlowTrackerDeferredCallback {
 public:
   explicit FlowTrackerDeferredCallback() = default;
@@ -51,7 +46,8 @@ public:
   void AddPendingMark(const ConnectionTracker::ConnectionKey& key,
                       const std::shared_ptr<VpnClientMultiChannel::Mark>& mark);
 
-  [[nodiscard]] auto GetFlows() const -> std::vector<FlowRecord>;
+  [[nodiscard]] auto GetFlows() const -> std::vector<Interface::FlowInfo>;
+  [[nodiscard]] auto GetPendingFlows() const -> std::vector<Interface::PendingFlowInfo>;
 
 private:
   FlowTrackerDeferredCallback& _Callback;

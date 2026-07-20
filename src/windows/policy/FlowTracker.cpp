@@ -47,13 +47,73 @@ auto FlowTracker::OnFlowDeleted(const ConnectionTracker::ConnectionKey& conn) ->
   co_return;
 }
 
-auto FlowTracker::GetFlows() const -> std::vector<FlowRecord> {
-  std::vector<FlowRecord> flows;
+namespace {
+
+auto ToFlowConnection(const ConnectionTracker::ConnectionKey& key) -> Interface::FlowConnection {
+  Interface::FlowConnection conn;
+  std::visit(
+      [&conn](const auto& key) -> void {
+        using T = std::decay_t<decltype(key)>;
+        if constexpr (std::is_same_v<T, ConnectionTracker::Ip4TcpKey>) {
+          conn.Protocol = "TCPv4";
+          conn.LocalAddress = key.LocalAddress.to_string();
+          conn.LocalPort = key.LocalPort;
+          conn.RemoteAddress = key.RemoteAddress.to_string();
+          conn.RemotePort = key.RemotePort;
+        } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip6TcpKey>) {
+          conn.Protocol = "TCPv6";
+          conn.LocalAddress = key.LocalAddress.to_string();
+          conn.LocalPort = key.LocalPort;
+          conn.RemoteAddress = key.RemoteAddress.to_string();
+          conn.RemotePort = key.RemotePort;
+        } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip4UdpKey>) {
+          conn.Protocol = "UDPv4";
+          conn.LocalAddress = key.LocalAddress.to_string();
+          conn.LocalPort = key.LocalPort;
+          conn.RemoteAddress = key.RemoteAddress.to_string();
+          conn.RemotePort = key.RemotePort;
+        } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip6UdpKey>) {
+          conn.Protocol = "UDPv6";
+          conn.LocalAddress = key.LocalAddress.to_string();
+          conn.LocalPort = key.LocalPort;
+          conn.RemoteAddress = key.RemoteAddress.to_string();
+          conn.RemotePort = key.RemotePort;
+        } else if constexpr (std::is_same_v<T, ConnectionTracker::IcmpKey>) {
+          conn.Protocol = "ICMPv4";
+          conn.LocalAddress = key.LocalAddress.to_string();
+          conn.RemoteAddress = key.RemoteAddress.to_string();
+          conn.LocalPort = key.Id;
+          conn.RemotePort = 0;
+        } else if constexpr (std::is_same_v<T, ConnectionTracker::Icmp6Key>) {
+          conn.Protocol = "ICMPv6";
+          conn.LocalAddress = key.LocalAddress.to_string();
+          conn.RemoteAddress = key.RemoteAddress.to_string();
+          conn.LocalPort = key.Id;
+          conn.RemotePort = 0;
+        }
+      },
+      key);
+  return conn;
+}
+
+} // namespace
+
+auto FlowTracker::GetFlows() const -> std::vector<Interface::FlowInfo> {
+  std::vector<Interface::FlowInfo> flows;
   flows.reserve(_FlowToPid.size());
   for (const auto& [key, pid] : _FlowToPid) {
-    flows.push_back({.Key = key, .ProcessId = pid});
+    flows.push_back({.Connection = ToFlowConnection(key), .ProcessId = pid});
   }
   return flows;
+}
+
+auto FlowTracker::GetPendingFlows() const -> std::vector<Interface::PendingFlowInfo> {
+  std::vector<Interface::PendingFlowInfo> pending;
+  pending.reserve(_PendingFlowResumers.size());
+  for (const auto& [key, mark] : _PendingFlowResumers) {
+    pending.push_back({.Connection = ToFlowConnection(key), .QueueSize = mark->GetPendingQueueSize()});
+  }
+  return pending;
 }
 
 } // namespace gh::policy

@@ -53,12 +53,16 @@ struct VpnTrafficStats : public TrafficStats {
   int64_t RttMs{-1};
 };
 
-struct FlowInfo {
+struct FlowConnection {
   std::string Protocol;
   std::string LocalAddress;
   std::string RemoteAddress;
   uint16_t LocalPort{0};
   uint16_t RemotePort{0};
+};
+
+struct FlowInfo {
+  FlowConnection Connection;
   uint32_t ProcessId{0};
 };
 
@@ -80,6 +84,21 @@ struct ProcessInfo {
   uint32_t ProcessId{0};
   uint32_t ParentProcessId{0};
   std::optional<PolicyRule> Policy;
+};
+
+struct PendingFlowInfo {
+  FlowConnection Connection;
+  std::optional<size_t> QueueSize;
+};
+
+struct PendingProcessInfo {
+  uint32_t ProcessId{0};
+  std::optional<size_t> QueueSize;
+};
+
+struct PendingConnections {
+  std::vector<PendingFlowInfo> PendingFlows;
+  std::vector<PendingProcessInfo> PendingProcesses;
 };
 
 class DataPlaneCallbacks {
@@ -126,6 +145,7 @@ public:
   virtual void LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy) = 0;
   virtual auto GetFlows() -> std::vector<FlowInfo> = 0;
   virtual auto GetProcessTree() -> std::vector<ProcessInfo> = 0;
+  virtual auto GetPendingConnections() -> PendingConnections = 0;
 };
 
 GREAT_HOLE_INTERFACE_API auto CreatePlatform(DataPlaneCallbacks& callbacks) -> std::shared_ptr<PlatformInterface>;

@@ -181,6 +181,11 @@ public:
                                             const PolicyRule::RoutingAction& action) -> Omni::Fiber::Coroutine<void> = 0;
 };
 
+struct PendingProcessRecord {
+    DWORD ProcessId;
+    size_t QueueSize;
+};
+
 class ProcessTreeTracker : public ServiceBase {
 public:
     explicit ProcessTreeTracker(boost::asio::any_io_executor executor, ProcessTreeTrackerDeferredCallback& callback,
@@ -195,6 +200,8 @@ public:
     auto AddProcess(DWORD pid, DWORD parentPid, const std::string& path) -> const ProcessNode&;
     void RemoveProcess(DWORD pid);
     auto GetAction(DWORD pid) const -> std::optional<PolicyRule::RoutingAction>;
+    auto GetProcessTree() const -> std::vector<Interface::ProcessInfo>;
+    auto GetPendingProcesses() const -> std::vector<PendingProcessRecord>;
     void AddPendingMark(DWORD pid, const std::shared_ptr<VpnClientMultiChannel::Mark>& mark);
 
 private:
@@ -222,6 +229,11 @@ struct FlowRecord {
   DWORD ProcessId;
 };
 
+struct PendingFlowRecord {
+  ConnectionTracker::ConnectionKey Key;
+  size_t QueueSize;
+};
+
 class FlowTracker : public WinDivertFlowSnifferCallback {
 public:
   explicit FlowTracker(FlowTrackerDeferredCallback& callback);
@@ -236,6 +248,7 @@ public:
                       const std::shared_ptr<VpnClientMultiChannel::Mark>& mark);
 
   auto GetFlows() const -> std::vector<FlowRecord>;
+  auto GetPendingFlows() const -> std::vector<PendingFlowRecord>;
 
 private:
   FlowTrackerDeferredCallback& _Callback;
