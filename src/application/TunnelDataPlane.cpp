@@ -33,7 +33,9 @@ TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor, Connecti
     : _Executor(std::move(executor)), _Selector(selector), _Callbacks(callbacks)
 #ifdef _WIN32
       ,
-      _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor))
+      _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor)),
+      // TODO: pass interface index
+      _WinDivert(std::make_shared<WinDivert>(_Executor, "WinDivert", 0, 0, *this))
 #endif
 {
 }
@@ -52,7 +54,6 @@ auto TunnelDataPlane::Start(
   _Callbacks.OnVpnStateChanged(TunnelState::Starting, "VPN starting");
 
 #ifdef _WIN32
-  _WinDivert = std::make_shared<WinDivert>(_Executor, "WinDivert", 0, 0, *this);
   auto tun = _WinDivert;
 #else
   auto tun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
@@ -140,25 +141,26 @@ auto TunnelDataPlane::WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& ad
     auto mark = std::dynamic_pointer_cast<VpnClientMultiChannel::Mark>(result.value());
     packet.SetMark(mark);
 
-    return std::visit(Overload{
-                          [](VpnClientMultiChannel::Mark::ToBeSelected) -> gh::WinDivertRouteCallback::Result {
-                            return WinDivertRouteCallback::Result::Normal;
-                          },
-                          [](VpnClientMultiChannel::Mark::Bypass) -> gh::WinDivertRouteCallback::Result {
-                            return WinDivertRouteCallback::Result::Bypass;
-                          },
-                          [](VpnClientMultiChannel::Mark::Discard) -> gh::WinDivertRouteCallback::Result {
-                            return WinDivertRouteCallback::Result::Discard;
-                          },
-                          [&packet](VpnClientMultiChannel::Mark::Deferred& deferred) -> gh::WinDivertRouteCallback::Result {
-                            deferred.Packets.push_back(std::move(packet));
-                            return WinDivertRouteCallback::Result::Discard;
-                          },
-                          [](const std::weak_ptr<VpnClientMultiChannelSession>&) -> gh::WinDivertRouteCallback::Result {
-                            return WinDivertRouteCallback::Result::Normal;
-                          },
-                      },
-                      mark->GetValue());
+    return std::visit(
+        Overload{
+            [](VpnClientMultiChannel::Mark::ToBeSelected) -> gh::WinDivertRouteCallback::Result {
+              return WinDivertRouteCallback::Result::Normal;
+            },
+            [](VpnClientMultiChannel::Mark::Bypass) -> gh::WinDivertRouteCallback::Result {
+              return WinDivertRouteCallback::Result::Bypass;
+            },
+            [](VpnClientMultiChannel::Mark::Discard) -> gh::WinDivertRouteCallback::Result {
+              return WinDivertRouteCallback::Result::Discard;
+            },
+            [&packet](VpnClientMultiChannel::Mark::Deferred& deferred) -> gh::WinDivertRouteCallback::Result {
+              deferred.Packets.push_back(std::move(packet));
+              return WinDivertRouteCallback::Result::Discard;
+            },
+            [](const std::weak_ptr<VpnClientMultiChannelSession>&) -> gh::WinDivertRouteCallback::Result {
+              return WinDivertRouteCallback::Result::Normal;
+            },
+        },
+        mark->GetValue());
   } else {
     BOOST_LOG_TRIVIAL(warning) << "WinDivert: LookupAndUpdate bypass failed: " << result.error().message();
     return WinDivertRouteCallback::Result::Normal;
