@@ -51,14 +51,8 @@ public:
 
   class SlotTracker : public Tracker {
   public:
-    explicit SlotTracker(Cancel& parent) : _Parent(parent) {
-      _Parent.Register(*this);
-      BOOST_LOG_TRIVIAL(trace) << "SlotTracker: Register " << this;
-    }
-    ~SlotTracker() override {
-      BOOST_LOG_TRIVIAL(trace) << "SlotTracker: Unregister " << this;
-      _Parent.Unregister(*this);
-    }
+    explicit SlotTracker(Cancel& parent) : _Parent(parent) { _Parent.Register(*this); }
+    ~SlotTracker() override { _Parent.Unregister(*this); }
 
     SlotTracker(const SlotTracker&) = delete;
     auto operator=(const SlotTracker&) -> SlotTracker& = delete;
@@ -66,14 +60,10 @@ public:
     auto operator=(SlotTracker&&) -> SlotTracker& = delete;
 
     auto operator()() -> decltype(auto) {
-      BOOST_LOG_TRIVIAL(trace) << "SlotTracker: Bind " << this;
       return boost::asio::bind_cancellation_slot(_Signal.slot(), Omni::Fiber::AsioUseFiber);
     }
 
-    void Emit() override {
-      BOOST_LOG_TRIVIAL(trace) << "SlotTracker: Emit " << this;
-      _Signal.emit(boost::asio::cancellation_type::total);
-    }
+    void Emit() override { _Signal.emit(boost::asio::cancellation_type::total); }
 
   private:
     Cancel& _Parent;
@@ -86,12 +76,8 @@ public:
     explicit HandleTracker(Cancel& parent, HANDLE handle, LPOVERLAPPED overlapped = nullptr)
         : _Parent(parent), _Handle(handle), _Overlapped(overlapped) {
       _Parent.Register(*this);
-      BOOST_LOG_TRIVIAL(trace) << "HandleTracker: Register " << this << " for handle " << handle;
     }
-    ~HandleTracker() override {
-      BOOST_LOG_TRIVIAL(trace) << "HandleTracker: Unregister " << this;
-      _Parent.Unregister(*this);
-    }
+    ~HandleTracker() override { _Parent.Unregister(*this); }
 
     HandleTracker(const HandleTracker&) = delete;
     auto operator=(const HandleTracker&) -> HandleTracker& = delete;
@@ -99,7 +85,6 @@ public:
     auto operator=(HandleTracker&&) -> HandleTracker& = delete;
 
     void Emit() override {
-      BOOST_LOG_TRIVIAL(trace) << "HandleTracker: Emit " << this << " for handle " << _Handle;
       if (_Handle != INVALID_HANDLE_VALUE && _Handle != nullptr) {
         ::CancelIoEx(_Handle, _Overlapped);
       }
