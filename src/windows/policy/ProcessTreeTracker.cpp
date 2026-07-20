@@ -275,6 +275,9 @@ void ProcessTreeTracker::AddPendingMark(DWORD pid, const std::shared_ptr<VpnClie
 }
 
 auto ProcessTreeTracker::GetAction(DWORD pid) const -> std::optional<PolicyRule::RoutingAction> {
+  if (pid == GetCurrentProcessId()) {
+    return PolicyRegistry::GetCurrentProcessAction();
+  }
   auto iterator = _ProcessMap.find(pid);
   if (iterator != _ProcessMap.end()) {
     const auto& policy = iterator->second.Policy;

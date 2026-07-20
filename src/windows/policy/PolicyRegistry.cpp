@@ -32,18 +32,20 @@ void PolicyRegistry::SetDefaultAction(const PolicyRule::RoutingAction& action) {
 
 auto PolicyRegistry::GetDefaultAction() const -> PolicyRule::RoutingAction { return _DefaultRoute; }
 
+auto PolicyRegistry::GetCurrentProcessAction() -> PolicyRule::RoutingAction { return PolicyRule::ByPassRoute{}; }
+
 auto PolicyRuleToString(const PolicyRule& rule) -> std::string {
   std::string scopeStr;
   switch (rule.Scope) {
-    case PolicyScope::SingleProcess:
-      scopeStr = "SingleProcess";
-      break;
-    case PolicyScope::ProcessSubtree:
-      scopeStr = "ProcessSubtree";
-      break;
-    default:
-      scopeStr = "Unknown";
-      break;
+  case PolicyScope::SingleProcess:
+    scopeStr = "SingleProcess";
+    break;
+  case PolicyScope::ProcessSubtree:
+    scopeStr = "ProcessSubtree";
+    break;
+  default:
+    scopeStr = "Unknown";
+    break;
   }
   return std::format("Rule(Action={}, Scope={})", PolicyActionToString(rule.Action), scopeStr);
 }

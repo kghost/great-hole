@@ -32,6 +32,8 @@ public:
   void SetDefaultAction(const PolicyRule::RoutingAction& action);
   [[nodiscard]] auto GetDefaultAction() const -> PolicyRule::RoutingAction;
 
+  [[nodiscard]] static auto GetCurrentProcessAction() -> PolicyRule::RoutingAction;
+
 private:
   std::unordered_map<std::string, PolicyRule> _PathRules;
   PolicyRule::RoutingAction _DefaultRoute = PolicyRule::ByPassRoute{};
