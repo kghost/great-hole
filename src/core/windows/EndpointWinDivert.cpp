@@ -194,10 +194,9 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
 
     winPacket._Length = recvLen;
     auto route = _RouteCallback.WinDivertRoute(winPacket, addr);
-    BOOST_LOG_TRIVIAL(trace) << GetName() << ": Read packet size=" << winPacket.Data().size() << " route="
-                             << (route == WinDivertRouteCallback::Result::Bypass
-                                     ? "Bypass"
-                                     : (route == WinDivertRouteCallback::Result::Discard ? "Discard" : "Accept"));
+    if (route == WinDivertRouteCallback::Result::Discard) {
+      BOOST_LOG_TRIVIAL(trace) << GetName() << ": Read packet size=" << winPacket.Data().size() << " Discarded";
+    }
     if (route == WinDivertRouteCallback::Result::Bypass) {
       UINT sendLen = 0;
       if (WinDivertSendEx(_WinDivertHandle, winPacket.Data().data(), winPacket.Data().size(), &sendLen, 0, &addr,
