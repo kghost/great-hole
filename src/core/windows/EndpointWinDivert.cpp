@@ -24,7 +24,9 @@ WinDivert::~WinDivert() {
   }
 }
 
-auto WinDivert::GetName() const -> std::string { return std::format("WinDivert:{}[{}]", _Name, _WinDivertHandle); }
+auto WinDivert::GetName() const -> std::string {
+  return std::format("WinDivert:{}:{}:{}[{}]", _Name, _IfIdx, _IfSubIdx, _WinDivertHandle);
+}
 
 auto WinDivert::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   _WinDivertHandle = WinDivertOpen("outbound and !impostor and !loopback and (ip or ipv6)", WINDIVERT_LAYER_NETWORK,
