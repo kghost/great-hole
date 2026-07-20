@@ -57,7 +57,7 @@ TEST_F(TestPolicySelector, OutOfOrder_F_Pr_P) {
   bool testDone = false;
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     // 1. Flow establishing PID
-    co_await selector.GetFlowTracker().OnFlowEstablished(key, pid);
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowKey(key).value(), pid);
 
     // 2. Process starts/policy resolved
     selector.GetProcessTreeTracker().AddProcess(pid, 0, "C:\\App\\bypass.exe");
@@ -111,7 +111,7 @@ TEST_F(TestPolicySelector, OutOfOrder_Pr_F_P) {
     selector.GetProcessTreeTracker().AddProcess(pid, 0, "C:\\App\\bypass.exe");
 
     // 2. Flow establishing PID
-    co_await selector.GetFlowTracker().OnFlowEstablished(key, pid);
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowKey(key).value(), pid);
 
     // 3. Packet arrives
     auto resolved = selector.ResolvePolicy(key);
@@ -159,7 +159,7 @@ TEST_F(TestPolicySelector, OutOfOrder_F_P_Pr) {
   bool testDone = false;
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     // 1. Flow establishing PID
-    co_await selector.GetFlowTracker().OnFlowEstablished(key, pid);
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowKey(key).value(), pid);
 
     // 2. Packet arrives (Process not started yet)
     auto resolved = selector.ResolvePolicy(key);
@@ -256,7 +256,7 @@ TEST_F(TestPolicySelector, OutOfOrder_Pr_P_F) {
     }
 
     // 3. Flow establishes PID (fully automatic continuation trigger)
-    co_await selector.GetFlowTracker().OnFlowEstablished(key, pid);
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowKey(key).value(), pid);
 
     // Verification: mark should now be Bypass and the packet should be injected
     if (vpnMark != nullptr) {
@@ -323,7 +323,7 @@ TEST_F(TestPolicySelector, OutOfOrder_P_F_Pr) {
     }
 
     // 2. Flow establishes PID (process not started yet, so remains deferred)
-    co_await selector.GetFlowTracker().OnFlowEstablished(key, pid);
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowKey(key).value(), pid);
 
     if (vpnMark != nullptr) {
       EXPECT_TRUE(std::holds_alternative<VpnClientMultiChannel::Mark::Deferred>(vpnMark->GetValue()));
@@ -411,7 +411,7 @@ TEST_F(TestPolicySelector, OutOfOrder_P_Pr_F) {
     EXPECT_TRUE(injector.InjectedPackets.empty());
 
     // 3. Flow establishes PID (fully automatic continuation trigger)
-    co_await selector.GetFlowTracker().OnFlowEstablished(key, pid);
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowKey(key).value(), pid);
 
     // Verification: mark should now be Bypass and the packet should be injected
     if (vpnMark != nullptr) {

@@ -24,25 +24,24 @@ namespace {
 class MockFlowSnifferCallback : public WinDivertFlowSnifferCallback {
 public:
   struct EstablishedEvent {
-    ConnectionTracker::ConnectionKey Conn;
+    FlowKey Conn;
     uint32_t Pid;
   };
 
   struct DeletedEvent {
-    ConnectionTracker::ConnectionKey Conn;
+    FlowKey Conn;
   };
 
   std::vector<EstablishedEvent> EstablishedEvents;
   std::vector<DeletedEvent> DeletedEvents;
 
-  auto OnFlowEstablished(const ConnectionTracker::ConnectionKey& conn, uint32_t pid)
-      -> Omni::Fiber::Coroutine<void> override {
-    EstablishedEvents.push_back({conn, pid});
+  auto OnFlowEstablished(FlowKey key, uint32_t pid) -> Omni::Fiber::Coroutine<void> override {
+    EstablishedEvents.push_back({key, pid});
     co_return;
   }
 
-  auto OnFlowDeleted(const ConnectionTracker::ConnectionKey& conn) -> Omni::Fiber::Coroutine<void> override {
-    DeletedEvents.push_back({conn});
+  auto OnFlowDeleted(FlowKey key) -> Omni::Fiber::Coroutine<void> override {
+    DeletedEvents.push_back({key});
     co_return;
   }
 
@@ -75,11 +74,11 @@ void PushFlowEvent(test::FakeWinDivertController& controller, HANDLE handle, WIN
                    const boost::asio::ip::address& localAddr, uint16_t localPort,
                    const boost::asio::ip::address& remoteAddr, uint16_t remotePort, uint32_t pid, bool isIpv6) {
   WINDIVERT_ADDRESS addr{};
-  addr.Layer = WINDIVERT_LAYER_FLOW;
+  addr.Layer = WINDIVERT_LAYER_SOCKET;
   addr.Event = event;
   addr.IPv6 = isIpv6 ? 1 : 0;
 
-  auto& flow = addr.Flow;
+  auto& flow = addr.Socket;
   flow.ProcessId = pid;
   flow.Protocol = protocol;
   flow.LocalPort = localPort;
@@ -116,7 +115,7 @@ TEST(WinDivertFlowSnifferTest, StartStop) {
   controller.SetOpenCallback([&](HANDLE handle, const char* filter, WINDIVERT_LAYER layer) {
     opened = true;
     openedHandle = handle;
-    EXPECT_EQ(layer, WINDIVERT_LAYER_FLOW);
+    EXPECT_EQ(layer, WINDIVERT_LAYER_SOCKET);
   });
 
   controller.SetCloseCallback([&](HANDLE handle) {
@@ -138,7 +137,7 @@ TEST(WinDivertFlowSnifferTest, StartStop) {
   RunEventLoop(io);
 }
 
-TEST(WinDivertFlowSnifferTest, FlowEventsTcpUdpIcmp) {
+TEST(WinDivertFlowSnifferTest, FlowEventsTcpUdp) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
@@ -164,7 +163,7 @@ TEST(WinDivertFlowSnifferTest, FlowEventsTcpUdpIcmp) {
     {
       auto local = boost::asio::ip::make_address("192.168.1.100");
       auto remote = boost::asio::ip::make_address("8.8.8.8");
-      PushFlowEvent(controller, targetHandle, WINDIVERT_EVENT_FLOW_ESTABLISHED, IPPROTO_TCP, local, 12345, remote, 443,
+      PushFlowEvent(controller, targetHandle, WINDIVERT_EVENT_SOCKET_BIND, IPPROTO_TCP, local, 12345, remote, 443,
                     1111, false);
 
       boost::asio::steady_timer timer(io.get_executor());
@@ -177,18 +176,15 @@ TEST(WinDivertFlowSnifferTest, FlowEventsTcpUdpIcmp) {
         co_return;
       }
       EXPECT_EQ(callback.EstablishedEvents[0].Pid, 1111);
-      auto key = std::get<ConnectionTracker::Ip4TcpKey>(callback.EstablishedEvents[0].Conn);
-      EXPECT_EQ(key.LocalAddress, local.to_v4());
-      EXPECT_EQ(key.LocalPort, 12345);
-      EXPECT_EQ(key.RemoteAddress, remote.to_v4());
-      EXPECT_EQ(key.RemotePort, 443);
+      EXPECT_EQ(callback.EstablishedEvents[0].Conn,
+                (WinDivertFlowSnifferCallback::FlowKey{WinDivertFlowSnifferCallback::Protocol::Ipv4Tcp, 12345}));
     }
 
     // 2. TCP IPv6 Established
     {
       auto local = boost::asio::ip::make_address("fe80::1");
       auto remote = boost::asio::ip::make_address("2001:4860:4860::8888");
-      PushFlowEvent(controller, targetHandle, WINDIVERT_EVENT_FLOW_ESTABLISHED, IPPROTO_TCP, local, 54321, remote, 80,
+      PushFlowEvent(controller, targetHandle, WINDIVERT_EVENT_SOCKET_BIND, IPPROTO_TCP, local, 54321, remote, 80,
                     2222, true);
 
       boost::asio::steady_timer timer(io.get_executor());
@@ -201,19 +197,16 @@ TEST(WinDivertFlowSnifferTest, FlowEventsTcpUdpIcmp) {
         co_return;
       }
       EXPECT_EQ(callback.EstablishedEvents[1].Pid, 2222);
-      auto key = std::get<ConnectionTracker::Ip6TcpKey>(callback.EstablishedEvents[1].Conn);
-      EXPECT_EQ(key.LocalAddress, local.to_v6());
-      EXPECT_EQ(key.LocalPort, 54321);
-      EXPECT_EQ(key.RemoteAddress, remote.to_v6());
-      EXPECT_EQ(key.RemotePort, 80);
+      EXPECT_EQ(callback.EstablishedEvents[1].Conn,
+                (WinDivertFlowSnifferCallback::FlowKey{WinDivertFlowSnifferCallback::Protocol::Ipv6Tcp, 54321}));
     }
 
-    // 3. UDP IPv4 Established
+    // 3. UDP IPv4 Bound (using BIND)
     {
       auto local = boost::asio::ip::make_address("10.0.0.5");
       auto remote = boost::asio::ip::make_address("1.1.1.1");
-      PushFlowEvent(controller, targetHandle, WINDIVERT_EVENT_FLOW_ESTABLISHED, IPPROTO_UDP, local, 9999, remote, 53,
-                    3333, false);
+      PushFlowEvent(controller, targetHandle, WINDIVERT_EVENT_SOCKET_BIND, IPPROTO_UDP, local, 9999, remote, 0, 3333,
+                    false);
 
       boost::asio::steady_timer timer(io.get_executor());
       timer.expires_after(std::chrono::milliseconds(10));
@@ -225,19 +218,16 @@ TEST(WinDivertFlowSnifferTest, FlowEventsTcpUdpIcmp) {
         co_return;
       }
       EXPECT_EQ(callback.EstablishedEvents[2].Pid, 3333);
-      auto key = std::get<ConnectionTracker::Ip4UdpKey>(callback.EstablishedEvents[2].Conn);
-      EXPECT_EQ(key.LocalAddress, local.to_v4());
-      EXPECT_EQ(key.LocalPort, 9999);
-      EXPECT_EQ(key.RemoteAddress, remote.to_v4());
-      EXPECT_EQ(key.RemotePort, 53);
+      EXPECT_EQ(callback.EstablishedEvents[2].Conn,
+                (WinDivertFlowSnifferCallback::FlowKey{WinDivertFlowSnifferCallback::Protocol::Ipv4Udp, 9999}));
     }
 
-    // 4. UDP IPv6 Established
+    // 4. UDP IPv6 Bound (using BIND)
     {
       auto local = boost::asio::ip::make_address("2001:db8::1");
       auto remote = boost::asio::ip::make_address("2001:db8::2");
-      PushFlowEvent(controller, targetHandle, WINDIVERT_EVENT_FLOW_ESTABLISHED, IPPROTO_UDP, local, 8888, remote, 9999,
-                    4444, true);
+      PushFlowEvent(controller, targetHandle, WINDIVERT_EVENT_SOCKET_BIND, IPPROTO_UDP, local, 8888, remote, 0, 4444,
+                    true);
 
       boost::asio::steady_timer timer(io.get_executor());
       timer.expires_after(std::chrono::milliseconds(10));
@@ -249,18 +239,15 @@ TEST(WinDivertFlowSnifferTest, FlowEventsTcpUdpIcmp) {
         co_return;
       }
       EXPECT_EQ(callback.EstablishedEvents[3].Pid, 4444);
-      auto key = std::get<ConnectionTracker::Ip6UdpKey>(callback.EstablishedEvents[3].Conn);
-      EXPECT_EQ(key.LocalAddress, local.to_v6());
-      EXPECT_EQ(key.LocalPort, 8888);
-      EXPECT_EQ(key.RemoteAddress, remote.to_v6());
-      EXPECT_EQ(key.RemotePort, 9999);
+      EXPECT_EQ(callback.EstablishedEvents[3].Conn,
+                (WinDivertFlowSnifferCallback::FlowKey{WinDivertFlowSnifferCallback::Protocol::Ipv6Udp, 8888}));
     }
 
     // 5. TCP IPv4 Deleted
     {
       auto local = boost::asio::ip::make_address("192.168.1.100");
       auto remote = boost::asio::ip::make_address("8.8.8.8");
-      PushFlowEvent(controller, targetHandle, WINDIVERT_EVENT_FLOW_DELETED, IPPROTO_TCP, local, 12345, remote, 443, 0,
+      PushFlowEvent(controller, targetHandle, WINDIVERT_EVENT_SOCKET_CLOSE, IPPROTO_TCP, local, 12345, remote, 443, 0,
                     false);
 
       boost::asio::steady_timer timer(io.get_executor());
@@ -272,73 +259,24 @@ TEST(WinDivertFlowSnifferTest, FlowEventsTcpUdpIcmp) {
         co_await sniffer->Stop();
         co_return;
       }
-      auto key = std::get<ConnectionTracker::Ip4TcpKey>(callback.DeletedEvents[0].Conn);
-      EXPECT_EQ(key.LocalAddress, local.to_v4());
-      EXPECT_EQ(key.LocalPort, 12345);
-      EXPECT_EQ(key.RemoteAddress, remote.to_v4());
-      EXPECT_EQ(key.RemotePort, 443);
+      EXPECT_EQ(callback.DeletedEvents[0].Conn,
+                (WinDivertFlowSnifferCallback::FlowKey{WinDivertFlowSnifferCallback::Protocol::Ipv4Tcp, 12345}));
     }
 
-    // 6. ICMP IPv4 Established (LocalPort acts as ICMP ID)
-    {
-      auto local = boost::asio::ip::make_address("10.0.0.5");
-      auto remote = boost::asio::ip::make_address("8.8.8.8");
-      PushFlowEvent(controller, targetHandle, WINDIVERT_EVENT_FLOW_ESTABLISHED, IPPROTO_ICMP, local, 500, remote, 0,
-                    5555, false);
-
-      boost::asio::steady_timer timer(io.get_executor());
-      timer.expires_after(std::chrono::milliseconds(10));
-      co_await timer.async_wait(Omni::Fiber::AsioUseFiber);
-
-      if (callback.EstablishedEvents.size() != 5) {
-        ADD_FAILURE() << "Expected 5 established events, got " << callback.EstablishedEvents.size();
-        co_await sniffer->Stop();
-        co_return;
-      }
-      EXPECT_EQ(callback.EstablishedEvents[4].Pid, 5555);
-      auto key = std::get<ConnectionTracker::IcmpKey>(callback.EstablishedEvents[4].Conn);
-      EXPECT_EQ(key.LocalAddress, local.to_v4());
-      EXPECT_EQ(key.Id, 0);
-      EXPECT_EQ(key.RemoteAddress, remote.to_v4());
-    }
-
-    // 7. ICMPv6 Established
-    {
-      auto local = boost::asio::ip::make_address("fe80::1");
-      auto remote = boost::asio::ip::make_address("fe80::2");
-      PushFlowEvent(controller, targetHandle, WINDIVERT_EVENT_FLOW_ESTABLISHED, IPPROTO_ICMPV6, local, 600, remote, 0,
-                    6666, true);
-
-      boost::asio::steady_timer timer(io.get_executor());
-      timer.expires_after(std::chrono::milliseconds(10));
-      co_await timer.async_wait(Omni::Fiber::AsioUseFiber);
-
-      if (callback.EstablishedEvents.size() != 6) {
-        ADD_FAILURE() << "Expected 6 established events, got " << callback.EstablishedEvents.size();
-        co_await sniffer->Stop();
-        co_return;
-      }
-      EXPECT_EQ(callback.EstablishedEvents[5].Pid, 6666);
-      auto key = std::get<ConnectionTracker::Icmp6Key>(callback.EstablishedEvents[5].Conn);
-      EXPECT_EQ(key.LocalAddress, local.to_v6());
-      EXPECT_EQ(key.Id, 0);
-      EXPECT_EQ(key.RemoteAddress, remote.to_v6());
-    }
-
-    // 8. Ignored flow events (e.g. invalid layer, unknown protocol)
+    // 6. Ignored flow events (e.g. invalid layer, unknown protocol)
     {
       // Unknown protocol
       auto local = boost::asio::ip::make_address("192.168.1.100");
       auto remote = boost::asio::ip::make_address("8.8.8.8");
-      PushFlowEvent(controller, targetHandle, WINDIVERT_EVENT_FLOW_ESTABLISHED, 255 /* unknown */, local, 12345, remote,
+      PushFlowEvent(controller, targetHandle, WINDIVERT_EVENT_SOCKET_BIND, 255 /* unknown */, local, 12345, remote,
                     443, 7777, false);
 
       // Wrong Layer
       WINDIVERT_ADDRESS wrongLayerAddr{};
       wrongLayerAddr.Layer = WINDIVERT_LAYER_NETWORK;
-      wrongLayerAddr.Event = WINDIVERT_EVENT_FLOW_ESTABLISHED;
-      wrongLayerAddr.Flow.Protocol = IPPROTO_TCP;
-      wrongLayerAddr.Flow.ProcessId = 8888;
+      wrongLayerAddr.Event = WINDIVERT_EVENT_SOCKET_BIND;
+      wrongLayerAddr.Socket.Protocol = IPPROTO_TCP;
+      wrongLayerAddr.Socket.ProcessId = 8888;
       controller.PushRecvPacket(targetHandle, {}, wrongLayerAddr);
 
       boost::asio::steady_timer timer(io.get_executor());
@@ -346,7 +284,7 @@ TEST(WinDivertFlowSnifferTest, FlowEventsTcpUdpIcmp) {
       co_await timer.async_wait(Omni::Fiber::AsioUseFiber);
 
       // Callback count should remain the same
-      EXPECT_EQ(callback.EstablishedEvents.size(), 6);
+      EXPECT_EQ(callback.EstablishedEvents.size(), 4);
       EXPECT_EQ(callback.DeletedEvents.size(), 1);
     }
 

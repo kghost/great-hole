@@ -239,9 +239,8 @@ public:
   explicit FlowTracker(FlowTrackerDeferredCallback& callback);
   ~FlowTracker() override;
 
-  auto OnFlowEstablished(const ConnectionTracker::ConnectionKey& conn, uint32_t pid)
-      -> Omni::Fiber::Coroutine<void> override;
-  auto OnFlowDeleted(const ConnectionTracker::ConnectionKey& conn) -> Omni::Fiber::Coroutine<void> override;
+  auto OnFlowEstablished(FlowKey key, uint32_t pid) -> Omni::Fiber::Coroutine<void> override;
+  auto OnFlowDeleted(FlowKey key) -> Omni::Fiber::Coroutine<void> override;
 
   auto GetPidForConnection(const ConnectionTracker::ConnectionKey& key) -> std::optional<DWORD>;
   void AddPendingMark(const ConnectionTracker::ConnectionKey& key,

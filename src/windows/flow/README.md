@@ -11,8 +11,8 @@ Service that starts a background event loop calling `WinDivertRecvEx` at the `WI
 
 ### `WinDivertFlowSnifferCallback`
 Interface to receive sniffer events:
-- **`OnFlowEstablished(const ConnectionTracker::ConnectionKey& conn, uint32_t pid)`**: Invoked when a TCP, UDP, or ICMP flow is established. Contains the `ConnectionTracker::ConnectionKey` key and originating Process ID.
-- **`OnFlowDeleted(const ConnectionTracker::ConnectionKey& conn)`**: Invoked when a flow is closed/deleted.
+- **`OnFlowEstablished(FlowKey key, uint32_t pid)`**: Invoked when a TCP, UDP, or ICMP flow is established. Contains the `ConnectionTracker::ConnectionKey` key and originating Process ID.
+- **`OnFlowDeleted(FlowKey key)`**: Invoked when a flow is closed/deleted.
 
 ## Command Line Tools
 

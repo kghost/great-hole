@@ -56,7 +56,7 @@ TEST_F(TestFlowTracker, FlowTracking) {
     EXPECT_FALSE(pid.has_value());
 
     // Establish flow
-    co_await tracker.OnFlowEstablished(key, 1234);
+    co_await tracker.OnFlowEstablished(FlowTracker::ToFlowKey(key).value(), 1234);
     pid = tracker.GetPidForConnection(key);
     EXPECT_TRUE(pid.has_value());
     if (pid.has_value()) {
@@ -64,7 +64,7 @@ TEST_F(TestFlowTracker, FlowTracking) {
     }
 
     // Delete flow
-    co_await tracker.OnFlowDeleted(key);
+    co_await tracker.OnFlowDeleted(FlowTracker::ToFlowKey(key).value());
     pid = tracker.GetPidForConnection(key);
     EXPECT_FALSE(pid.has_value());
 
@@ -96,24 +96,24 @@ TEST_F(TestFlowTracker, GetFlows) {
     EXPECT_TRUE(flows.empty());
 
     // Add key1
-    co_await tracker.OnFlowEstablished(key1, 1001);
+    co_await tracker.OnFlowEstablished(FlowTracker::ToFlowKey(key1).value(), 1001);
     flows = tracker.GetFlows();
     EXPECT_EQ(flows.size(), 1);
     if (!flows.empty()) {
       EXPECT_EQ(flows[0].ProcessId, 1001);
-      EXPECT_EQ(flows[0].Connection.LocalPort, 11111);
+      EXPECT_EQ(flows[0].LocalPort, 11111);
     }
 
     // Add key2
-    co_await tracker.OnFlowEstablished(key2, 1002);
+    co_await tracker.OnFlowEstablished(FlowTracker::ToFlowKey(key2).value(), 1002);
     flows = tracker.GetFlows();
     EXPECT_EQ(flows.size(), 2);
     DWORD pid1 = 0;
     DWORD pid2 = 0;
     for (const auto& flow : flows) {
-      if (flow.Connection.LocalPort == 11111) {
+      if (flow.LocalPort == 11111) {
         pid1 = flow.ProcessId;
-      } else if (flow.Connection.LocalPort == 22222) {
+      } else if (flow.LocalPort == 22222) {
         pid2 = flow.ProcessId;
       }
     }
@@ -121,12 +121,12 @@ TEST_F(TestFlowTracker, GetFlows) {
     EXPECT_EQ(pid2, 1002);
 
     // Delete key1
-    co_await tracker.OnFlowDeleted(key1);
+    co_await tracker.OnFlowDeleted(FlowTracker::ToFlowKey(key1).value());
     flows = tracker.GetFlows();
     EXPECT_EQ(flows.size(), 1);
     if (!flows.empty()) {
       EXPECT_EQ(flows[0].ProcessId, 1002);
-      EXPECT_EQ(flows[0].Connection.LocalPort, 22222);
+      EXPECT_EQ(flows[0].LocalPort, 22222);
     }
 
     testDone = true;
@@ -168,7 +168,7 @@ TEST_F(TestFlowTracker, GetPendingFlows) {
     }
 
     // On flow established, pending mark is resumed and removed
-    co_await tracker.OnFlowEstablished(key1, 1234);
+    co_await tracker.OnFlowEstablished(FlowTracker::ToFlowKey(key1).value(), 1234);
     pending = tracker.GetPendingFlows();
     EXPECT_TRUE(pending.empty());
 
@@ -207,7 +207,7 @@ TEST_F(TestFlowTracker, DeletePendingFlow) {
     EXPECT_EQ(pending.size(), 1);
 
     // On flow deleted, pending mark is removed
-    co_await tracker.OnFlowDeleted(key1);
+    co_await tracker.OnFlowDeleted(FlowTracker::ToFlowKey(key1).value());
     pending = tracker.GetPendingFlows();
     EXPECT_TRUE(pending.empty());
 

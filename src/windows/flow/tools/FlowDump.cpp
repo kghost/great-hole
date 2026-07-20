@@ -24,48 +24,18 @@ namespace {
 
 class ConsoleFlowSnifferCallback : public WinDivertFlowSnifferCallback {
 public:
-  auto OnFlowEstablished(const ConnectionTracker::ConnectionKey& conn, uint32_t pid)
-      -> Omni::Fiber::Coroutine<void> override {
-    std::cout << "[+] ESTABLISHED: ";
-    PrintConnection(std::cout, conn);
-    std::cout << " | PID: " << pid << " (" << GetProcessNameAndPath(pid) << ")" << std::endl;
+  auto OnFlowEstablished(FlowKey key, uint32_t pid) -> Omni::Fiber::Coroutine<void> override {
+    std::cout << "[+] ESTABLISHED LocalPort: " << key
+              << " | PID: " << pid << " (" << GetProcessNameAndPath(pid) << ")" << std::endl;
     co_return;
   }
 
-  auto OnFlowDeleted(const ConnectionTracker::ConnectionKey& conn) -> Omni::Fiber::Coroutine<void> override {
-    std::cout << "[-] DELETED:     ";
-    PrintConnection(std::cout, conn);
-    std::cout << std::endl;
+  auto OnFlowDeleted(FlowKey key) -> Omni::Fiber::Coroutine<void> override {
+    std::cout << "[-] DELETED LocalPort:     " << key << std::endl;
     co_return;
   }
 
 private:
-  static void PrintConnection(std::ostream& stream, const ConnectionTracker::ConnectionKey& key) {
-    std::visit(
-        [&stream](const auto& key) -> auto {
-          using T = std::decay_t<decltype(key)>;
-          if constexpr (std::is_same_v<T, ConnectionTracker::Ip4TcpKey>) {
-            stream << "TCPv4 " << key.LocalAddress.to_string() << ":" << key.LocalPort << " -> "
-                   << key.RemoteAddress.to_string() << ":" << key.RemotePort;
-          } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip6TcpKey>) {
-            stream << "TCPv6 [" << key.LocalAddress.to_string() << "]:" << key.LocalPort << " -> ["
-                   << key.RemoteAddress.to_string() << "]:" << key.RemotePort;
-          } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip4UdpKey>) {
-            stream << "UDPv4 " << key.LocalAddress.to_string() << ":" << key.LocalPort << " -> "
-                   << key.RemoteAddress.to_string() << ":" << key.RemotePort;
-          } else if constexpr (std::is_same_v<T, ConnectionTracker::Ip6UdpKey>) {
-            stream << "UDPv6 [" << key.LocalAddress.to_string() << "]:" << key.LocalPort << " -> ["
-                   << key.RemoteAddress.to_string() << "]:" << key.RemotePort;
-          } else if constexpr (std::is_same_v<T, ConnectionTracker::IcmpKey>) {
-            stream << "ICMPv4 " << key.LocalAddress.to_string() << " -> " << key.RemoteAddress.to_string()
-                   << " (ID: " << key.Id << ")";
-          } else if constexpr (std::is_same_v<T, ConnectionTracker::Icmp6Key>) {
-            stream << "ICMPv6 [" << key.LocalAddress.to_string() << "] -> [" << key.RemoteAddress.to_string()
-                   << "] (ID: " << key.Id << ")";
-          }
-        },
-        key);
-  }
 
   static auto GetProcessNameAndPath(uint32_t pid) -> std::string {
     if (pid == 0) {
