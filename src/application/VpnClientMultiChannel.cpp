@@ -236,8 +236,8 @@ private:
                    co_return ErrorCode{};
                  },
                  [&](const Mark::Deferred&) -> Omni::Fiber::Coroutine<ErrorCode> {
-                   BOOST_LOG_TRIVIAL(info) << GetName() << ": Packet marked Deferred";
-                   co_return ErrorCode{};
+                   assert(false && "should not reach here");
+                   std::unreachable();
                  },
                  [&](const Interface::VpnEndpoint& endpoint) -> Omni::Fiber::Coroutine<ErrorCode> {
                    if (auto session = endpoint.lock()) {

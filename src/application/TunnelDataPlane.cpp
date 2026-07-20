@@ -150,7 +150,8 @@ auto TunnelDataPlane::WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& ad
                           [](VpnClientMultiChannel::Mark::Discard) -> gh::WinDivertRouteCallback::Result {
                             return WinDivertRouteCallback::Result::Discard;
                           },
-                          [](const VpnClientMultiChannel::Mark::Deferred&) -> gh::WinDivertRouteCallback::Result {
+                          [&packet](VpnClientMultiChannel::Mark::Deferred& deferred) -> gh::WinDivertRouteCallback::Result {
+                            deferred.Packets.push_back(std::move(packet));
                             return WinDivertRouteCallback::Result::Discard;
                           },
                           [](const std::weak_ptr<VpnClientMultiChannelSession>&) -> gh::WinDivertRouteCallback::Result {
