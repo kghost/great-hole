@@ -23,22 +23,26 @@ namespace gh::policy {
 
 namespace {
 
+constexpr size_t kEtwPropertiesBufferExtra = 1024;
+
 void StopOrphanedSessions() {
   constexpr unsigned kMaxSessionNameLen = 1024;
   constexpr unsigned kMaxLogfilePathLen = 1024;
   constexpr unsigned kPropertiesSize =
       sizeof(EVENT_TRACE_PROPERTIES) + (kMaxSessionNameLen * sizeof(WCHAR)) + (kMaxLogfilePathLen * sizeof(WCHAR));
 
-  ULONG sessionCount = 64;
+  constexpr ULONG kDefaultSessionCount = 64;
+  ULONG sessionCount = kDefaultSessionCount;
   std::vector<EVENT_TRACE_PROPERTIES*> sessions;
   std::vector<BYTE> buffer;
-  ULONG status = ERROR_SUCCESS;
+  ULONG status = ERROR_MORE_DATA;
 
-  do {
+  while (status == ERROR_MORE_DATA) {
     sessions.resize(sessionCount);
-    buffer.resize(kPropertiesSize * sessionCount);
+    buffer.resize(static_cast<size_t>(kPropertiesSize) * static_cast<size_t>(sessionCount));
 
     for (size_t i = 0; i != sessions.size(); i += 1) {
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
       sessions[i] = reinterpret_cast<EVENT_TRACE_PROPERTIES*>(&buffer[i * kPropertiesSize]);
       sessions[i]->Wnode.BufferSize = kPropertiesSize;
       sessions[i]->LoggerNameOffset = sizeof(EVENT_TRACE_PROPERTIES);
@@ -46,11 +50,12 @@ void StopOrphanedSessions() {
     }
 
     status = QueryAllTracesW(sessions.data(), sessionCount, &sessionCount);
-  } while (status == ERROR_MORE_DATA);
+  }
 
   if (status == ERROR_SUCCESS) {
     for (ULONG i = 0; i < sessionCount; i++) {
       if (sessions[i]->LoggerNameOffset != 0) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast, cppcoreguidelines-pro-bounds-pointer-arithmetic)
         const auto* loggerName = reinterpret_cast<const wchar_t*>(reinterpret_cast<const char*>(sessions[i]) +
                                                                   sessions[i]->LoggerNameOffset);
         std::wstring name(loggerName);
@@ -82,7 +87,7 @@ auto ProcessTreeTracker::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   _SessionName = std::format("DesktopHoleProcessTrace_{}", GetCurrentProcessId());
 
   // Set up properties for StartTraceW
-  std::vector<char> propertiesBuf(sizeof(EVENT_TRACE_PROPERTIES) + 1024);
+  std::vector<char> propertiesBuf(sizeof(EVENT_TRACE_PROPERTIES) + kEtwPropertiesBufferExtra);
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
   auto* properties = reinterpret_cast<EVENT_TRACE_PROPERTIES*>(propertiesBuf.data());
   properties->Wnode.BufferSize = static_cast<ULONG>(propertiesBuf.size());
@@ -135,7 +140,7 @@ auto ProcessTreeTracker::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   _Running = false;
 
   if (_EtwSessionHandle != 0) {
-    std::vector<char> propertiesBuf(sizeof(EVENT_TRACE_PROPERTIES) + 1024);
+    std::vector<char> propertiesBuf(sizeof(EVENT_TRACE_PROPERTIES) + kEtwPropertiesBufferExtra);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto* properties = reinterpret_cast<EVENT_TRACE_PROPERTIES*>(propertiesBuf.data());
     properties->Wnode.BufferSize = static_cast<ULONG>(propertiesBuf.size());
@@ -368,20 +373,23 @@ void ProcessTreeTracker::BuildInitialSnapshot() {
 void ProcessTreeTracker::EtwThreadProc() {
   EVENT_TRACE_LOGFILEW traceLogfile{};
   auto loggerName = ToWstring(_SessionName).value();
-  traceLogfile.LoggerName = const_cast<wchar_t*>(loggerName.c_str());
+  traceLogfile.LoggerName = loggerName.data();
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
   traceLogfile.ProcessTraceMode = PROCESS_TRACE_MODE_REAL_TIME | PROCESS_TRACE_MODE_EVENT_RECORD;
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
   traceLogfile.EventRecordCallback = [](PEVENT_RECORD record) -> void {
-    auto* tracker = reinterpret_cast<ProcessTreeTracker*>(record->UserContext);
+    auto* tracker = static_cast<ProcessTreeTracker*>(record->UserContext);
     if (tracker) {
       tracker->HandleEtwEvent(record);
     }
   };
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
   traceLogfile.Context = this;
 
   TRACEHANDLE traceHandle = OpenTraceW(&traceLogfile);
   if (traceHandle == INVALID_PROCESSTRACE_HANDLE) {
     BOOST_LOG_TRIVIAL(error) << "ProcessTreeTracker: OpenTraceW failed: " << GetLastError();
-    std::vector<char> propertiesBuf(sizeof(EVENT_TRACE_PROPERTIES) + 1024);
+    std::vector<char> propertiesBuf(sizeof(EVENT_TRACE_PROPERTIES) + kEtwPropertiesBufferExtra);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto* properties = reinterpret_cast<EVENT_TRACE_PROPERTIES*>(propertiesBuf.data());
     properties->Wnode.BufferSize = static_cast<ULONG>(propertiesBuf.size());
