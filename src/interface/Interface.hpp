@@ -112,7 +112,9 @@ public:
   virtual auto StopEngine() -> std::error_code = 0;
   virtual auto StopVpn() -> std::error_code = 0;
 
-  virtual auto AddEndpoint(const std::array<uint8_t, 16>& psk, const std::string& address) -> VpnEndpoint = 0;
+  static constexpr size_t kPskSize = 16;
+  using PskType = std::array<uint8_t, kPskSize>;
+  virtual auto AddEndpoint(const PskType& psk, const std::string& address) -> VpnEndpoint = 0;
   virtual void RemoveEndpoint(VpnEndpoint endpoint) = 0;
 
   // Policy Interface

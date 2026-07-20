@@ -31,7 +31,8 @@ public:
   EndpointTunSplitIp(EndpointTunSplitIp&&) = delete;
   auto operator=(EndpointTunSplitIp&&) -> EndpointTunSplitIp& = delete;
 
-  auto CreateChannel(const std::vector<boost::asio::ip::address_v6>& ips) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>>;
+  auto CreateChannel(const std::vector<boost::asio::ip::address_v6>& ips)
+      -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>>;
   auto RemoveChannel(std::shared_ptr<Channel> channel) -> Omni::Fiber::Coroutine<void>;
 
   auto GetName() const -> std::string override;
@@ -45,8 +46,8 @@ private:
   auto ReadLoop() -> Omni::Fiber::Coroutine<void>;
   auto WriteToTun(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode>;
 
-  static auto GetSourceAddress(const Packet& p) -> std::optional<boost::asio::ip::address_v6>;
-  static auto GetDestAddress(const Packet& p) -> std::optional<boost::asio::ip::address_v6>;
+  static auto GetSourceAddress(const Packet& packet) -> std::optional<boost::asio::ip::address_v6>;
+  static auto GetDestAddress(const Packet& packet) -> std::optional<boost::asio::ip::address_v6>;
 
   boost::asio::posix::stream_descriptor _TunFileDescriptor;
   const std::string _TunName;

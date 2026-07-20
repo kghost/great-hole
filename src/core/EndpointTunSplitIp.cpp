@@ -201,41 +201,41 @@ auto EndpointTunSplitIp::WriteToTun(Packet& p, Cancel& c) -> Omni::Fiber::Corout
   co_return err;
 }
 
-auto EndpointTunSplitIp::GetSourceAddress(const Packet& p) -> std::optional<boost::asio::ip::address_v6> {
-  if (p.DataSize() < 20) {
+auto EndpointTunSplitIp::GetSourceAddress(const Packet& packet) -> std::optional<boost::asio::ip::address_v6> {
+  if (packet.DataSize() < 20) {
     return std::nullopt;
   }
-  uint8_t version = (p.Data()[0] >> 4);
+  uint8_t version = (packet.Data()[0] >> 4);
   if (version == 4) {
     std::array<uint8_t, 4> addrBytes;
-    std::copy_n(p.Data().data() + 12, 4, addrBytes.begin());
+    std::copy_n(packet.Data().data() + 12, 4, addrBytes.begin());
     return MapToV6(boost::asio::ip::make_address_v4(addrBytes));
   } else if (version == 6) {
-    if (p.DataSize() < 40) {
+    if (packet.DataSize() < 40) {
       return std::nullopt;
     }
     std::array<uint8_t, 16> addrBytes;
-    std::copy_n(p.Data().data() + 8, 16, addrBytes.begin());
+    std::copy_n(packet.Data().data() + 8, 16, addrBytes.begin());
     return boost::asio::ip::make_address_v6(addrBytes);
   }
   return std::nullopt;
 }
 
-auto EndpointTunSplitIp::GetDestAddress(const Packet& p) -> std::optional<boost::asio::ip::address_v6> {
-  if (p.DataSize() < 20) {
+auto EndpointTunSplitIp::GetDestAddress(const Packet& packet) -> std::optional<boost::asio::ip::address_v6> {
+  if (packet.DataSize() < 20) {
     return std::nullopt;
   }
-  uint8_t version = (p.Data()[0] >> 4);
+  uint8_t version = (packet.Data()[0] >> 4);
   if (version == 4) {
     std::array<uint8_t, 4> addrBytes;
-    std::copy_n(p.Data().data() + 16, 4, addrBytes.begin());
+    std::copy_n(packet.Data().data() + 16, 4, addrBytes.begin());
     return MapToV6(boost::asio::ip::make_address_v4(addrBytes));
   } else if (version == 6) {
-    if (p.DataSize() < 40) {
+    if (packet.DataSize() < 40) {
       return std::nullopt;
     }
     std::array<uint8_t, 16> addrBytes;
-    std::copy_n(p.Data().data() + 24, 16, addrBytes.begin());
+    std::copy_n(packet.Data().data() + 24, 16, addrBytes.begin());
     return boost::asio::ip::make_address_v6(addrBytes);
   }
   return std::nullopt;

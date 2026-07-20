@@ -39,7 +39,7 @@ public:
   auto StopEngine() -> std::error_code override;
   auto StopVpn() -> std::error_code override;
 
-  auto AddEndpoint(const std::array<uint8_t, 16>& psk, const std::string& address) -> VpnEndpoint override;
+  auto AddEndpoint(const PskType& psk, const std::string& address) -> VpnEndpoint override;
   void RemoveEndpoint(VpnEndpoint endpoint) override;
 
   // Policy Interface
@@ -193,7 +193,7 @@ auto PlatformImpl::StopEngine() -> std::error_code {
   return ErrorCode{};
 }
 
-auto PlatformImpl::AddEndpoint(const std::array<uint8_t, 16>& psk, const std::string& address) -> VpnEndpoint {
+auto PlatformImpl::AddEndpoint(const PskType& psk, const std::string& address) -> VpnEndpoint {
   std::promise<std::weak_ptr<gh::VpnClientMultiChannelSession>> promise;
   auto future = promise.get_future();
 
