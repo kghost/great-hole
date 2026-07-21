@@ -22,16 +22,15 @@ public:
     ++_Iterator;
     return value;
   }
-  auto hasNext() const -> bool { return _Iterator != _Generator.end(); }
+  [[nodiscard]] auto hasNext() const -> bool { return _Iterator != _Generator.end(); }
 
 private:
   Generator _Generator;
   IteratorType _Iterator;
 };
 
-auto BackoffTimerDuration(int randomnessPercent,
-                                                                                std::chrono::milliseconds current,
-                                                                                std::chrono::milliseconds step,
-                                                                                std::chrono::milliseconds maximum) -> GeneratorHelper<std::generator<std::chrono::milliseconds>>;
+auto BackoffTimerDuration(int randomnessPercent, std::chrono::milliseconds start, std::chrono::milliseconds step,
+                          std::chrono::milliseconds maximum)
+    -> GeneratorHelper<std::generator<std::chrono::milliseconds>>;
 
 } // namespace gh

@@ -6,6 +6,7 @@
 
 namespace gh::UdpDynMuxProto {
 
+// NOLINTNEXTLINE(performance-enum-size)
 enum class EnumChannel : uint16_t {
   kControlChannel = 0,
 };
@@ -65,5 +66,7 @@ using PacketControl =
 using PacketUdpDynMux =
     PacketComponentEnumMap<std::tuple<PacketComponentEnumMapEntry<EnumChannel::kControlChannel, PacketControl>>,
                            PacketComponentEnd>;
+
+using PacketUdpDynMuxPreParser = PacketComponentContainer<std::tuple<FieldChannel>, PacketComponentEnd>;
 
 } // namespace gh::UdpDynMuxProto

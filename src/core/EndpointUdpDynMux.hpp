@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -21,20 +22,35 @@ namespace gh {
 
 class UdpDynMux : public ServiceBase, public ResolveFor {
 public:
-  using PskType = std::array<uint8_t, 16>;
+  static constexpr size_t kPskSize = 16;
+  using PskType = std::array<uint8_t, kPskSize>;
 
   class Channel;
 
   class ChannelNotification {
   public:
+    explicit ChannelNotification() = default;
     virtual ~ChannelNotification() = default;
+
+    ChannelNotification(const ChannelNotification&) = delete;
+    auto operator=(const ChannelNotification&) -> ChannelNotification& = delete;
+    ChannelNotification(ChannelNotification&&) = delete;
+    auto operator=(ChannelNotification&&) -> ChannelNotification& = delete;
+
     virtual auto OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> = 0;
     virtual auto OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> = 0;
   };
 
   class NoopChannelNotification : public ChannelNotification {
   public:
+    explicit NoopChannelNotification() = default;
     ~NoopChannelNotification() override = default;
+
+    NoopChannelNotification(const NoopChannelNotification&) = delete;
+    auto operator=(const NoopChannelNotification&) -> NoopChannelNotification& = delete;
+    NoopChannelNotification(NoopChannelNotification&&) = delete;
+    auto operator=(NoopChannelNotification&&) -> NoopChannelNotification& = delete;
+
     auto OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override {
       co_return;
     }
@@ -67,7 +83,8 @@ public:
       -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>>;
   // TODO: this function should take a std::shared_ptr<Channel> argument
   auto RemoveChannel(const UdpDynMux::PskType& psk) -> Omni::Fiber::Coroutine<void>;
-  auto WriteTo(boost::asio::ip::udp::endpoint peer, Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode>;
+  auto WriteTo(boost::asio::ip::udp::endpoint peer, Packet& packet, Cancel& cancel)
+      -> Omni::Fiber::Coroutine<ErrorCode>;
   auto LocalEndpoint() const -> boost::asio::ip::udp::endpoint { return _Socket.local_endpoint(); }
 
   auto GetName() const -> std::string override;
@@ -114,7 +131,7 @@ class UdpDynMux::Channel : public Endpoint {
   friend class UdpDynMux;
 
 public:
-  enum class State { kNegotiating, kRunning, kStopping };
+  enum class State : uint8_t { kNegotiating, kRunning, kStopping };
 
   explicit Channel(UdpDynMux& parent, const UdpDynMux::PskType& psk, uint16_t rxId,
                    std::shared_ptr<ResolverEndpoint> resolver = nullptr);
@@ -136,8 +153,8 @@ public:
   auto GetRoundTripTime() const -> std::chrono::milliseconds { return _RoundTripTime; }
   auto GetChannelState() const -> State { return _State; }
 
-  auto Read(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> override;
-  auto Write(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override;
+  auto Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
   UdpDynMux& _Parent;
