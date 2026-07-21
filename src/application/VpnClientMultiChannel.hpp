@@ -3,8 +3,8 @@
 #include <boost/asio.hpp>
 #include <boost/asio/any_io_executor.hpp>
 #include <functional>
-#include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <utility>
 #include <variant>
@@ -156,16 +156,18 @@ private:
   std::shared_ptr<TunSideEndpoint> _TunSide;
   std::shared_ptr<Pipeline> _TunPipeline;
 
-  std::map<UdpDynMux::PskType, std::shared_ptr<VpnClientMultiChannelSession>> _Sessions;
+  std::set<std::shared_ptr<VpnClientMultiChannelSession>, std::owner_less<>> _Sessions;
   Omni::Fiber::RemoteCall _ChannelCall;
   std::reference_wrapper<SessionStateListener> _StateListener;
 };
 
 class VpnClientMultiChannelSession {
 public:
-  explicit VpnClientMultiChannelSession() = default;
+  explicit VpnClientMultiChannelSession(UdpDynMux::PskType psk = {}) : Psk(psk) {}
   [[nodiscard]] auto GetDescription() const -> std::string { return Channel ? Channel->GetName() : "Invalid Session"; }
 
+  // TODO: this field can be removed.
+  UdpDynMux::PskType Psk;
   std::shared_ptr<UdpDynMux::Channel> Channel;
   std::shared_ptr<VpnClientMultiChannel::ChannelSideEndpoint> ChannelSide;
   std::shared_ptr<Pipeline> SessionPipeline;

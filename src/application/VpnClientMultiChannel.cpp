@@ -1,11 +1,12 @@
 #include "VpnClientMultiChannel.hpp"
 
+#include <algorithm>
 #include <array>
 #include <format>
 #include <functional>
-#include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -362,7 +363,7 @@ auto VpnClientMultiChannel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode
     _TunPipeline.reset();
   }
 
-  for (auto& [psk, session] : _Sessions) {
+  for (const auto& session : _Sessions) {
     _StateListener.get().OnSessionStopping(session);
     session->Running = false;
     if (session->SessionPipeline) {
@@ -375,7 +376,7 @@ auto VpnClientMultiChannel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode
     session->ChannelSide.reset();
 
     if (session->Channel) {
-      co_await _UdpDynMux->RemoveChannel(psk);
+      co_await _UdpDynMux->RemoveChannel(session->Psk);
     }
     _StateListener.get().OnSessionStopped(session);
   }
@@ -392,22 +393,15 @@ auto VpnClientMultiChannel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode
 
 auto VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, const std::string& address)
     -> Omni::Fiber::Coroutine<std::weak_ptr<VpnClientMultiChannelSession>> {
-  auto [iterator, inserted] = _Sessions.emplace(psk, nullptr);
-  if (inserted) {
-    iterator->second = std::make_shared<VpnClientMultiChannelSession>();
-  } else {
-    co_return iterator->second;
+  assert(std::ranges::none_of(_Sessions, [&](const auto& session) -> auto { return session->Psk == psk; }));
+  std::shared_ptr<VpnClientMultiChannelSession> session = std::make_shared<VpnClientMultiChannelSession>(psk);
+  _StateListener.get().OnSessionStarting(session);
+  std::shared_ptr<ResolverEndpoint> resolver = FindResolverEndpoint(address, *_UdpDynMux);
+  session->Channel = co_await _UdpDynMux->CreateChannel(psk, resolver);
+  if (!session->Channel) {
+    _StateListener.get().OnSessionFailed(session, "Failed to create channel");
   }
-  _StateListener.get().OnSessionStarting(iterator->second);
-  std::shared_ptr<ResolverEndpoint> resolver;
-  if (!address.empty()) {
-    resolver = FindResolverEndpoint(address, *_UdpDynMux);
-  }
-  iterator->second->Channel = co_await _UdpDynMux->CreateChannel(psk, resolver);
-  if (!iterator->second->Channel) {
-    _StateListener.get().OnSessionFailed(iterator->second, "Failed to create channel");
-  }
-  co_return iterator->second;
+  co_return session;
 }
 
 auto VpnClientMultiChannel::UnregisterChannel(std::weak_ptr<VpnClientMultiChannelSession> session)
@@ -418,12 +412,9 @@ auto VpnClientMultiChannel::UnregisterChannel(std::weak_ptr<VpnClientMultiChanne
     if (sharedSession->Channel) {
       auto psk = sharedSession->Channel->GetPsk();
       co_await _UdpDynMux->RemoveChannel(psk);
-      _StateListener.get().OnSessionStopped(sharedSession);
-      _Sessions.erase(psk);
-    } else {
-      _StateListener.get().OnSessionStopped(sharedSession);
-      std::erase_if(_Sessions, [&](const auto& pair) -> auto { return pair.second == sharedSession; });
     }
+    _StateListener.get().OnSessionStopped(sharedSession);
+    _Sessions.erase(sharedSession);
   }
 }
 
@@ -438,9 +429,10 @@ auto VpnClientMultiChannel::OnChannelEstablished(std::shared_ptr<UdpDynMux::Chan
         if (_State != State::kRunning) {
           co_return;
         }
-        auto iterator = _Sessions.find(channel->GetPsk());
+        auto iterator = std::ranges::find_if(
+            _Sessions, [&](const auto& session) -> auto { return session->Psk == channel->GetPsk(); });
         if (iterator != _Sessions.end()) {
-          auto session = iterator->second;
+          auto session = *iterator;
           session->Channel = channel;
           session->Running = true;
 
@@ -485,9 +477,10 @@ auto VpnClientMultiChannel::OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> 
         if (_State != State::kRunning) {
           co_return;
         }
-        auto iterator = _Sessions.find(channel->GetPsk());
+        auto iterator = std::ranges::find_if(
+            _Sessions, [&](const auto& session) -> auto { return session->Psk == channel->GetPsk(); });
         if (iterator != _Sessions.end()) {
-          auto session = iterator->second;
+          const auto& session = *iterator;
           session->Running = false;
           if (session->SessionPipeline) {
             co_await session->SessionPipeline->Stop();

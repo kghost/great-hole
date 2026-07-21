@@ -120,8 +120,7 @@ auto TunnelDataPlane::Stop() -> Omni::Fiber::Coroutine<ErrorCode> {
 
 auto TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address)
     -> Omni::Fiber::Coroutine<std::weak_ptr<VpnClientMultiChannelSession>> {
-  auto session = co_await _Client->RegisterChannel(psk, address);
-  co_return session;
+  co_return co_await _Client->RegisterChannel(psk, address);
 }
 
 auto TunnelDataPlane::RemoveEndpoint(std::weak_ptr<VpnClientMultiChannelSession> session)
