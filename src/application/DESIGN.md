@@ -75,3 +75,28 @@ Rather than returning a variant (which requires runtime overhead and `std::visit
 3. The lookup direction is inverted (using `KeyDirection::OppositeDirection`), allowing `LookupAndUpdate` to match the ICMP packet with the correct original session.
 4. The parser recursively invokes itself with `KeyDirection::OppositeDirection` to process the inner packet.
 5. The resolved key is passed to the lambda to execute table lookup, validation, and update.
+
+---
+
+## VpnClientMultiChannel Architecture
+
+`VpnClientMultiChannel` manages multiple parallel VPN connection sessions mapped to virtual network interfaces or specific remote endpoints.
+
+### Session Lifecycle & Lifetime Guarantees
+
+Sessions are represented by the `VpnClientMultiChannelSession` structure, containing pipeline state, the multiplexer (`UdpDynMux`) channel, and endpoints.
+
+#### 1. Registration (`RegisterChannel`)
+- When a client or routing engine requests channel registration, `RegisterChannel` creates a new `VpnClientMultiChannelSession`.
+- The session `std::shared_ptr` is immediately inserted into `_Sessions` (a `std::set` using `std::owner_less`). This ensures the session has at least one strong reference during the asynchronous connection process.
+- It starts the asynchronous `CreateChannel` negotiation.
+- If channel creation fails, the session is removed from `_Sessions` to clean up and prevent leaks.
+
+#### 2. Channel Establishment (`OnChannelEstablished`)
+- Once the underlying channel negotiation succeeds, `OnChannelEstablished` looks up the session in `_Sessions` via its PSK hash.
+- Upon lookup success, it initializes the session's pipeline (`Pipeline`), binds the tunnel endpoint wrappers (`ChannelSideEndpoint`), and notifies state listeners of a running session state.
+
+#### 3. Unregistration and Cleanup (`UnregisterChannel` / `DoGracefulStop`)
+- Unregistering a channel marks it inactive, triggers stop notifications, and erases it from `_Sessions`, allowing the reference count to reach zero and reclaiming resources.
+- During service teardown (`DoGracefulStop`), all sessions still active inside `_Sessions` are cleanly stopped, pipelines are torn down, and the container is cleared.
+

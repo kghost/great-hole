@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <boost/asio.hpp>
+#include <boost/lexical_cast.hpp>
 #include <gtest/gtest.h>
 
 #include "Asio.hpp"
@@ -391,7 +392,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     EXPECT_FALSE(co_await connTrack->Start());
 
     // Register channel on server side first so it can receive client initiates
-    auto session = (co_await connTrack->RegisterChannel(psk, ""));
+    auto session = (co_await connTrack->RegisterChannel(psk, boost::lexical_cast<std::string>(udpClient->LocalEndpoint())));
     auto sharedSession = session.lock();
     EXPECT_NE(sharedSession, nullptr);
     if (sharedSession == nullptr) {
@@ -545,7 +546,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
     EXPECT_FALSE(co_await connTrack->Start());
 
     // Register channel
-    auto session = co_await connTrack->RegisterChannel(psk, "");
+    auto session = co_await connTrack->RegisterChannel(psk, boost::lexical_cast<std::string>(udpClient->LocalEndpoint()));
     auto sharedSession = session.lock();
     EXPECT_NE(sharedSession, nullptr);
     if (sharedSession == nullptr) {
@@ -723,7 +724,7 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
     EXPECT_FALSE(co_await connTrack->Start());
 
     // Before session channel is established/registered, stats should be nullopt
-    auto session = co_await connTrack->RegisterChannel(psk, "");
+    auto session = co_await connTrack->RegisterChannel(psk, boost::lexical_cast<std::string>(udpClient->LocalEndpoint()));
     auto sharedSession = session.lock();
     EXPECT_NE(sharedSession, nullptr);
     if (sharedSession == nullptr) {

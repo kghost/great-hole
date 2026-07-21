@@ -42,11 +42,12 @@ TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor, Connecti
 
 TunnelDataPlane::~TunnelDataPlane() { assert(!_Running); }
 
-auto TunnelDataPlane::Start(
 #ifndef _WIN32
-    int tunFd,
+auto TunnelDataPlane::Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>
+#else
+auto TunnelDataPlane::Start(int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>
 #endif
-    int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode> {
+{
   if (_Running) {
     co_return ErrorCode{};
   }
@@ -74,6 +75,7 @@ auto TunnelDataPlane::Start(
   if (err) {
     BOOST_LOG_TRIVIAL(error) << "Failed to start VpnClientMultiChannel: " << err.message();
     _Callbacks.OnVpnStateChanged(TunnelState::Failed, err.message());
+    _Running = false;
     co_return err;
   }
 

@@ -51,7 +51,7 @@ public:
   }
   [[nodiscard]] auto GetInjector() const -> DeferredPacketInjector& { return *_WinDivert; }
 #else
-  auto Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<void>;
+  auto Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>;
   auto MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void>;
 #endif
   auto Stop() -> Omni::Fiber::Coroutine<ErrorCode>;

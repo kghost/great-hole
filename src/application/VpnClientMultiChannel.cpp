@@ -396,10 +396,12 @@ auto VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, const
   assert(std::ranges::none_of(_Sessions, [&](const auto& session) -> auto { return session->Psk == psk; }));
   std::shared_ptr<VpnClientMultiChannelSession> session = std::make_shared<VpnClientMultiChannelSession>(psk);
   _StateListener.get().OnSessionStarting(session);
+  _Sessions.insert(session);
   std::shared_ptr<ResolverEndpoint> resolver = FindResolverEndpoint(address, *_UdpDynMux);
   session->Channel = co_await _UdpDynMux->CreateChannel(psk, resolver);
   if (!session->Channel) {
     _StateListener.get().OnSessionFailed(session, "Failed to create channel");
+    _Sessions.erase(session);
   }
   co_return session;
 }

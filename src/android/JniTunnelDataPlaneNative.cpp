@@ -1,4 +1,3 @@
-#include "ConnectionTracker.hpp"
 #include "info_kghost_android_hole_vpn_dataplane_JniTunnelDataPlaneNative.h"
 
 #include <android/log.h>
@@ -11,6 +10,7 @@
 #include <string>
 #include <thread>
 #include <unistd.h>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -22,15 +22,14 @@
 #include <boost/log/trivial.hpp>
 #include <boost/make_shared.hpp>
 
-#include <ExternalQueue.hpp>
-#include <MoveOnlyFunction.hpp>
-
 #include "Asio.hpp"
+#include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
+#include "ExternalQueue.hpp"
+#include "MoveOnlyFunction.hpp"
+#include "TunnelDataPlane.hpp"
 #include "Utils.hpp"
 #include "Utils/Overload.hpp"
-
-#include "TunnelDataPlane.hpp"
 
 static JavaVM* g_JavaVM = nullptr;
 static jclass g_CallbacksClass = nullptr;
@@ -75,10 +74,15 @@ public:
   TunnelDataPlane* GetDataPlane() const { return _DataPlane; }
 
   bool ProtectSocket(int fd);
-  void OnVpnStateChanged(TunnelState state, const std::string& message) override;
-  void OnTunnelStateChanged(const std::shared_ptr<VpnClientMultiChannelSession>& session, TunnelState state,
+  void OnVpnStateChanged(Interface::TunnelState state, const std::string& message) override;
+  void OnTunnelStateChanged(Interface::VpnEndpoint endpoint, Interface::TunnelState state,
                             const std::string& error) override;
   std::optional<VpnTrafficStats> GetTrafficStats(jlong endpointHandle);
+
+  std::weak_ptr<VpnClientMultiChannelSession> FindSession(const VpnClientMultiChannelSession* ptr) const {
+    auto iter = _EndpointMap.find(ptr);
+    return iter != _EndpointMap.end() ? iter->second : std::weak_ptr<VpnClientMultiChannelSession>{};
+  }
 
   template <typename Func> void PostTask(Func&& func) {
     _TaskQueue.Push([func = std::forward<Func>(func)](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
@@ -95,6 +99,8 @@ private:
   std::unique_ptr<JniSelector> _Selector;
   Omni::Fiber::ExternalQueue<Task> _TaskQueue;
   TunnelDataPlane* _DataPlane = nullptr;
+
+  std::unordered_map<const VpnClientMultiChannelSession*, std::weak_ptr<VpnClientMultiChannelSession>> _EndpointMap;
 
   std::atomic<bool> _Stopped{false};
 };
@@ -161,12 +167,9 @@ std::shared_ptr<ConnectionMark> JniSelector::FindTunnel(int protocol, const boos
   env->DeleteLocalRef(remoteBytes);
 
   if (endpointHandle != 0) {
-    auto dp = _Session.GetDataPlane();
-    if (dp) {
-      auto session = dp->FindSessionByHandle(reinterpret_cast<VpnClientMultiChannelSession*>(endpointHandle));
-      if (session) {
-        return std::make_unique<VpnClientMultiChannel::Mark>(std::move(session));
-      }
+    auto session = _Session.FindSession(reinterpret_cast<const VpnClientMultiChannelSession*>(endpointHandle));
+    if (auto sharedSession = session.lock()) {
+      return std::make_unique<VpnClientMultiChannel::Mark>(session);
     }
   }
   return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
@@ -254,9 +257,13 @@ JniSession::~JniSession() {
 }
 
 void JniSession::Start(int tunFd, int mtu, std::vector<char> encryptionKey) {
-  PostTask([tunFd, mtu, encryptionKey = std::move(encryptionKey)](TunnelDataPlane& dp,
-                                                                  bool& stop) -> Omni::Fiber::Coroutine<void> {
-    co_await dp.Start(tunFd, mtu, std::move(encryptionKey));
+  PostTask([this, tunFd, mtu, encryptionKey = std::move(encryptionKey)](TunnelDataPlane& dp,
+                                                                        bool& stop) -> Omni::Fiber::Coroutine<void> {
+    auto err = co_await dp.Start(tunFd, mtu, std::move(encryptionKey));
+    if (err) {
+      BOOST_LOG_TRIVIAL(error) << "Failed to start TunnelDataPlane: " << err.message();
+      OnVpnStateChanged(Interface::TunnelState::Failed, err.message());
+    }
     co_return;
   });
 }
@@ -295,9 +302,14 @@ jlong JniSession::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& 
   std::promise<jlong> promise;
   auto future = promise.get_future();
 
-  PostTask([&promise, psk, address](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+  PostTask([this, &promise, psk, address](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
     auto session = co_await dp.AddEndpoint(psk, address);
-    promise.set_value(reinterpret_cast<jlong>(session.get()));
+    if (auto sharedSession = session.lock()) {
+      _EndpointMap[sharedSession.get()] = session;
+      promise.set_value(reinterpret_cast<jlong>(sharedSession.get()));
+    } else {
+      promise.set_value(0);
+    }
     co_return;
   });
 
@@ -308,8 +320,13 @@ void JniSession::RemoveEndpoint(jlong handle) {
   std::promise<void> promise;
   auto future = promise.get_future();
 
-  PostTask([&promise, handle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
-    co_await dp.RemoveEndpoint(dp.FindSessionByHandle(reinterpret_cast<VpnClientMultiChannelSession*>(handle)));
+  PostTask([this, &promise, handle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    auto* ptr = reinterpret_cast<VpnClientMultiChannelSession*>(handle);
+    auto iterator = _EndpointMap.find(ptr);
+    if (iterator != _EndpointMap.end()) {
+      co_await dp.RemoveEndpoint(iterator->second);
+      _EndpointMap.erase(iterator);
+    }
     promise.set_value();
     co_return;
   });
@@ -325,7 +342,7 @@ void JniSession::StopEndpoint(jlong handle) {
   // Managed by remove or stop
 }
 
-void JniSession::OnVpnStateChanged(TunnelState state, const std::string& message) {
+void JniSession::OnVpnStateChanged(Interface::TunnelState state, const std::string& message) {
   if (!_Callbacks) {
     return;
   }
@@ -346,7 +363,7 @@ void JniSession::OnVpnStateChanged(TunnelState state, const std::string& message
   }
 }
 
-void JniSession::OnTunnelStateChanged(const std::shared_ptr<VpnClientMultiChannelSession>& session, TunnelState state,
+void JniSession::OnTunnelStateChanged(Interface::VpnEndpoint endpoint, Interface::TunnelState state,
                                       const std::string& error) {
   if (!_Callbacks) {
     return;
@@ -357,7 +374,7 @@ void JniSession::OnTunnelStateChanged(const std::shared_ptr<VpnClientMultiChanne
     BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnTunnelStateChanged (NewStringUTF)";
     env->ExceptionClear();
   }
-  env->CallVoidMethod(_Callbacks, g_MidOnTunnelStateChanged, reinterpret_cast<jlong>(session.get()),
+  env->CallVoidMethod(_Callbacks, g_MidOnTunnelStateChanged, reinterpret_cast<jlong>(endpoint.lock().get()),
                       static_cast<jint>(std::to_underlying(state)), errStr);
   if (env->ExceptionCheck()) {
     BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnTunnelStateChanged (onTunnelStateChanged)";
@@ -373,9 +390,14 @@ std::optional<VpnTrafficStats> JniSession::GetTrafficStats(jlong endpointHandle)
   std::promise<std::optional<VpnTrafficStats>> promise;
   auto future = promise.get_future();
 
-  PostTask([&promise, endpointHandle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
-    auto* session = reinterpret_cast<VpnClientMultiChannelSession*>(endpointHandle);
-    promise.set_value(dp.GetTrafficStats(dp.FindSessionByHandle(session)));
+  PostTask([this, &promise, endpointHandle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    auto* ptr = reinterpret_cast<VpnClientMultiChannelSession*>(endpointHandle);
+    auto session = FindSession(ptr);
+    if (auto sharedSession = session.lock()) {
+      promise.set_value(dp.GetTrafficStats(sharedSession));
+    } else {
+      promise.set_value(std::nullopt);
+    }
     co_return;
   });
 
