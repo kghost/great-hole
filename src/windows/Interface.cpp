@@ -41,6 +41,9 @@ public:
   auto AddEndpoint(const PskType& psk, const std::string& address) -> VpnEndpoint override;
   void RemoveEndpoint(VpnEndpoint endpoint) override;
 
+  void StartEndpoint(VpnEndpoint endpoint) override;
+  void StopEndpoint(VpnEndpoint endpoint) override;
+
   // Policy Interface
   void ClearPathRegistry() override;
   void AddPathPolicy(const std::string& path, const PolicyRule& policy) override;
@@ -218,13 +221,38 @@ auto PlatformImpl::AddEndpoint(const PskType& psk, const std::string& address) -
 void PlatformImpl::RemoveEndpoint(VpnEndpoint endpoint) {
   std::promise<void> promise;
   auto future = promise.get_future();
-  auto session = endpoint.lock();
 
   _TaskQueue.Push(
-      [&promise, session](const auto& /*policyEngine*/, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
-        if (session) {
-          co_await dataPlane->RemoveEndpoint(session);
-        }
+      [&promise, endpoint](const auto& /*policyEngine*/, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
+        co_await dataPlane->RemoveEndpoint(endpoint);
+        promise.set_value();
+        co_return;
+      });
+
+  future.get();
+}
+
+void PlatformImpl::StartEndpoint(VpnEndpoint endpoint) {
+  std::promise<void> promise;
+  auto future = promise.get_future();
+
+  _TaskQueue.Push(
+      [&promise, endpoint](const auto& /*policyEngine*/, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
+        co_await dataPlane->StartEndpoint(endpoint);
+        promise.set_value();
+        co_return;
+      });
+
+  future.get();
+}
+
+void PlatformImpl::StopEndpoint(VpnEndpoint endpoint) {
+  std::promise<void> promise;
+  auto future = promise.get_future();
+
+  _TaskQueue.Push(
+      [&promise, endpoint](const auto& /*policyEngine*/, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
+        co_await dataPlane->StopEndpoint(endpoint);
         promise.set_value();
         co_return;
       });

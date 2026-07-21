@@ -2,6 +2,7 @@
 
 #include <boost/asio.hpp>
 #include <boost/asio/any_io_executor.hpp>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <set>
@@ -132,11 +133,15 @@ public:
   auto GetName() const -> std::string override;
 
   auto RegisterChannel(const UdpDynMux::PskType& psk, const std::string& address)
-      -> Omni::Fiber::Coroutine<std::weak_ptr<VpnClientMultiChannelSession>>;
-  auto UnregisterChannel(std::weak_ptr<VpnClientMultiChannelSession> session) -> Omni::Fiber::Coroutine<void>;
+      -> std::weak_ptr<VpnClientMultiChannelSession>;
+  void UnregisterChannel(const std::weak_ptr<VpnClientMultiChannelSession>& weak);
+
+  auto StartChannel(const std::weak_ptr<VpnClientMultiChannelSession>& weak) -> Omni::Fiber::Coroutine<void>;
+  auto StopChannel(const std::weak_ptr<VpnClientMultiChannelSession>& weak) -> Omni::Fiber::Coroutine<void>;
+
   auto MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni::Fiber::Coroutine<ErrorCode>;
 
-  static auto GetStats(const std::weak_ptr<VpnClientMultiChannelSession>& session) -> std::optional<VpnTrafficStats>;
+  static auto GetStats(const std::weak_ptr<VpnClientMultiChannelSession>& weak) -> std::optional<VpnTrafficStats>;
 
   auto OnChannelEstablished(UdpDynMux::ChannelNotificationTarget& target) -> Omni::Fiber::Coroutine<void> override;
   auto OnChannelClosed(UdpDynMux::ChannelNotificationTarget& target) -> Omni::Fiber::Coroutine<void> override;
@@ -164,15 +169,28 @@ private:
 class VpnClientMultiChannelSession : public UdpDynMux::ChannelNotificationTarget,
                                      public std::enable_shared_from_this<VpnClientMultiChannelSession> {
 public:
-  explicit VpnClientMultiChannelSession(UdpDynMux::PskType psk = {}) : Psk(psk) {}
-  [[nodiscard]] auto GetDescription() const -> std::string { return Channel ? Channel->GetName() : "Invalid Session"; }
+  explicit VpnClientMultiChannelSession(UdpDynMux::PskType psk, std::string address)
+      : psk(psk), address(std::move(address)) {}
+  ~VpnClientMultiChannelSession() override = default;
 
-  // TODO: this field can be removed.
-  UdpDynMux::PskType Psk;
+  VpnClientMultiChannelSession(const VpnClientMultiChannelSession&) = delete;
+  auto operator=(const VpnClientMultiChannelSession&) -> VpnClientMultiChannelSession& = delete;
+  VpnClientMultiChannelSession(VpnClientMultiChannelSession&&) = delete;
+  auto operator=(VpnClientMultiChannelSession&&) -> VpnClientMultiChannelSession& = delete;
+
+  [[nodiscard]] auto GetDescription() const -> std::string { return address; }
+
+  const UdpDynMux::PskType psk;
+  const std::string address;
+  enum class State : uint8_t {
+    kNone,    // StartChannel is not called
+    kRunning, // StartChannel is called and channel is established
+    kStopped, // StopChannel is called or channel is closed
+  } State = State::kNone;
+
   std::shared_ptr<UdpDynMux::Channel> Channel;
   std::shared_ptr<VpnClientMultiChannel::ChannelSideEndpoint> ChannelSide;
   std::shared_ptr<Pipeline> SessionPipeline;
-  bool Running = true;
 };
 
 } // namespace gh

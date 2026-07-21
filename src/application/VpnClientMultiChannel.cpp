@@ -69,7 +69,7 @@ auto VpnClientMultiChannel::Mark::Validate() const -> bool {
                              [](const Deferred&) -> bool { return true; },
                              [](const Interface::VpnEndpoint& endpoint) -> bool {
                                if (auto session = endpoint.lock()) {
-                                 return session->Running;
+                                 return session->State == VpnClientMultiChannelSession::State::kRunning;
                                }
                                return false;
                              }},
@@ -364,21 +364,7 @@ auto VpnClientMultiChannel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode
   }
 
   for (const auto& session : _Sessions) {
-    _StateListener.get().OnSessionStopping(session);
-    session->Running = false;
-    if (session->SessionPipeline) {
-      co_await session->SessionPipeline->Stop();
-    }
-    session->SessionPipeline.reset();
-    if (session->ChannelSide) {
-      co_await session->ChannelSide->Stop();
-    }
-    session->ChannelSide.reset();
-
-    if (session->Channel) {
-      co_await _UdpDynMux->RemoveChannel(session->Channel);
-    }
-    _StateListener.get().OnSessionStopped(session);
+    co_await StopChannel(session);
   }
   _Sessions.clear();
   co_await _TunSide->Stop();
@@ -391,31 +377,51 @@ auto VpnClientMultiChannel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode
   co_return ErrorCode{};
 }
 
-auto VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, const std::string& address)
-    -> Omni::Fiber::Coroutine<std::weak_ptr<VpnClientMultiChannelSession>> {
-  assert(std::ranges::none_of(_Sessions, [&](const auto& session) -> auto { return session->Psk == psk; }));
-  std::shared_ptr<VpnClientMultiChannelSession> session = std::make_shared<VpnClientMultiChannelSession>(psk);
+auto VpnClientMultiChannel::StartChannel(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
+    -> Omni::Fiber::Coroutine<void> {
+  auto session = weak.lock();
+  assert(session);
+
+  if (session->State != VpnClientMultiChannelSession::State::kNone) {
+    co_return;
+  }
+  session->State = VpnClientMultiChannelSession::State::kStopped;
+
   _StateListener.get().OnSessionStarting(session);
-  _Sessions.insert(session);
-  std::shared_ptr<ResolverEndpoint> resolver = FindResolverEndpoint(address, *_UdpDynMux);
-  session->Channel = co_await _UdpDynMux->CreateChannel(psk, *session, resolver);
+  session->Channel =
+      co_await _UdpDynMux->CreateChannel(session->psk, *session, FindResolverEndpoint(session->address, *_UdpDynMux));
   if (!session->Channel) {
     _StateListener.get().OnSessionFailed(session, "Failed to create channel");
     _Sessions.erase(session);
   }
-  co_return session;
 }
 
-auto VpnClientMultiChannel::UnregisterChannel(std::weak_ptr<VpnClientMultiChannelSession> session)
+auto VpnClientMultiChannel::StopChannel(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
     -> Omni::Fiber::Coroutine<void> {
-  if (auto sharedSession = session.lock(); sharedSession) {
-    _StateListener.get().OnSessionStopping(sharedSession);
-    sharedSession->Running = false;
-    if (sharedSession->Channel) {
-      co_await _UdpDynMux->RemoveChannel(sharedSession->Channel);
-    }
-    _StateListener.get().OnSessionStopped(sharedSession);
-    _Sessions.erase(sharedSession);
+  auto session = weak.lock();
+  assert(session);
+
+  if (session->State == VpnClientMultiChannelSession::State::kNone) {
+    co_return;
+  }
+
+  co_await _UdpDynMux->RemoveChannel(session->Channel);
+  assert(session->State == VpnClientMultiChannelSession::State::kStopped);
+  session->State = VpnClientMultiChannelSession::State::kNone;
+  co_return;
+}
+
+auto VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, const std::string& address)
+    -> std::weak_ptr<VpnClientMultiChannelSession> {
+  auto session = std::make_shared<VpnClientMultiChannelSession>(psk, address);
+  _Sessions.insert(session);
+  return session;
+}
+
+void VpnClientMultiChannel::UnregisterChannel(const std::weak_ptr<VpnClientMultiChannelSession>& weak) {
+  if (auto session = weak.lock(); session) {
+    assert(session->State == VpnClientMultiChannelSession::State::kNone);
+    _Sessions.erase(session);
   }
 }
 
@@ -426,65 +432,55 @@ auto VpnClientMultiChannel::OnChannelEstablished(UdpDynMux::ChannelNotificationT
   if (_State != State::kRunning) {
     co_return;
   }
-  auto result = co_await _ChannelCall.Call([this, session]() mutable -> Omni::Fiber::Coroutine<void> {
-    if (_State != State::kRunning) {
-      co_return;
-    }
-    auto channel = session->Channel;
-    session->Running = true;
 
-    if (!session->SessionPipeline && channel) {
-      auto channelSide = std::make_shared<ChannelSideEndpoint>(*this, session);
-      auto errChannel = co_await channelSide->Start();
-      if (errChannel) {
-        BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel side for " << channel->GetName();
-        co_await channelSide->Stop();
-        _StateListener.get().OnSessionFailed(session, "Failed to start channel side: " + errChannel.message());
-        co_return;
-      }
-      auto pipeline = std::make_shared<Pipeline>(channel, _Filters, channelSide);
-      auto err = co_await pipeline->Start();
-      if (err) {
-        BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel pipeline for " << channel->GetName();
-        co_await pipeline->Stop();
-        _StateListener.get().OnSessionFailed(session, "Failed to start channel pipeline: " + err.message());
-        co_return;
-      }
-      session->ChannelSide = std::move(channelSide);
-      session->SessionPipeline = std::move(pipeline);
-    }
-    _StateListener.get().OnSessionRunning(session);
-  });
-  if (!result.has_value()) {
-    BOOST_LOG_TRIVIAL(error) << GetName() << ": RPC call failed for OnChannelEstablished";
+  // TODO: need a mutex lock for State
+  if (session->State != VpnClientMultiChannelSession::State::kStopped) {
+    co_return;
   }
+
+  session->ChannelSide = std::make_shared<ChannelSideEndpoint>(*this, session);
+  auto errChannel = co_await session->ChannelSide->Start();
+  if (errChannel) {
+    BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel side for " << session->Channel->GetName();
+    co_await session->ChannelSide->Stop();
+    session->ChannelSide.reset();
+    _StateListener.get().OnSessionFailed(session, "Failed to start channel side: " + errChannel.message());
+    co_return;
+  }
+
+  session->SessionPipeline = std::make_shared<Pipeline>(session->Channel, _Filters, session->ChannelSide);
+  auto err = co_await session->SessionPipeline->Start();
+  if (err) {
+    BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel pipeline for " << session->Channel->GetName();
+    co_await session->SessionPipeline->Stop();
+    session->SessionPipeline.reset();
+    _StateListener.get().OnSessionFailed(session, "Failed to start channel pipeline: " + err.message());
+    co_return;
+  }
+  session->State = VpnClientMultiChannelSession::State::kRunning;
+  _StateListener.get().OnSessionRunning(session);
 }
 
 auto VpnClientMultiChannel::OnChannelClosed(UdpDynMux::ChannelNotificationTarget& target)
     -> Omni::Fiber::Coroutine<void> {
   auto session = dynamic_cast<VpnClientMultiChannelSession&>(target).shared_from_this();
   BOOST_LOG_TRIVIAL(info) << GetName() << ": on channel closed: " << session->GetDescription();
-  if (_State != State::kRunning) {
+  if (_State != State::kRunning && _State != State::kStopping) {
     co_return;
   }
-  auto result = co_await _ChannelCall.Call([this, session]() mutable -> Omni::Fiber::Coroutine<void> {
-    if (_State != State::kRunning) {
-      co_return;
-    }
-    session->Running = false;
-    if (session->SessionPipeline) {
-      co_await session->SessionPipeline->Stop();
-    }
-    session->SessionPipeline.reset();
-    if (session->ChannelSide) {
-      co_await session->ChannelSide->Stop();
-    }
-    session->ChannelSide.reset();
-    _StateListener.get().OnSessionStopped(session);
-  });
-  if (!result.has_value()) {
-    BOOST_LOG_TRIVIAL(error) << GetName() << ": RPC call failed for OnChannelClosed";
+
+  // TODO: need a mutex lock for State
+  if (session->State != VpnClientMultiChannelSession::State::kRunning) {
+    co_return;
   }
+
+  _StateListener.get().OnSessionStopping(session);
+  co_await session->SessionPipeline->Stop();
+  session->SessionPipeline.reset();
+  co_await session->ChannelSide->Stop();
+  session->ChannelSide.reset();
+  session->State = VpnClientMultiChannelSession::State::kStopped;
+  _StateListener.get().OnSessionStopped(session);
 }
 
 auto VpnClientMultiChannel::MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni::Fiber::Coroutine<ErrorCode> {
@@ -529,15 +525,15 @@ auto VpnClientMultiChannel::MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni
   }
 }
 
-auto VpnClientMultiChannel::GetStats(const std::weak_ptr<VpnClientMultiChannelSession>& session)
+auto VpnClientMultiChannel::GetStats(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
     -> std::optional<VpnTrafficStats> {
-  if (auto sharedSession = session.lock(); sharedSession) {
-    if (sharedSession->SessionPipeline) {
+  if (auto session = weak.lock(); session) {
+    if (session->SessionPipeline) {
       int64_t rttMs = -1;
-      if (sharedSession->Channel) {
-        rttMs = sharedSession->Channel->GetRoundTripTime().count();
+      if (session->Channel) {
+        rttMs = session->Channel->GetRoundTripTime().count();
       }
-      return VpnTrafficStats{sharedSession->SessionPipeline->GetTrafficStats(), rttMs};
+      return VpnTrafficStats{session->SessionPipeline->GetTrafficStats(), rttMs};
     }
   }
   return std::nullopt;

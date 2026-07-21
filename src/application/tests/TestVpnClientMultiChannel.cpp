@@ -394,7 +394,8 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     EXPECT_FALSE(co_await connTrack->Start());
 
     // Register channel on server side first so it can receive client initiates
-    auto session = (co_await connTrack->RegisterChannel(psk, boost::lexical_cast<std::string>(udpClient->LocalEndpoint())));
+    auto session = connTrack->RegisterChannel(psk, boost::lexical_cast<std::string>(udpClient->LocalEndpoint()));
+    co_await connTrack->StartChannel(session);
     auto sharedSession = session.lock();
     EXPECT_NE(sharedSession, nullptr);
     if (sharedSession == nullptr) {
@@ -549,7 +550,8 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
     EXPECT_FALSE(co_await connTrack->Start());
 
     // Register channel
-    auto session = co_await connTrack->RegisterChannel(psk, boost::lexical_cast<std::string>(udpClient->LocalEndpoint()));
+    auto session = connTrack->RegisterChannel(psk, boost::lexical_cast<std::string>(udpClient->LocalEndpoint()));
+    co_await connTrack->StartChannel(session);
     auto sharedSession = session.lock();
     EXPECT_NE(sharedSession, nullptr);
     if (sharedSession == nullptr) {
@@ -588,7 +590,8 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
     }
 
     // 2. Unregister the channel
-    co_await connTrack->UnregisterChannel(session);
+    co_await connTrack->StopChannel(session);
+    connTrack->UnregisterChannel(session);
     resolvedSession = nullptr;
 
     // 3. Send an outgoing packet matching the established connection key
@@ -728,7 +731,8 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
     EXPECT_FALSE(co_await connTrack->Start());
 
     // Before session channel is established/registered, stats should be nullopt
-    auto session = co_await connTrack->RegisterChannel(psk, boost::lexical_cast<std::string>(udpClient->LocalEndpoint()));
+    auto session = connTrack->RegisterChannel(psk, boost::lexical_cast<std::string>(udpClient->LocalEndpoint()));
+    co_await connTrack->StartChannel(session);
     auto sharedSession = session.lock();
     EXPECT_NE(sharedSession, nullptr);
     if (sharedSession == nullptr) {

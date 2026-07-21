@@ -128,14 +128,18 @@ public:
   auto operator=(PlatformInterface&&) -> PlatformInterface& = delete;
 
   virtual auto StartEngine() -> std::error_code = 0;
-  virtual auto StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code = 0;
   virtual auto StopEngine() -> std::error_code = 0;
+
+  virtual auto StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code = 0;
   virtual auto StopVpn() -> std::error_code = 0;
 
   static constexpr size_t kPskSize = 16;
   using PskType = std::array<uint8_t, kPskSize>;
   virtual auto AddEndpoint(const PskType& psk, const std::string& address) -> VpnEndpoint = 0;
   virtual void RemoveEndpoint(VpnEndpoint endpoint) = 0;
+
+  virtual void StartEndpoint(VpnEndpoint endpoint) = 0;
+  virtual void StopEndpoint(VpnEndpoint endpoint) = 0;
 
   // Policy Interface
   virtual void ClearPathRegistry() = 0;

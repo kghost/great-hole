@@ -121,15 +121,22 @@ auto TunnelDataPlane::Stop() -> Omni::Fiber::Coroutine<ErrorCode> {
 }
 
 auto TunnelDataPlane::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address)
-    -> Omni::Fiber::Coroutine<std::weak_ptr<VpnClientMultiChannelSession>> {
-  co_return co_await _Client->RegisterChannel(psk, address);
+    -> std::weak_ptr<VpnClientMultiChannelSession> {
+  return _Client->RegisterChannel(psk, address);
 }
 
-auto TunnelDataPlane::RemoveEndpoint(std::weak_ptr<VpnClientMultiChannelSession> session)
+void TunnelDataPlane::RemoveEndpoint(const std::weak_ptr<VpnClientMultiChannelSession>& weak) {
+  _Client->UnregisterChannel(weak);
+}
+
+auto TunnelDataPlane::StartEndpoint(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
     -> Omni::Fiber::Coroutine<void> {
-  if (auto sharedSession = session.lock()) {
-    co_await _Client->UnregisterChannel(sharedSession);
-  }
+  co_return co_await _Client->StartChannel(weak);
+}
+
+auto TunnelDataPlane::StopEndpoint(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
+    -> Omni::Fiber::Coroutine<void> {
+  co_return co_await _Client->StopChannel(weak);
 }
 
 auto TunnelDataPlane::GetTrafficStats(const std::shared_ptr<VpnClientMultiChannelSession>& session)

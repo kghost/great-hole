@@ -56,8 +56,11 @@ public:
 #endif
   auto Stop() -> Omni::Fiber::Coroutine<ErrorCode>;
   auto AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address)
-      -> Omni::Fiber::Coroutine<std::weak_ptr<VpnClientMultiChannelSession>>;
-  auto RemoveEndpoint(std::weak_ptr<VpnClientMultiChannelSession> session) -> Omni::Fiber::Coroutine<void>;
+      -> std::weak_ptr<VpnClientMultiChannelSession>;
+  void RemoveEndpoint(const std::weak_ptr<VpnClientMultiChannelSession>& weak);
+
+  auto StartEndpoint(const std::weak_ptr<VpnClientMultiChannelSession>& weak) -> Omni::Fiber::Coroutine<void>;
+  auto StopEndpoint(const std::weak_ptr<VpnClientMultiChannelSession>& weak) -> Omni::Fiber::Coroutine<void>;
 
   static auto GetTrafficStats(const std::shared_ptr<VpnClientMultiChannelSession>& session)
       -> std::optional<VpnTrafficStats>;

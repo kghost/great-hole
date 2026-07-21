@@ -302,14 +302,13 @@ jlong JniSession::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& 
   std::promise<jlong> promise;
   auto future = promise.get_future();
 
-  PostTask([this, &promise, psk, address](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
-    auto session = co_await dp.AddEndpoint(psk, address);
-    if (auto sharedSession = session.lock()) {
-      _EndpointMap[sharedSession.get()] = session;
-      promise.set_value(reinterpret_cast<jlong>(sharedSession.get()));
-    } else {
-      promise.set_value(0);
-    }
+  PostTask([this, &promise, psk, address](TunnelDataPlane& dataplane, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    auto weak = dataplane.AddEndpoint(psk, address);
+    auto session = weak.lock();
+    assert(session);
+    _EndpointMap[session.get()] = weak;
+    co_await dataplane.StartEndpoint(weak);
+    promise.set_value(reinterpret_cast<jlong>(session.get())); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
     co_return;
   });
 
@@ -320,11 +319,14 @@ void JniSession::RemoveEndpoint(jlong handle) {
   std::promise<void> promise;
   auto future = promise.get_future();
 
-  PostTask([this, &promise, handle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+  PostTask([this, &promise, handle](TunnelDataPlane& dataplane, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast, performance-no-int-to-ptr)
     auto* ptr = reinterpret_cast<VpnClientMultiChannelSession*>(handle);
     auto iterator = _EndpointMap.find(ptr);
     if (iterator != _EndpointMap.end()) {
-      co_await dp.RemoveEndpoint(iterator->second);
+      auto weak = iterator->second;
+      co_await dataplane.StopEndpoint(weak);
+      dataplane.RemoveEndpoint(weak);
       _EndpointMap.erase(iterator);
     }
     promise.set_value();

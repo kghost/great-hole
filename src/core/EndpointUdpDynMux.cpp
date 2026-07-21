@@ -466,8 +466,8 @@ auto UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, ChannelNotification
 auto UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, ChannelNotificationTarget& target,
                               std::shared_ptr<ResolverEndpoint> resolver)
     -> Omni::Fiber::Coroutine<std::shared_ptr<UdpDynMux::Channel>> {
-  auto reply =
-      co_await _ChannelRpc.Call([&udp = *this, psk, resolver, &target] -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
+  auto reply = co_await _ChannelRpc.Call(
+      [&udp = *this, psk, resolver, &target] -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
         auto now = std::chrono::steady_clock::now();
         auto channel = std::make_shared<Channel>(udp, psk, udp.AllocateUniqueRxId(), target, resolver);
         channel->_LastSeen = now;
