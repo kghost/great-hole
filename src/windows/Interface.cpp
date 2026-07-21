@@ -154,13 +154,15 @@ auto PlatformImpl::StopVpn() -> std::error_code {
   auto future = promise.get_future();
 
   _TaskQueue.Push([&promise](const auto& policyEngine, auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
-    policyEngine->GetPolicySelector().ClearInjector();
-    policyEngine->GetPolicySelector().ClearConnectionTracker();
     auto err = co_await dataPlane->Stop();
     if (err) {
       promise.set_value(err);
       co_return;
     }
+
+    policyEngine->GetPolicySelector().ClearConnectionTracker();
+    policyEngine->GetPolicySelector().ClearInjector();
+
     dataPlane.reset();
 
     promise.set_value(ErrorCode{});
