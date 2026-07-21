@@ -23,6 +23,8 @@ using namespace gh;
 
 namespace {
 
+struct TestTarget : public UdpDynMux::ChannelNotificationTarget {};
+
 void RunEventLoop(boost::asio::io_context& io) {
   io.restart();
   io.run();
@@ -50,11 +52,14 @@ TEST(UdpDynMuxTest, SuccessfulChannelCreationAndDataTransfer) {
 
     UdpDynMux::PskType psk = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
 
-    auto ch1 = co_await dev1->CreateChannel(psk);
+    TestTarget target1;
+    TestTarget target2;
+
+    auto ch1 = co_await dev1->CreateChannel(psk, target1);
     EXPECT_NE(ch1, nullptr);
 
     auto resolver = std::make_shared<ResolverStaticEndpoint>(dev1->LocalEndpoint());
-    auto ch2 = co_await dev2->CreateChannel(psk, resolver);
+    auto ch2 = co_await dev2->CreateChannel(psk, target2, resolver);
     EXPECT_NE(ch2, nullptr);
 
     Cancel cancelObj;
@@ -163,8 +168,11 @@ TEST(UdpDynMuxTest, SimultaneousConnectionStart) {
     auto res1 = std::make_shared<ResolverStaticEndpoint>(dev2->LocalEndpoint());
     auto res2 = std::make_shared<ResolverStaticEndpoint>(dev1->LocalEndpoint());
 
-    auto ch1 = co_await dev1->CreateChannel(psk, res1);
-    auto ch2 = co_await dev2->CreateChannel(psk, res2);
+    TestTarget target1;
+    TestTarget target2;
+
+    auto ch1 = co_await dev1->CreateChannel(psk, target1, res1);
+    auto ch2 = co_await dev2->CreateChannel(psk, target2, res2);
 
     EXPECT_NE(ch1, nullptr);
     EXPECT_NE(ch2, nullptr);
@@ -240,9 +248,11 @@ TEST(UdpDynMuxTest, AddressMigration) {
 
     UdpDynMux::PskType psk = {7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7};
 
-    auto ch1 = co_await dev1->CreateChannel(psk);
+    TestTarget target1;
+    TestTarget target2;
+    auto ch1 = co_await dev1->CreateChannel(psk, target1);
     auto res2 = std::make_shared<ResolverStaticEndpoint>(dev1->LocalEndpoint());
-    auto ch2 = co_await dev2->CreateChannel(psk, res2);
+    auto ch2 = co_await dev2->CreateChannel(psk, target2, res2);
 
     Cancel cancelObj;
     co_await Omni::Fiber::OmniYield();
@@ -273,7 +283,8 @@ TEST(UdpDynMuxTest, AddressMigration) {
     auto err3 = co_await dev2New->Start();
     EXPECT_FALSE(err3);
 
-    auto ch2New = co_await dev2New->CreateChannel(psk, res2);
+    TestTarget target2New;
+    auto ch2New = co_await dev2New->CreateChannel(psk, target2New, res2);
 
     co_await Omni::Fiber::OmniYield();
     boost::asio::steady_timer waitTimer2(io.get_executor());
@@ -337,7 +348,8 @@ TEST(UdpDynMuxTest, ReadCancellation) {
     EXPECT_FALSE(err);
 
     UdpDynMux::PskType psk = {5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5};
-    auto channel = co_await server->CreateChannel(psk);
+    TestTarget target;
+    auto channel = co_await server->CreateChannel(psk, target);
     EXPECT_NE(channel, nullptr);
 
     Cancel cancelObj;
@@ -389,7 +401,8 @@ TEST(UdpDynMuxTest, WriteCancellation) {
     EXPECT_FALSE(err);
 
     UdpDynMux::PskType psk = {6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6};
-    auto channel = co_await server->CreateChannel(psk);
+    TestTarget target;
+    auto channel = co_await server->CreateChannel(psk, target);
     EXPECT_NE(channel, nullptr);
 
     Cancel cancelObj;
@@ -435,11 +448,14 @@ TEST(UdpDynMuxTest, InvalidChannelAndRenegotiation) {
 
     UdpDynMux::PskType psk = {8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8};
 
-    auto ch1 = co_await dev1->CreateChannel(psk);
+    TestTarget target1;
+    TestTarget target2;
+
+    auto ch1 = co_await dev1->CreateChannel(psk, target1);
     EXPECT_NE(ch1, nullptr);
 
     auto resolver = std::make_shared<ResolverStaticEndpoint>(dev1->LocalEndpoint());
-    auto ch2 = co_await dev2->CreateChannel(psk, resolver);
+    auto ch2 = co_await dev2->CreateChannel(psk, target2, resolver);
     EXPECT_NE(ch2, nullptr);
 
     Cancel cancelObj;
@@ -473,7 +489,8 @@ TEST(UdpDynMuxTest, InvalidChannelAndRenegotiation) {
     auto err3 = co_await dev1New->Start();
     EXPECT_FALSE(err3);
 
-    auto ch1New = co_await dev1New->CreateChannel(psk);
+    TestTarget target1New;
+    auto ch1New = co_await dev1New->CreateChannel(psk, target1New);
     EXPECT_NE(ch1New, nullptr);
 
     Packet p_dummy;
@@ -552,7 +569,8 @@ TEST(UdpDynMuxTest, IncompatibleVersionNegotiation) {
     EXPECT_FALSE(err);
 
     UdpDynMux::PskType psk = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
-    auto ch = co_await dev->CreateChannel(psk);
+    TestTarget target;
+    auto ch = co_await dev->CreateChannel(psk, target);
     EXPECT_NE(ch, nullptr);
 
     // Create a raw UDP socket to act as the incompatible client
@@ -635,7 +653,8 @@ TEST(UdpDynMuxTest, KeepaliveRttHandshake) {
     EXPECT_FALSE(err);
 
     UdpDynMux::PskType psk = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
-    auto ch = co_await dev->CreateChannel(psk);
+    TestTarget target;
+    auto ch = co_await dev->CreateChannel(psk, target);
     EXPECT_NE(ch, nullptr);
 
     udp::socket rawSocket(io);
@@ -749,11 +768,14 @@ TEST(UdpDynMuxTest, InvalidAddressAndRenegotiation) {
 
     UdpDynMux::PskType psk = {8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8};
 
-    auto ch1 = co_await dev1->CreateChannel(psk);
+    TestTarget target1;
+    TestTarget target2;
+
+    auto ch1 = co_await dev1->CreateChannel(psk, target1);
     EXPECT_NE(ch1, nullptr);
 
     auto resolver = std::make_shared<ResolverStaticEndpoint>(dev1->LocalEndpoint());
-    auto ch2 = co_await dev2->CreateChannel(psk, resolver);
+    auto ch2 = co_await dev2->CreateChannel(psk, target2, resolver);
     EXPECT_NE(ch2, nullptr);
 
     Cancel cancelObj;
@@ -879,7 +901,8 @@ TEST(UdpDynMuxTest, RemoveChannel) {
     EXPECT_FALSE(err);
 
     UdpDynMux::PskType psk = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
-    auto ch = co_await dev->CreateChannel(psk);
+    TestTarget target;
+    auto ch = co_await dev->CreateChannel(psk, target);
     EXPECT_NE(ch, nullptr);
 
     co_await dev->RemoveChannel(ch);

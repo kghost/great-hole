@@ -72,14 +72,21 @@ protected:
   Omni::Fiber::Coroutine<ErrorCode> DoGracefulStop() override;
 
 private:
-  struct Session {
+  struct Endpoint : public UdpDynMux::ChannelNotificationTarget {
+    explicit Endpoint(UdpDynMux::PskType psk, std::vector<boost::asio::ip::address_v6> ips)
+        : Psk(psk), Ips(std::move(ips)) {}
+    UdpDynMux::PskType Psk;
+    std::vector<boost::asio::ip::address_v6> Ips;
+    std::shared_ptr<UdpDynMux::Channel> UdpChannel;
     std::shared_ptr<EndpointTunSplitIp::Channel> TunChannel;
-    std::shared_ptr<Pipeline> Pipeline;
+    std::shared_ptr<Pipeline> SessionPipeline;
   };
 
   std::shared_ptr<EndpointTunSplitIp> _TunSplit;
-  std::map<UdpDynMux::PskType, std::vector<boost::asio::ip::address_v6>> _Peers;
-  std::map<std::shared_ptr<UdpDynMux::Channel>, Session> _Sessions;
+  std::shared_ptr<UdpDynMux> _UdpDynMux;
+  std::vector<std::shared_ptr<Filter>> _Filters;
+
+  std::map<UdpDynMux::PskType, std::shared_ptr<Endpoint>> _Endpoints;
   Omni::Fiber::RemoteCall _ChannelCall;
 };
 

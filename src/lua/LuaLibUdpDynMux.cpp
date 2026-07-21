@@ -16,6 +16,11 @@
 
 namespace gh {
 
+namespace {
+struct LuaChannelTarget : public UdpDynMux::ChannelNotificationTarget {};
+LuaChannelTarget s_LuaChannelTarget;
+} // namespace
+
 static void UdpDynMuxCreateChannel(lua_State* L) {
   auto top = lua_gettop(L);
   if (top < 2 || top > 4) {
@@ -55,9 +60,9 @@ static void UdpDynMuxCreateChannel(lua_State* L) {
     lua_setmetatable(L, -2);
 
     if (resolver) {
-      *channel = co_await udp->CreateChannel(psk, resolver);
+      *channel = co_await udp->CreateChannel(psk, s_LuaChannelTarget, resolver);
     } else {
-      *channel = co_await udp->CreateChannel(psk);
+      *channel = co_await udp->CreateChannel(psk, s_LuaChannelTarget);
     }
     co_return 1;
   });

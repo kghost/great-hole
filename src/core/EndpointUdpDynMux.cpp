@@ -38,8 +38,8 @@ using namespace gh::UdpDynMuxProto;
 // ==================== UdpDynMux::Channel ====================
 
 UdpDynMux::Channel::Channel(UdpDynMux& parent, const UdpDynMux::PskType& psk, uint16_t rxId,
-                            std::shared_ptr<ResolverEndpoint> resolver)
-    : _Parent(parent), _Psk(psk), _LocalRxId(rxId), _PeerResolver(std::move(resolver)) {}
+                            ChannelNotificationTarget& target, std::shared_ptr<ResolverEndpoint> resolver)
+    : _Parent(parent), _Psk(psk), _LocalRxId(rxId), _Target(target), _PeerResolver(std::move(resolver)) {}
 
 UdpDynMux::Channel::~Channel() {}
 
@@ -56,8 +56,7 @@ auto UdpDynMux::Channel::DoWork() -> Omni::Fiber::Coroutine<void> {
     case State::kNegotiating: {
       _State = co_await DoWorkNegotiating();
       if (_State == State::kRunning && lastState != State::kRunning) {
-        co_await _Parent._Notification.get().OnChannelEstablished(
-            std::dynamic_pointer_cast<Channel>(shared_from_this()));
+        co_await _Parent._Notification.get().OnChannelEstablished(_Target.get());
       }
       lastState = _State;
       break;
@@ -65,7 +64,7 @@ auto UdpDynMux::Channel::DoWork() -> Omni::Fiber::Coroutine<void> {
     case State::kRunning: {
       _State = co_await DoWorkRunning();
       if (_State != State::kRunning && lastState == State::kRunning) {
-        co_await _Parent._Notification.get().OnChannelClosed(std::dynamic_pointer_cast<Channel>(shared_from_this()));
+        co_await _Parent._Notification.get().OnChannelClosed(_Target.get());
       }
       lastState = _State;
       break;
@@ -80,7 +79,7 @@ auto UdpDynMux::Channel::DoWork() -> Omni::Fiber::Coroutine<void> {
     }
   }
   if (lastState == State::kRunning) {
-    co_await _Parent._Notification.get().OnChannelClosed(std::dynamic_pointer_cast<Channel>(shared_from_this()));
+    co_await _Parent._Notification.get().OnChannelClosed(_Target.get());
   }
   _State = State::kStopping;
 }
@@ -459,17 +458,18 @@ auto UdpDynMux::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   co_return ErrorCode{};
 }
 
-auto UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk)
+auto UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, ChannelNotificationTarget& target)
     -> Omni::Fiber::Coroutine<std::shared_ptr<UdpDynMux::Channel>> {
-  co_return co_await CreateChannel(psk, nullptr);
+  co_return co_await CreateChannel(psk, target, nullptr);
 }
 
-auto UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver)
+auto UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, ChannelNotificationTarget& target,
+                              std::shared_ptr<ResolverEndpoint> resolver)
     -> Omni::Fiber::Coroutine<std::shared_ptr<UdpDynMux::Channel>> {
   auto reply =
-      co_await _ChannelRpc.Call([&udp = *this, psk, resolver] -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
+      co_await _ChannelRpc.Call([&udp = *this, psk, resolver, &target] -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>> {
         auto now = std::chrono::steady_clock::now();
-        auto channel = std::make_shared<Channel>(udp, psk, udp.AllocateUniqueRxId(), resolver);
+        auto channel = std::make_shared<Channel>(udp, psk, udp.AllocateUniqueRxId(), target, resolver);
         channel->_LastSeen = now;
         channel->_NextKeepaliveTime = now + UdpDynMux::Channel::MinKeepaliveInterval;
 

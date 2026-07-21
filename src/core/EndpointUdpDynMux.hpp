@@ -27,6 +27,17 @@ public:
 
   class Channel;
 
+  class ChannelNotificationTarget {
+  public:
+    explicit ChannelNotificationTarget() = default;
+    virtual ~ChannelNotificationTarget() = default;
+
+    ChannelNotificationTarget(const ChannelNotificationTarget&) = default;
+    ChannelNotificationTarget(ChannelNotificationTarget&&) = delete;
+    auto operator=(const ChannelNotificationTarget&) -> ChannelNotificationTarget& = default;
+    auto operator=(ChannelNotificationTarget&&) -> ChannelNotificationTarget& = delete;
+  };
+
   class ChannelNotification {
   public:
     explicit ChannelNotification() = default;
@@ -37,8 +48,8 @@ public:
     ChannelNotification(ChannelNotification&&) = delete;
     auto operator=(ChannelNotification&&) -> ChannelNotification& = delete;
 
-    virtual auto OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> = 0;
-    virtual auto OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> = 0;
+    virtual auto OnChannelEstablished(ChannelNotificationTarget& target) -> Omni::Fiber::Coroutine<void> = 0;
+    virtual auto OnChannelClosed(ChannelNotificationTarget& target) -> Omni::Fiber::Coroutine<void> = 0;
   };
 
   class NoopChannelNotification : public ChannelNotification {
@@ -51,12 +62,8 @@ public:
     NoopChannelNotification(NoopChannelNotification&&) = delete;
     auto operator=(NoopChannelNotification&&) -> NoopChannelNotification& = delete;
 
-    auto OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override {
-      co_return;
-    }
-    auto OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override {
-      co_return;
-    }
+    auto OnChannelEstablished(ChannelNotificationTarget& target) -> Omni::Fiber::Coroutine<void> override { co_return; }
+    auto OnChannelClosed(ChannelNotificationTarget& target) -> Omni::Fiber::Coroutine<void> override { co_return; }
   };
   static NoopChannelNotification _NoopChannelNotification;
 
@@ -78,8 +85,10 @@ public:
 
   void SetChannelNotification(ChannelNotification& notification) { _Notification = notification; }
 
-  auto CreateChannel(const UdpDynMux::PskType& psk) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>>;
-  auto CreateChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver)
+  auto CreateChannel(const UdpDynMux::PskType& psk, ChannelNotificationTarget& target)
+      -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>>;
+  auto CreateChannel(const UdpDynMux::PskType& psk, ChannelNotificationTarget& target,
+                     std::shared_ptr<ResolverEndpoint> resolver)
       -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>>;
   auto RemoveChannel(std::shared_ptr<Channel> channel) -> Omni::Fiber::Coroutine<void>;
   auto WriteTo(boost::asio::ip::udp::endpoint peer, Packet& packet, Cancel& cancel)
@@ -133,6 +142,7 @@ public:
   enum class State : uint8_t { kNegotiating, kRunning, kStopping };
 
   explicit Channel(UdpDynMux& parent, const UdpDynMux::PskType& psk, uint16_t rxId,
+                   ChannelNotificationTarget& target,
                    std::shared_ptr<ResolverEndpoint> resolver = nullptr);
   ~Channel() override;
 
@@ -159,6 +169,7 @@ private:
   UdpDynMux& _Parent;
   const UdpDynMux::PskType _Psk;
   const uint16_t _LocalRxId = 0;
+  std::reference_wrapper<ChannelNotificationTarget> _Target;
   uint16_t _RemoteRxId = 0;
   std::shared_ptr<ResolverEndpoint> _PeerResolver;
 

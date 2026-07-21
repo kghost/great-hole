@@ -398,7 +398,7 @@ auto VpnClientMultiChannel::RegisterChannel(const UdpDynMux::PskType& psk, const
   _StateListener.get().OnSessionStarting(session);
   _Sessions.insert(session);
   std::shared_ptr<ResolverEndpoint> resolver = FindResolverEndpoint(address, *_UdpDynMux);
-  session->Channel = co_await _UdpDynMux->CreateChannel(psk, resolver);
+  session->Channel = co_await _UdpDynMux->CreateChannel(psk, *session, resolver);
   if (!session->Channel) {
     _StateListener.get().OnSessionFailed(session, "Failed to create channel");
     _Sessions.erase(session);
@@ -419,81 +419,69 @@ auto VpnClientMultiChannel::UnregisterChannel(std::weak_ptr<VpnClientMultiChanne
   }
 }
 
-auto VpnClientMultiChannel::OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel)
+auto VpnClientMultiChannel::OnChannelEstablished(UdpDynMux::ChannelNotificationTarget& target)
     -> Omni::Fiber::Coroutine<void> {
-  BOOST_LOG_TRIVIAL(info) << GetName() << ": on channel established: " << channel->GetName();
+  auto session = dynamic_cast<VpnClientMultiChannelSession&>(target).shared_from_this();
+  BOOST_LOG_TRIVIAL(info) << GetName() << ": on channel established: " << session->GetDescription();
   if (_State != State::kRunning) {
     co_return;
   }
-  auto result =
-      co_await _ChannelCall.Call([this, channel = std::move(channel)]() mutable -> Omni::Fiber::Coroutine<void> {
-        if (_State != State::kRunning) {
-          co_return;
-        }
-        auto iterator = std::ranges::find_if(
-            _Sessions, [&](const auto& session) -> auto { return session->Psk == channel->GetPsk(); });
-        if (iterator != _Sessions.end()) {
-          auto session = *iterator;
-          session->Channel = channel;
-          session->Running = true;
+  auto result = co_await _ChannelCall.Call([this, session]() mutable -> Omni::Fiber::Coroutine<void> {
+    if (_State != State::kRunning) {
+      co_return;
+    }
+    auto channel = session->Channel;
+    session->Running = true;
 
-          if (!session->SessionPipeline) {
-            auto channelSide = std::make_shared<ChannelSideEndpoint>(*this, session);
-            auto errChannel = co_await channelSide->Start();
-            if (errChannel) {
-              BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel side for " << channel->GetName();
-              co_await channelSide->Stop();
-              _StateListener.get().OnSessionFailed(session, "Failed to start channel side: " + errChannel.message());
-              co_return;
-            }
-            auto pipeline = std::make_shared<Pipeline>(channel, _Filters, channelSide);
-            auto err = co_await pipeline->Start();
-            if (err) {
-              BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel pipeline for " << channel->GetName();
-              co_await pipeline->Stop();
-              _StateListener.get().OnSessionFailed(session, "Failed to start channel pipeline: " + err.message());
-              co_return;
-            }
-            session->ChannelSide = std::move(channelSide);
-            session->SessionPipeline = std::move(pipeline);
-          }
-          _StateListener.get().OnSessionRunning(session);
-        } else {
-          BOOST_LOG_TRIVIAL(warning) << GetName() << ": Established channel for unregistered PSK, ignoring";
-        }
-      });
+    if (!session->SessionPipeline && channel) {
+      auto channelSide = std::make_shared<ChannelSideEndpoint>(*this, session);
+      auto errChannel = co_await channelSide->Start();
+      if (errChannel) {
+        BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel side for " << channel->GetName();
+        co_await channelSide->Stop();
+        _StateListener.get().OnSessionFailed(session, "Failed to start channel side: " + errChannel.message());
+        co_return;
+      }
+      auto pipeline = std::make_shared<Pipeline>(channel, _Filters, channelSide);
+      auto err = co_await pipeline->Start();
+      if (err) {
+        BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel pipeline for " << channel->GetName();
+        co_await pipeline->Stop();
+        _StateListener.get().OnSessionFailed(session, "Failed to start channel pipeline: " + err.message());
+        co_return;
+      }
+      session->ChannelSide = std::move(channelSide);
+      session->SessionPipeline = std::move(pipeline);
+    }
+    _StateListener.get().OnSessionRunning(session);
+  });
   if (!result.has_value()) {
     BOOST_LOG_TRIVIAL(error) << GetName() << ": RPC call failed for OnChannelEstablished";
   }
 }
 
-auto VpnClientMultiChannel::OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel)
+auto VpnClientMultiChannel::OnChannelClosed(UdpDynMux::ChannelNotificationTarget& target)
     -> Omni::Fiber::Coroutine<void> {
-  BOOST_LOG_TRIVIAL(info) << GetName() << ": on channel closed: " << channel->GetName();
+  auto session = dynamic_cast<VpnClientMultiChannelSession&>(target).shared_from_this();
+  BOOST_LOG_TRIVIAL(info) << GetName() << ": on channel closed: " << session->GetDescription();
   if (_State != State::kRunning) {
     co_return;
   }
-  auto result =
-      co_await _ChannelCall.Call([this, channel = std::move(channel)]() mutable -> Omni::Fiber::Coroutine<void> {
-        if (_State != State::kRunning) {
-          co_return;
-        }
-        auto iterator = std::ranges::find_if(
-            _Sessions, [&](const auto& session) -> auto { return session->Psk == channel->GetPsk(); });
-        if (iterator != _Sessions.end()) {
-          const auto& session = *iterator;
-          session->Running = false;
-          if (session->SessionPipeline) {
-            co_await session->SessionPipeline->Stop();
-          }
-          session->SessionPipeline.reset();
-          if (session->ChannelSide) {
-            co_await session->ChannelSide->Stop();
-          }
-          session->ChannelSide.reset();
-          _StateListener.get().OnSessionStopped(session);
-        }
-      });
+  auto result = co_await _ChannelCall.Call([this, session]() mutable -> Omni::Fiber::Coroutine<void> {
+    if (_State != State::kRunning) {
+      co_return;
+    }
+    session->Running = false;
+    if (session->SessionPipeline) {
+      co_await session->SessionPipeline->Stop();
+    }
+    session->SessionPipeline.reset();
+    if (session->ChannelSide) {
+      co_await session->ChannelSide->Stop();
+    }
+    session->ChannelSide.reset();
+    _StateListener.get().OnSessionStopped(session);
+  });
   if (!result.has_value()) {
     BOOST_LOG_TRIVIAL(error) << GetName() << ": RPC call failed for OnChannelClosed";
   }

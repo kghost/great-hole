@@ -138,8 +138,8 @@ public:
 
   static auto GetStats(const std::weak_ptr<VpnClientMultiChannelSession>& session) -> std::optional<VpnTrafficStats>;
 
-  auto OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override;
-  auto OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override;
+  auto OnChannelEstablished(UdpDynMux::ChannelNotificationTarget& target) -> Omni::Fiber::Coroutine<void> override;
+  auto OnChannelClosed(UdpDynMux::ChannelNotificationTarget& target) -> Omni::Fiber::Coroutine<void> override;
 
 protected:
   auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
@@ -161,7 +161,8 @@ private:
   std::reference_wrapper<SessionStateListener> _StateListener;
 };
 
-class VpnClientMultiChannelSession {
+class VpnClientMultiChannelSession : public UdpDynMux::ChannelNotificationTarget,
+                                     public std::enable_shared_from_this<VpnClientMultiChannelSession> {
 public:
   explicit VpnClientMultiChannelSession(UdpDynMux::PskType psk = {}) : Psk(psk) {}
   [[nodiscard]] auto GetDescription() const -> std::string { return Channel ? Channel->GetName() : "Invalid Session"; }

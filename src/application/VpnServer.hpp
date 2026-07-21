@@ -30,6 +30,7 @@ public:
 
   auto GetName() const -> std::string override;
 
+  // TODO: this should returns a ptr to Endpoint
   auto RegisterPeer(const UdpDynMux::PskType& psk, const std::vector<boost::asio::ip::address_v6>& ips)
       -> Omni::Fiber::Coroutine<void>;
   auto UnregisterPeer(const UdpDynMux::PskType& psk) -> Omni::Fiber::Coroutine<void>;
@@ -39,11 +40,16 @@ protected:
   auto DoWork() -> Omni::Fiber::Coroutine<void> override;
   auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
-  auto OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override;
-  auto OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> override;
+  auto OnChannelEstablished(UdpDynMux::ChannelNotificationTarget& target) -> Omni::Fiber::Coroutine<void> override;
+  auto OnChannelClosed(UdpDynMux::ChannelNotificationTarget& target) -> Omni::Fiber::Coroutine<void> override;
 
 private:
-  struct Session {
+  struct Endpoint : public UdpDynMux::ChannelNotificationTarget {
+    explicit Endpoint(UdpDynMux::PskType psk, std::vector<boost::asio::ip::address_v6> ips)
+        : Psk(psk), Ips(std::move(ips)) {}
+    UdpDynMux::PskType Psk;
+    std::vector<boost::asio::ip::address_v6> Ips;
+    std::shared_ptr<UdpDynMux::Channel> UdpChannel;
     std::shared_ptr<EndpointTunSplitIp::Channel> TunChannel;
     std::shared_ptr<Pipeline> SessionPipeline;
   };
@@ -52,10 +58,7 @@ private:
   std::shared_ptr<UdpDynMux> _UdpDynMux;
   std::vector<std::shared_ptr<Filter>> _Filters;
 
-  // TODO: merge following maps into multiply key to Session map.
-  std::map<UdpDynMux::PskType, std::vector<boost::asio::ip::address_v6>> _Peers;
-  std::map<UdpDynMux::PskType, std::shared_ptr<UdpDynMux::Channel>> _PeerChannels;
-  std::map<std::shared_ptr<UdpDynMux::Channel>, Session> _Sessions;
+  std::map<UdpDynMux::PskType, std::shared_ptr<Endpoint>> _Endpoints;
   Omni::Fiber::RemoteCall _ChannelCall;
 };
 

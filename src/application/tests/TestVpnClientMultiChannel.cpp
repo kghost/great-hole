@@ -28,6 +28,8 @@ using namespace gh;
 
 namespace {
 
+struct TestTarget : public UdpDynMux::ChannelNotificationTarget {};
+
 class AsioWarpListener : public Omni::TimeTravel::IWarpListener {
 public:
   explicit AsioWarpListener(boost::asio::io_context& io) : _Io(io) {}
@@ -405,8 +407,9 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     resolvedSession = sharedSession;
 
     // Connect client to server
+    TestTarget clientTarget;
     auto resolver = std::make_shared<ResolverStaticEndpoint>(udpServer->LocalEndpoint());
-    auto clientChannel = co_await udpClient->CreateChannel(psk, resolver);
+    auto clientChannel = co_await udpClient->CreateChannel(psk, clientTarget, resolver);
     EXPECT_NE(clientChannel, nullptr);
     if (clientChannel == nullptr) {
       co_return;
@@ -559,8 +562,9 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
     resolvedSession = sharedSession;
 
     // Connect client to server
-    auto resolver = std::make_shared<ResolverStaticEndpoint>(udpServer->LocalEndpoint());
-    auto clientChannel = co_await udpClient->CreateChannel(psk, resolver);
+    TestTarget clientTarget2;
+    auto resolver2 = std::make_shared<ResolverStaticEndpoint>(udpServer->LocalEndpoint());
+    auto clientChannel = co_await udpClient->CreateChannel(psk, clientTarget2, resolver2);
     EXPECT_NE(clientChannel, nullptr);
 
     // Wait for OnChannelEstablished
@@ -740,8 +744,9 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
     EXPECT_FALSE(initialStats.has_value());
 
     // Connect client to server to establish pipeline and running session
-    auto resolver = std::make_shared<ResolverStaticEndpoint>(udpServer->LocalEndpoint());
-    auto clientChannel = co_await udpClient->CreateChannel(psk, resolver);
+    TestTarget clientTarget3;
+    auto resolver3 = std::make_shared<ResolverStaticEndpoint>(udpServer->LocalEndpoint());
+    auto clientChannel = co_await udpClient->CreateChannel(psk, clientTarget3, resolver3);
     EXPECT_NE(clientChannel, nullptr);
 
     // Wait for OnChannelEstablished

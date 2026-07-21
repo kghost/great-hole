@@ -165,8 +165,10 @@ TEST(VpnServerTest, EndToEndBidirectionalRouting) {
     EXPECT_FALSE(co_await vpnServer->Start());
 
     // Connect client
+    struct TestTarget : public UdpDynMux::ChannelNotificationTarget {};
+    TestTarget clientTarget;
     auto resolver = std::make_shared<ResolverStaticEndpoint>(udpServer->LocalEndpoint());
-    auto clientChannel = co_await udpClient->CreateChannel(psk, resolver);
+    auto clientChannel = co_await udpClient->CreateChannel(psk, clientTarget, resolver);
     EXPECT_NE(clientChannel, nullptr);
 
     auto clientTunChannel = co_await tunClient->CreateChannel({serverIp, MapToV6(serverIpV4)});
