@@ -862,3 +862,34 @@ TEST(UdpDynMuxTest, InvalidAddressAndRenegotiation) {
   RunEventLoop(io);
   EXPECT_TRUE(testPassed);
 }
+
+TEST(UdpDynMuxTest, RemoveChannel) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  auto dev = std::make_shared<UdpDynMux>(io.get_executor(), udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    Omni::Fiber::Fiber& current = co_await Omni::Fiber::GetCurrentOmniFiber();
+
+    auto err = co_await dev->Start();
+    EXPECT_FALSE(err);
+
+    UdpDynMux::PskType psk = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+    auto ch = co_await dev->CreateChannel(psk);
+    EXPECT_NE(ch, nullptr);
+
+    co_await dev->RemoveChannel(ch);
+
+    co_await dev->Stop();
+    co_await current.WaitAll();
+    testPassed = true;
+    co_return;
+  });
+
+  RunEventLoop(io);
+  EXPECT_TRUE(testPassed);
+}

@@ -93,9 +93,24 @@ static auto UdpDynMuxSetChannelNotification(lua_State* L) -> int {
   return 0;
 }
 
+static void UdpDynMuxRemoveChannel(lua_State* L) {
+  auto& udp = *LuaUdpDynMux::Get(L, 1);
+  auto& channelEp = *LuaEndpoint::Get(L, 2);
+  auto channel = std::dynamic_pointer_cast<UdpDynMux::Channel>(channelEp);
+  if (!channel) {
+    throw std::runtime_error("udp_dyn_mux remove_channel: invalid channel type");
+  }
+  auto& interface = *(LuaInterface*)lua_touserdata(L, lua_upvalueindex(1));
+  interface.Schedule([udp, channel](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
+    co_await udp->RemoveChannel(channel);
+    co_return 0;
+  });
+}
+
 static const struct luaL_Reg kUdpDynMuxMetatable[] = {
     {"__gc", SafeCall<LuaUdpDynMux::Gc>},
     {"create_channel", SafeYield<UdpDynMuxCreateChannel>},
+    {"remove_channel", SafeYield<UdpDynMuxRemoveChannel>},
     {"set_channel_notification", SafeCall<UdpDynMuxSetChannelNotification>},
     {"start", SafeYield<UdpDynMuxStart>},
     {"stop", SafeYield<UdpDynMuxStop>},

@@ -492,11 +492,10 @@ auto UdpDynMux::CreateChannel(const UdpDynMux::PskType& psk, std::shared_ptr<Res
   co_return reply.value();
 }
 
-auto UdpDynMux::RemoveChannel(const UdpDynMux::PskType& psk) -> Omni::Fiber::Coroutine<void> {
-  auto result = co_await _ChannelRpc.Call([this, psk]() -> Omni::Fiber::Coroutine<void> {
-    auto iterator = _Channels.find(psk);
-    if (iterator != _Channels.end()) {
-      auto channel = std::move(iterator->second);
+auto UdpDynMux::RemoveChannel(std::shared_ptr<Channel> channel) -> Omni::Fiber::Coroutine<void> {
+  auto result = co_await _ChannelRpc.Call([this, channel = std::move(channel)]() -> Omni::Fiber::Coroutine<void> {
+    auto iterator = _Channels.find(channel->GetPsk());
+    if (iterator != _Channels.end() && iterator->second == channel) {
       _RxIdToChannel.erase(channel->_LocalRxId);
       _Channels.erase(iterator);
       co_await channel->Stop();

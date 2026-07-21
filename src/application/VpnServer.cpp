@@ -24,21 +24,26 @@ auto VpnServer::RegisterPeer(const UdpDynMux::PskType& psk, const std::vector<bo
     -> Omni::Fiber::Coroutine<void> {
   _Peers[psk] = ips;
   if (_State == State::kRunning && _UdpDynMux) {
-    co_await _UdpDynMux->CreateChannel(psk);
+    _PeerChannels[psk] = co_await _UdpDynMux->CreateChannel(psk);
   }
   co_return;
 }
 
 auto VpnServer::UnregisterPeer(const UdpDynMux::PskType& psk) -> Omni::Fiber::Coroutine<void> {
   _Peers.erase(psk);
-  if (_State == State::kRunning && _UdpDynMux) {
-    co_await _UdpDynMux->RemoveChannel(psk);
+  if (auto iterator = _PeerChannels.find(psk); iterator != _PeerChannels.end()) {
+    auto channel = std::move(iterator->second);
+    _PeerChannels.erase(iterator);
+    if (_State == State::kRunning && _UdpDynMux && channel) {
+      co_await _UdpDynMux->RemoveChannel(channel);
+    }
   }
   co_return;
 }
 
 auto VpnServer::OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> {
   BOOST_LOG_TRIVIAL(info) << "VpnServer: client channel established: " << channel->GetName();
+  _PeerChannels[channel->GetPsk()] = channel;
   co_await _ChannelCall.Call([this, channel = std::move(channel)]() mutable -> Omni::Fiber::Coroutine<void> {
     auto psk = channel->GetPsk();
     auto iterator = _Peers.find(psk);
@@ -80,6 +85,10 @@ auto VpnServer::OnChannelEstablished(std::shared_ptr<UdpDynMux::Channel> channel
 
 auto VpnServer::OnChannelClosed(std::shared_ptr<UdpDynMux::Channel> channel) -> Omni::Fiber::Coroutine<void> {
   BOOST_LOG_TRIVIAL(info) << "VpnServer: client channel closed: " << channel->GetName();
+  if (auto iterator = _PeerChannels.find(channel->GetPsk());
+      iterator != _PeerChannels.end() && iterator->second == channel) {
+    _PeerChannels.erase(iterator);
+  }
   co_await _ChannelCall.Call([this, channel = std::move(channel)]() mutable -> Omni::Fiber::Coroutine<void> {
     auto iterator = _Sessions.find(channel);
     if (iterator != _Sessions.end()) {
@@ -98,7 +107,7 @@ auto VpnServer::GetName() const -> std::string {
 auto VpnServer::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   if (_UdpDynMux) {
     for (auto const& [psk, ips] : _Peers) {
-      co_await _UdpDynMux->CreateChannel(psk);
+      _PeerChannels[psk] = co_await _UdpDynMux->CreateChannel(psk);
     }
   }
   co_return ErrorCode{};

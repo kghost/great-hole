@@ -376,7 +376,7 @@ auto VpnClientMultiChannel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode
     session->ChannelSide.reset();
 
     if (session->Channel) {
-      co_await _UdpDynMux->RemoveChannel(session->Psk);
+      co_await _UdpDynMux->RemoveChannel(session->Channel);
     }
     _StateListener.get().OnSessionStopped(session);
   }
@@ -412,8 +412,7 @@ auto VpnClientMultiChannel::UnregisterChannel(std::weak_ptr<VpnClientMultiChanne
     _StateListener.get().OnSessionStopping(sharedSession);
     sharedSession->Running = false;
     if (sharedSession->Channel) {
-      auto psk = sharedSession->Channel->GetPsk();
-      co_await _UdpDynMux->RemoveChannel(psk);
+      co_await _UdpDynMux->RemoveChannel(sharedSession->Channel);
     }
     _StateListener.get().OnSessionStopped(sharedSession);
     _Sessions.erase(sharedSession);

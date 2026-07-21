@@ -81,8 +81,7 @@ public:
   auto CreateChannel(const UdpDynMux::PskType& psk) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>>;
   auto CreateChannel(const UdpDynMux::PskType& psk, std::shared_ptr<ResolverEndpoint> resolver)
       -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>>;
-  // TODO: this function should take a std::shared_ptr<Channel> argument
-  auto RemoveChannel(const UdpDynMux::PskType& psk) -> Omni::Fiber::Coroutine<void>;
+  auto RemoveChannel(std::shared_ptr<Channel> channel) -> Omni::Fiber::Coroutine<void>;
   auto WriteTo(boost::asio::ip::udp::endpoint peer, Packet& packet, Cancel& cancel)
       -> Omni::Fiber::Coroutine<ErrorCode>;
   auto LocalEndpoint() const -> boost::asio::ip::udp::endpoint { return _Socket.local_endpoint(); }

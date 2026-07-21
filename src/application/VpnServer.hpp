@@ -51,7 +51,10 @@ private:
   std::shared_ptr<EndpointTunSplitIp> _TunSplit;
   std::shared_ptr<UdpDynMux> _UdpDynMux;
   std::vector<std::shared_ptr<Filter>> _Filters;
+
+  // TODO: merge following maps into multiply key to Session map.
   std::map<UdpDynMux::PskType, std::vector<boost::asio::ip::address_v6>> _Peers;
+  std::map<UdpDynMux::PskType, std::shared_ptr<UdpDynMux::Channel>> _PeerChannels;
   std::map<std::shared_ptr<UdpDynMux::Channel>, Session> _Sessions;
   Omni::Fiber::RemoteCall _ChannelCall;
 };
