@@ -88,8 +88,7 @@ public:
   auto CreateChannel(const UdpDynMux::PskType& psk, ChannelNotificationTarget& target)
       -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>>;
   auto CreateChannel(const UdpDynMux::PskType& psk, ChannelNotificationTarget& target,
-                     std::shared_ptr<ResolverEndpoint> resolver)
-      -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>>;
+                     std::shared_ptr<ResolverEndpoint> resolver) -> Omni::Fiber::Coroutine<std::shared_ptr<Channel>>;
   auto RemoveChannel(std::shared_ptr<Channel> channel) -> Omni::Fiber::Coroutine<void>;
   auto WriteTo(boost::asio::ip::udp::endpoint peer, Packet& packet, Cancel& cancel)
       -> Omni::Fiber::Coroutine<ErrorCode>;
@@ -141,8 +140,7 @@ class UdpDynMux::Channel : public Endpoint {
 public:
   enum class State : uint8_t { kNegotiating, kRunning, kStopping };
 
-  explicit Channel(UdpDynMux& parent, const UdpDynMux::PskType& psk, uint16_t rxId,
-                   ChannelNotificationTarget& target,
+  explicit Channel(UdpDynMux& parent, const UdpDynMux::PskType& psk, uint16_t rxId, ChannelNotificationTarget& target,
                    std::shared_ptr<ResolverEndpoint> resolver = nullptr);
   ~Channel() override;
 
@@ -169,7 +167,7 @@ private:
   UdpDynMux& _Parent;
   const UdpDynMux::PskType _Psk;
   const uint16_t _LocalRxId = 0;
-  std::reference_wrapper<ChannelNotificationTarget> _Target;
+  ChannelNotificationTarget& _Target;
   uint16_t _RemoteRxId = 0;
   std::shared_ptr<ResolverEndpoint> _PeerResolver;
 

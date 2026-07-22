@@ -56,7 +56,7 @@ auto UdpDynMux::Channel::DoWork() -> Omni::Fiber::Coroutine<void> {
     case State::kNegotiating: {
       _State = co_await DoWorkNegotiating();
       if (_State == State::kRunning && lastState != State::kRunning) {
-        co_await _Parent._Notification.get().OnChannelEstablished(_Target.get());
+        co_await _Parent._Notification.get().OnChannelEstablished(_Target);
       }
       lastState = _State;
       break;
@@ -64,7 +64,7 @@ auto UdpDynMux::Channel::DoWork() -> Omni::Fiber::Coroutine<void> {
     case State::kRunning: {
       _State = co_await DoWorkRunning();
       if (_State != State::kRunning && lastState == State::kRunning) {
-        co_await _Parent._Notification.get().OnChannelClosed(_Target.get());
+        co_await _Parent._Notification.get().OnChannelClosed(_Target);
       }
       lastState = _State;
       break;
@@ -79,7 +79,7 @@ auto UdpDynMux::Channel::DoWork() -> Omni::Fiber::Coroutine<void> {
     }
   }
   if (lastState == State::kRunning) {
-    co_await _Parent._Notification.get().OnChannelClosed(_Target.get());
+    co_await _Parent._Notification.get().OnChannelClosed(_Target);
   }
   _State = State::kStopping;
 }
@@ -390,7 +390,7 @@ auto UdpDynMux::Channel::HandleControlPacket(boost::asio::ip::udp::endpoint peer
 // ==================== UdpDynMux ====================
 
 UdpDynMux::UdpDynMux(boost::asio::any_io_executor executor, ChannelNotification& notification)
-    : UdpDynMux(executor, boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), 0), notification) {}
+    : UdpDynMux(std::move(executor), boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v6(), 0), notification) {}
 
 UdpDynMux::UdpDynMux(boost::asio::any_io_executor executor, boost::asio::ip::udp::endpoint bind,
                      ChannelNotification& notification)
