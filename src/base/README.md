@@ -37,3 +37,62 @@ Fibers in `OmniFiber` enforce structured parent-child concurrency invariants:
 
 3. **Structured Cleanup**:
    - A parent fiber must not exit while it still has active or unjoined child fibers. Always call `co_await current.WaitAll()` before completing the root fiber in a test to ensure all background tasks are fully joined and cleaned up.
+
+---
+
+## 3. Zero-Overhead Template `StateMachine`
+
+`StateMachine` provides a compile-time state machine abstraction with zero heap allocation and type-safe state transitions.
+
+### Usage Example
+
+```cpp
+#include "StateMachine.hpp"
+
+enum class States : uint8_t {
+  InitialState,
+  State1,
+  State2,
+};
+
+struct Action1To2 {
+  std::string info;
+};
+
+struct Nothing {};
+
+struct StateData1 {
+  explicit StateData1(ActionInitTo1 arg) { ... }
+};
+
+struct StateData2 {
+  explicit StateData2(Action1To2 arg) : info(std::move(arg.info)) {}
+  std::string info;
+};
+
+using MyMachine = gh::StateMachine<
+  States::InitialState,
+  gh::StateDefines<
+    gh::StateDefine<States::InitialState, Nothing>,
+    gh::StateDefine<States::State1, StateData1>,
+    gh::StateDefine<States::State2, StateData2>
+  >,
+  gh::Transitions<
+    gh::Transition<States::InitialState, ActionInitTo1, States::State1>,
+    gh::Transition<States::State1, Action1To2, States::State2>
+  >
+>;
+
+MyMachine machine;
+
+machine.Action(gh::Overload{
+  [](std::integral_constant<States, States::State1>, StateData1& data) -> MyMachine::ActionResult<States::State1> {
+    return Action1To2{.info = "data"};
+  },
+  [](auto, auto&) -> std::variant<Action1To2> { ... }
+});
+
+States currentState = machine.GetState();
+bool isInit = machine.IsState<States::InitialState>();
+```
+
