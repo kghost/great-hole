@@ -58,7 +58,7 @@ protected:
 TEST_F(TestProcessTreeTracker, ProcessTreeInheritance) {
   PolicyRegistry& reg = registry;
 
-  auto session99 = std::make_shared<VpnClientMultiChannelSession>();
+  auto session99 = std::make_shared<VpnClientMultiChannelSession>(UdpDynMux::PskType{}, "dummy");
   PolicyRule subtreeRule{.Action = PolicyRule::EndpointRoute{session99}, .Scope = PolicyScope::ProcessSubtree};
   reg.AddPathRule("C:\\VSCode\\code.exe", subtreeRule);
 
@@ -99,7 +99,7 @@ TEST_F(TestProcessTreeTracker, ProcessTreeSingleProcessScopeNoInheritance) {
 TEST_F(TestProcessTreeTracker, SubtreeParentExitedButNewDescendantSpawns) {
   PolicyRegistry& reg = registry;
 
-  auto session42 = std::make_shared<VpnClientMultiChannelSession>();
+  auto session42 = std::make_shared<VpnClientMultiChannelSession>(UdpDynMux::PskType{}, "dummy");
   PolicyRule subtreeRule{.Action = PolicyRule::EndpointRoute{session42}, .Scope = PolicyScope::ProcessSubtree};
   reg.AddPathRule("C:\\App\\parent.exe", subtreeRule);
 
@@ -134,7 +134,7 @@ TEST_F(TestProcessTreeTracker, ProcessTreePolicyCascading) {
   EXPECT_FALSE(HasPolicy(1002));
 
   // 2. Register subtree policy on parent A
-  auto session88 = std::make_shared<VpnClientMultiChannelSession>();
+  auto session88 = std::make_shared<VpnClientMultiChannelSession>(UdpDynMux::PskType{}, "dummy");
   PolicyRule subtreeRule{.Action = PolicyRule::EndpointRoute{session88}, .Scope = PolicyScope::ProcessSubtree};
   tracker.RegisterPidPolicy(1000, subtreeRule);
   RunPending();
@@ -169,7 +169,7 @@ TEST_F(TestProcessTreeTracker, ProcessTreeReparentingOnExit) {
   // 3. Simulate PID reuse: a new unrelated process takes over B's PID (5001)
   // and has a subtree policy
   tracker.AddProcess(5001, 0, "C:\\App\\unrelated.exe");
-  auto session77 = std::make_shared<VpnClientMultiChannelSession>();
+  auto session77 = std::make_shared<VpnClientMultiChannelSession>(UdpDynMux::PskType{}, "dummy");
   PolicyRule unrelatedSubtree{.Action = PolicyRule::EndpointRoute{session77}, .Scope = PolicyScope::ProcessSubtree};
   tracker.RegisterPidPolicy(5001, unrelatedSubtree);
 
@@ -184,7 +184,7 @@ TEST_F(TestProcessTreeTracker, ExposeProcessTree) {
   tracker.AddProcess(6000, 0, "C:\\App\\grandparent.exe");
   tracker.AddProcess(6001, 6000, "C:\\App\\parent.exe");
 
-  auto session = std::make_shared<VpnClientMultiChannelSession>();
+  auto session = std::make_shared<VpnClientMultiChannelSession>(UdpDynMux::PskType{}, "dummy");
   PolicyRule rule{.Action = PolicyRule::EndpointRoute{session}, .Scope = PolicyScope::ProcessSubtree};
   tracker.RegisterPidPolicy(6000, rule);
 

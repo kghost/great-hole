@@ -21,6 +21,7 @@
 #include "Pipeline.hpp"
 #include "RemoteCall.hpp"
 #include "ServiceBase.hpp"
+#include "StateMachine.hpp"
 
 namespace gh {
 
@@ -182,15 +183,66 @@ public:
 
   const UdpDynMux::PskType psk;
   const std::string address;
-  enum class State : uint8_t {
-    kNone,    // StartChannel is not called
-    kRunning, // StartChannel is called and channel is established
-    kStopped, // StopChannel is called or channel is closed
-  } State = State::kNone;
 
-  std::shared_ptr<UdpDynMux::Channel> Channel;
-  std::shared_ptr<VpnClientMultiChannel::ChannelSideEndpoint> ChannelSide;
-  std::shared_ptr<Pipeline> SessionPipeline;
+  enum class State : uint8_t {
+    kNone,     // StartChannel is not called
+    kStarting, // StartChannel is called
+    kRunning,  // OnChannelEstablished is received
+    kStopping, // StopChannel is called
+  };
+
+  struct ActionStart {
+    std::shared_ptr<UdpDynMux::Channel> Channel;
+  };
+  struct ActionStarted {
+    std::shared_ptr<UdpDynMux::Channel> Channel;
+    std::shared_ptr<VpnClientMultiChannel::ChannelSideEndpoint> ChannelSide;
+    std::shared_ptr<Pipeline> SessionPipeline;
+  };
+  struct ActionStop {
+    std::shared_ptr<UdpDynMux::Channel> Channel;
+    std::shared_ptr<VpnClientMultiChannel::ChannelSideEndpoint> ChannelSide;
+    std::shared_ptr<Pipeline> SessionPipeline;
+  };
+  struct ActionStopped {
+    std::shared_ptr<UdpDynMux::Channel> Channel;
+  };
+
+  struct StateData {
+    template <typename... Args> explicit StateData(Args&&... /*args*/) {}
+  };
+  struct StateStarting {
+    explicit StateStarting(ActionStart action) : Channel(std::move(action.Channel)) {}
+    explicit StateStarting(ActionStopped action) : Channel(std::move(action.Channel)) {}
+    std::shared_ptr<UdpDynMux::Channel> Channel;
+  };
+  struct StateRunningData {
+    explicit StateRunningData(ActionStarted action)
+        : Channel(std::move(action.Channel)), ChannelSide(std::move(action.ChannelSide)),
+          SessionPipeline(std::move(action.SessionPipeline)) {}
+    explicit StateRunningData(ActionStop action)
+        : Channel(std::move(action.Channel)), ChannelSide(std::move(action.ChannelSide)),
+          SessionPipeline(std::move(action.SessionPipeline)) {}
+
+    std::shared_ptr<UdpDynMux::Channel> Channel;
+    std::shared_ptr<VpnClientMultiChannel::ChannelSideEndpoint> ChannelSide;
+    std::shared_ptr<Pipeline> SessionPipeline;
+  };
+
+  StateMachine<State::kNone,
+               StateDefines<StateDefine<State::kNone, StateData>,           //
+                            StateDefine<State::kStarting, StateStarting>,   //
+                            StateDefine<State::kRunning, StateRunningData>, //
+                            StateDefine<State::kStopping, StateRunningData> //
+                            >,
+               Transitions<Transition<State::kNone, ActionStart, State::kStarting>,      //
+                           Transition<State::kStarting, ActionStarted, State::kRunning>, //
+                           Transition<State::kRunning, ActionStop, State::kStopping>,    //
+                           Transition<State::kRunning, ActionStopped, State::kStarting>, //
+                           Transition<State::kStopping, ActionStopped, State::kNone>     //
+                           >                                                             //
+               >
+      StateMachine;
 };
 
 } // namespace gh

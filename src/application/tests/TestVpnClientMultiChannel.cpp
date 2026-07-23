@@ -401,8 +401,9 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     if (sharedSession == nullptr) {
       co_return;
     }
-    EXPECT_NE(sharedSession->Channel, nullptr);
-    if (sharedSession->Channel == nullptr) {
+    auto channel = sharedSession->StateMachine.GetData<VpnClientMultiChannelSession::State::kStarting>().Channel;
+    EXPECT_NE(channel, nullptr);
+    if (channel == nullptr) {
       co_return;
     }
     resolvedSession = sharedSession;
@@ -557,8 +558,9 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
     if (sharedSession == nullptr) {
       co_return;
     }
-    EXPECT_NE(sharedSession->Channel, nullptr);
-    if (sharedSession->Channel == nullptr) {
+    auto channel = sharedSession->StateMachine.GetData<VpnClientMultiChannelSession::State::kStarting>().Channel;
+    EXPECT_NE(channel, nullptr);
+    if (channel == nullptr) {
       co_return;
     }
     resolvedSession = sharedSession;
@@ -738,8 +740,9 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
     if (sharedSession == nullptr) {
       co_return;
     }
-    EXPECT_NE(sharedSession->Channel, nullptr);
-    if (sharedSession->Channel == nullptr) {
+    auto channel = sharedSession->StateMachine.GetData<VpnClientMultiChannelSession::State::kStarting>().Channel;
+    EXPECT_NE(channel, nullptr);
+    if (channel == nullptr) {
       co_return;
     }
     resolvedSession = sharedSession;
@@ -772,6 +775,193 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
     co_await udpClient->Stop();
 
     co_await current.WaitAll();
+    testPassed = true;
+    co_return;
+  });
+
+  io.restart();
+  io.run();
+  EXPECT_TRUE(testPassed);
+}
+
+class MockSessionStateListener : public VpnClientMultiChannel::SessionStateListener {
+public:
+  std::vector<std::string> Events;
+
+  void OnSessionStarting(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {
+    Events.push_back("Starting");
+  }
+  void OnSessionRunning(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {
+    Events.push_back("Running");
+  }
+  void OnSessionStopping(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {
+    Events.push_back("Stopping");
+  }
+  void OnSessionStopped(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {
+    Events.push_back("Stopped");
+  }
+  void OnSessionFailed(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/,
+                       const std::string& error) override {
+    Events.push_back("Failed: " + error);
+  }
+};
+
+TEST(VpnClientMultiChannelTest, SessionStateTransitions) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  auto udpClient = std::make_shared<UdpDynMux>(
+      io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udpServer = std::make_shared<UdpDynMux>(
+      io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+
+  UdpDynMux::PskType psk = {1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4};
+
+  std::shared_ptr<VpnClientMultiChannelSession> resolvedSession;
+  int selectorCalls = 0;
+
+  RoutingSelector selector(resolvedSession, selectorCalls);
+  auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
+  auto mockTun = std::make_shared<MockEndpoint>();
+  MockSessionStateListener stateListener;
+
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker, selector,
+                                                           std::vector<std::shared_ptr<Filter>>{}, stateListener);
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
+
+    EXPECT_FALSE(co_await udpClient->Start());
+    EXPECT_FALSE(co_await connTrack->Start());
+
+    // Register channel - initial state is kNone
+    auto sessionWeak = connTrack->RegisterChannel(psk, boost::lexical_cast<std::string>(udpClient->LocalEndpoint()));
+    auto session = sessionWeak.lock();
+    EXPECT_NE(session, nullptr);
+    EXPECT_TRUE(session->StateMachine.IsState<VpnClientMultiChannelSession::State::kNone>());
+    EXPECT_TRUE(stateListener.Events.empty());
+
+    // Start channel - state transitions to kStarting and fires OnSessionStarting
+    co_await connTrack->StartChannel(sessionWeak);
+    EXPECT_TRUE(session->StateMachine.IsState<VpnClientMultiChannelSession::State::kStarting>());
+    EXPECT_EQ(stateListener.Events.size(), 1);
+    EXPECT_EQ(stateListener.Events[0], "Starting");
+
+    // Establish channel connection from client
+    TestTarget clientTarget;
+    auto resolver = std::make_shared<ResolverStaticEndpoint>(udpServer->LocalEndpoint());
+    auto clientChannel = co_await udpClient->CreateChannel(psk, clientTarget, resolver);
+    EXPECT_NE(clientChannel, nullptr);
+
+    do {
+      boost::asio::steady_timer waitTimer(io.get_executor());
+      waitTimer.expires_after(std::chrono::milliseconds(10));
+      co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    } while (clientChannel->GetChannelState() != UdpDynMux::Channel::State::kRunning);
+
+    // After establishment, state transitions to kRunning and fires OnSessionRunning
+    EXPECT_TRUE(session->StateMachine.IsState<VpnClientMultiChannelSession::State::kRunning>());
+    EXPECT_EQ(stateListener.Events.size(), 2);
+    EXPECT_EQ(stateListener.Events[1], "Running");
+
+    // Stop channel - state transitions kRunning -> kStopping -> kNone and fires OnSessionStopping & OnSessionStopped
+    co_await connTrack->StopChannel(sessionWeak);
+    EXPECT_TRUE(session->StateMachine.IsState<VpnClientMultiChannelSession::State::kNone>());
+    EXPECT_EQ(stateListener.Events.size(), 4);
+    EXPECT_EQ(stateListener.Events[2], "Stopping");
+    EXPECT_EQ(stateListener.Events[3], "Stopped");
+
+    connTrack->UnregisterChannel(sessionWeak);
+
+    co_await connTrack->Stop();
+    co_await udpClient->Stop();
+    co_await current.WaitAll();
+
+    testPassed = true;
+    co_return;
+  });
+
+  io.restart();
+  io.run();
+  EXPECT_TRUE(testPassed);
+}
+
+TEST(VpnClientMultiChannelTest, SessionReconnectOnUnexpectedChannelClose) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  auto udpClient = std::make_shared<UdpDynMux>(
+      io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+  auto udpServer = std::make_shared<UdpDynMux>(
+      io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
+
+  UdpDynMux::PskType psk = {5, 5, 5, 5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 8};
+
+  std::shared_ptr<VpnClientMultiChannelSession> resolvedSession;
+  int selectorCalls = 0;
+
+  RoutingSelector selector(resolvedSession, selectorCalls);
+  auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
+  auto mockTun = std::make_shared<MockEndpoint>();
+  MockSessionStateListener stateListener;
+
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker, selector,
+                                                           std::vector<std::shared_ptr<Filter>>{}, stateListener);
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
+
+    EXPECT_FALSE(co_await udpClient->Start());
+    EXPECT_FALSE(co_await connTrack->Start());
+
+    auto sessionWeak = connTrack->RegisterChannel(psk, boost::lexical_cast<std::string>(udpClient->LocalEndpoint()));
+    auto session = sessionWeak.lock();
+
+    co_await connTrack->StartChannel(sessionWeak);
+
+    TestTarget clientTarget;
+    auto resolver = std::make_shared<ResolverStaticEndpoint>(udpServer->LocalEndpoint());
+    auto clientChannel = co_await udpClient->CreateChannel(psk, clientTarget, resolver);
+
+    do {
+      boost::asio::steady_timer waitTimer(io.get_executor());
+      waitTimer.expires_after(std::chrono::milliseconds(10));
+      co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    } while (clientChannel->GetChannelState() != UdpDynMux::Channel::State::kRunning);
+
+    EXPECT_TRUE(session->StateMachine.IsState<VpnClientMultiChannelSession::State::kRunning>());
+    EXPECT_EQ(stateListener.Events.size(), 2);
+    EXPECT_EQ(stateListener.Events[0], "Starting");
+    EXPECT_EQ(stateListener.Events[1], "Running");
+
+    // Close client channel unexpectedly (simulating network disconnect)
+    co_await udpClient->RemoveChannel(clientChannel);
+
+    do {
+      boost::asio::steady_timer waitTimer(io.get_executor());
+      waitTimer.expires_after(std::chrono::milliseconds(10));
+      co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
+    } while (!session->StateMachine.IsState<VpnClientMultiChannelSession::State::kStarting>());
+
+    // Verify session state moved back to kStarting and OnSessionStarting fired again (ready for reconnect)
+    EXPECT_TRUE(session->StateMachine.IsState<VpnClientMultiChannelSession::State::kStarting>());
+    EXPECT_EQ(stateListener.Events.size(), 3);
+    EXPECT_EQ(stateListener.Events[2], "Starting");
+
+    // Clean up
+    co_await connTrack->StopChannel(sessionWeak);
+    connTrack->UnregisterChannel(sessionWeak);
+
+    co_await connTrack->Stop();
+    co_await udpClient->Stop();
+    co_await current.WaitAll();
+
     testPassed = true;
     co_return;
   });

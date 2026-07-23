@@ -137,7 +137,8 @@ public:
 template <typename TypeListInst> struct TypeListToVariant;
 
 template <typename... Actions> struct TypeListToVariant<TypeList<Actions...>> {
-  using type = std::conditional_t<sizeof...(Actions) == 0, std::variant<std::monostate>, std::variant<Actions...>>;
+  using type = std::conditional_t<(std::is_same_v<Actions, std::monostate> || ...), std::variant<Actions...>,
+                                  std::variant<Actions..., std::monostate>>;
 };
 
 template <auto FromStateVal, typename Action, typename TransitionsPack> struct FindTargetState;

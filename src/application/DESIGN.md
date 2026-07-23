@@ -82,21 +82,27 @@ Rather than returning a variant (which requires runtime overhead and `std::visit
 
 `VpnClientMultiChannel` manages multiple parallel VPN connection sessions mapped to virtual network interfaces or specific remote endpoints.
 
-### Session Lifecycle & Lifetime Guarantees
+### Session Lifecycle & State Machine
 
-Sessions are represented by the `VpnClientMultiChannelSession` structure, containing pipeline state, the multiplexer (`UdpDynMux`) channel, and endpoints.
+Sessions are represented by `VpnClientMultiChannelSession`, which manages its state via an explicit `StateMachine` (`State::kNone`, `State::kStarting`, `State::kRunning`, `State::kStopping`):
 
 #### 1. Registration (`RegisterChannel`)
-- When a client or routing engine requests channel registration, `RegisterChannel` creates a new `VpnClientMultiChannelSession`.
-- The session `std::shared_ptr` is immediately inserted into `_Sessions` (a `std::set` using `std::owner_less`). This ensures the session has at least one strong reference during the asynchronous connection process.
-- It starts the asynchronous `CreateChannel` negotiation.
-- If channel creation fails, the session is removed from `_Sessions` to clean up and prevent leaks.
+- When a client or routing engine requests channel registration, `RegisterChannel` creates a new `VpnClientMultiChannelSession` in state `State::kNone`.
+- The session `std::shared_ptr` is inserted into `_Sessions` (a `std::set` using `std::owner_less`).
 
-#### 2. Channel Establishment (`OnChannelEstablished`)
-- Once the underlying channel negotiation succeeds, `OnChannelEstablished` looks up the session in `_Sessions` via its PSK hash.
-- Upon lookup success, it initializes the session's pipeline (`Pipeline`), binds the tunnel endpoint wrappers (`ChannelSideEndpoint`), and notifies state listeners of a running session state.
+#### 2. Channel Start (`StartChannel`)
+- Calling `StartChannel` transitions state `kNone` -> `kStarting` via `ActionStart` and emits `OnSessionStarting` to `SessionStateListener`.
+- Creates a `UdpDynMux::Channel` targeting the remote endpoint. If channel creation fails, `OnSessionFailed` is emitted.
 
-#### 3. Unregistration and Cleanup (`UnregisterChannel` / `DoGracefulStop`)
-- Unregistering a channel marks it inactive, triggers stop notifications, and erases it from `_Sessions`, allowing the reference count to reach zero and reclaiming resources.
-- During service teardown (`DoGracefulStop`), all sessions still active inside `_Sessions` are cleanly stopped, pipelines are torn down, and the container is cleared.
+#### 3. Channel Establishment (`OnChannelEstablished`)
+- When underlying channel negotiation completes, `OnChannelEstablished` transitions state `kStarting` -> `kRunning` via `ActionStarted`.
+- Initializes `ChannelSideEndpoint` and `SessionPipeline`, then emits `OnSessionRunning`.
+
+#### 4. Unexpected Disconnect (`OnChannelClosed` when `kRunning`)
+- If the network channel drops while in `kRunning`, `OnChannelClosed` tears down the pipeline and transitions state back to `kStarting` via `ActionStopped`, emitting `OnSessionStarting` to trigger auto-reconnection.
+
+#### 5. Stop & Unregister (`StopChannel` / `UnregisterChannel`)
+- `StopChannel` transitions state `kRunning` -> `kStopping` via `ActionStop`, emitting `OnSessionStopping`.
+- Erases the channel from `UdpDynMux`, triggering `OnChannelClosed` which transitions `kStopping` -> `kNone` via `ActionStopped` and emits `OnSessionStopped`.
+- `UnregisterChannel` requires state `kNone` and erases the session from `_Sessions`.
 
