@@ -310,9 +310,11 @@ public:
 
   template <typename Visitor> auto Action(Visitor&& visitor) -> Omni::Fiber::Coroutine<void> {
     auto lock = co_await _Mutex.Wait();
-    co_await [this, &visitor]<std::size_t... Is>(std::index_sequence<Is...>) -> Omni::Fiber::Coroutine<void> {
+    const auto currentIndex = _stateIndex;
+    co_await [this, currentIndex,
+              &visitor]<std::size_t... Is>(std::index_sequence<Is...>) -> Omni::Fiber::Coroutine<void> {
       bool handled = false;
-      ((_stateIndex == Is ? (co_await ExecuteForIndex<Is>(std::forward<Visitor>(visitor)), handled = true) : false) ||
+      ((currentIndex == Is ? (co_await ExecuteForIndex<Is>(std::forward<Visitor>(visitor)), handled = true) : false) ||
        ...);
       (void)handled;
     }(std::make_index_sequence<std::variant_size_v<StorageType>>{});
@@ -321,17 +323,16 @@ public:
 private:
   template <std::size_t Index, typename Visitor>
   auto ExecuteForIndex(Visitor&& visitor) -> Omni::Fiber::Coroutine<void> {
-    constexpr StateType currentState = kStates[Index];
     using CurrentData = std::variant_alternative_t<Index, StorageType>;
     CurrentData& currentData = std::get<Index>(_storage);
 
-    using TagType = std::integral_constant<StateType, currentState>;
+    using TagType = std::integral_constant<StateType, kStates[Index]>;
 
     if constexpr (std::is_invocable_v<Visitor&, TagType, CurrentData&>) {
       using RawResult = std::invoke_result_t<Visitor&, TagType, CurrentData&>;
       using ActionResType =
           typename Omni::Fiber::CoroutineTraits<std::decay_t<RawResult>>::CoroutineReturnTypeOrOriginalType;
-      using AllowedActions = typename detail::FilterActionsFromState<currentState, TransitionsPack>::type;
+      using AllowedActions = typename detail::FilterActionsFromState<kStates[Index], TransitionsPack>::type;
 
       static_assert(detail::IsValidActionResult<ActionResType, AllowedActions>::value,
                     "Action result returned by visitor is not defined in transitions for this state!");
@@ -347,12 +348,12 @@ private:
                 [this](auto&& act) -> auto {
                   using ActType = std::decay_t<decltype(act)>;
                   if constexpr (!std::is_same_v<ActType, std::monostate>) {
-                    this->ApplyAction<currentState>(std::forward<decltype(act)>(act));
+                    this->ApplyAction<kStates[Index]>(std::forward<decltype(act)>(act));
                   }
                 },
                 actionResult);
           } else {
-            this->ApplyAction<currentState>(std::move(actionResult));
+            this->ApplyAction<kStates[Index]>(std::move(actionResult));
           }
         }
       } else {
@@ -366,12 +367,12 @@ private:
                 [this](auto&& act) -> auto {
                   using ActType = std::decay_t<decltype(act)>;
                   if constexpr (!std::is_same_v<ActType, std::monostate>) {
-                    this->ApplyAction<currentState>(std::forward<decltype(act)>(act));
+                    this->ApplyAction<kStates[Index]>(std::forward<decltype(act)>(act));
                   }
                 },
                 actionResult);
           } else {
-            this->ApplyAction<currentState>(std::move(actionResult));
+            this->ApplyAction<kStates[Index]>(std::move(actionResult));
           }
         }
       }

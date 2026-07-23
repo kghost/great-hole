@@ -262,7 +262,7 @@ public:
                            Transition<State::kStopping, ActionStopped, State::kNone>                       //
                            >                                                                               //
                >
-      StateMachine;
+      State;
 };
 
 } // namespace gh

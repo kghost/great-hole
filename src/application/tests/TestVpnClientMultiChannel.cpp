@@ -401,7 +401,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
     if (sharedSession == nullptr) {
       co_return;
     }
-    auto channel = sharedSession->StateMachine.GetData<VpnClientMultiChannelSession::State::kStarting>().Channel;
+    auto channel = sharedSession->State.template GetData<VpnClientMultiChannelSession::State::kStarting>().Channel;
     EXPECT_NE(channel, nullptr);
     if (channel == nullptr) {
       co_return;
@@ -558,7 +558,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
     if (sharedSession == nullptr) {
       co_return;
     }
-    auto channel = sharedSession->StateMachine.GetData<VpnClientMultiChannelSession::State::kStarting>().Channel;
+    auto channel = sharedSession->State.template GetData<VpnClientMultiChannelSession::State::kStarting>().Channel;
     EXPECT_NE(channel, nullptr);
     if (channel == nullptr) {
       co_return;
@@ -740,7 +740,7 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
     if (sharedSession == nullptr) {
       co_return;
     }
-    auto channel = sharedSession->StateMachine.GetData<VpnClientMultiChannelSession::State::kStarting>().Channel;
+    auto channel = sharedSession->State.template GetData<VpnClientMultiChannelSession::State::kStarting>().Channel;
     EXPECT_NE(channel, nullptr);
     if (channel == nullptr) {
       co_return;
@@ -841,12 +841,12 @@ TEST(VpnClientMultiChannelTest, SessionStateTransitions) {
     auto sessionWeak = connTrack->RegisterChannel(psk, boost::lexical_cast<std::string>(udpClient->LocalEndpoint()));
     auto session = sessionWeak.lock();
     EXPECT_NE(session, nullptr);
-    EXPECT_TRUE(session->StateMachine.IsState<VpnClientMultiChannelSession::State::kNone>());
+    EXPECT_TRUE(session->State.template IsState<VpnClientMultiChannelSession::State::kNone>());
     EXPECT_TRUE(stateListener.Events.empty());
 
     // Start channel - state transitions to kStarting and fires OnSessionStarting
     co_await connTrack->StartChannel(sessionWeak);
-    EXPECT_TRUE(session->StateMachine.IsState<VpnClientMultiChannelSession::State::kStarting>());
+    EXPECT_TRUE(session->State.template IsState<VpnClientMultiChannelSession::State::kStarting>());
     EXPECT_EQ(stateListener.Events.size(), 1);
     EXPECT_EQ(stateListener.Events[0], "Starting");
 
@@ -863,13 +863,13 @@ TEST(VpnClientMultiChannelTest, SessionStateTransitions) {
     } while (clientChannel->GetChannelState() != UdpDynMux::Channel::State::kRunning);
 
     // After establishment, state transitions to kRunning and fires OnSessionRunning
-    EXPECT_TRUE(session->StateMachine.IsState<VpnClientMultiChannelSession::State::kRunning>());
+    EXPECT_TRUE(session->State.template IsState<VpnClientMultiChannelSession::State::kRunning>());
     EXPECT_EQ(stateListener.Events.size(), 2);
     EXPECT_EQ(stateListener.Events[1], "Running");
 
     // Stop channel - state transitions kRunning -> kStopping -> kNone and fires OnSessionStopping & OnSessionStopped
     co_await connTrack->StopChannel(sessionWeak);
-    EXPECT_TRUE(session->StateMachine.IsState<VpnClientMultiChannelSession::State::kNone>());
+    EXPECT_TRUE(session->State.template IsState<VpnClientMultiChannelSession::State::kNone>());
     EXPECT_EQ(stateListener.Events.size(), 4);
     EXPECT_EQ(stateListener.Events[2], "Stopping");
     EXPECT_EQ(stateListener.Events[3], "Stopped");
@@ -939,7 +939,7 @@ TEST(VpnClientMultiChannelTest, SessionReconnectOnUnexpectedChannelClose) {
       co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
     } while (clientChannel->GetChannelState() != UdpDynMux::Channel::State::kRunning);
 
-    EXPECT_TRUE(session->StateMachine.IsState<VpnClientMultiChannelSession::State::kRunning>());
+    EXPECT_TRUE(session->State.template IsState<VpnClientMultiChannelSession::State::kRunning>());
     EXPECT_EQ(stateListener.Events.size(), 2);
     EXPECT_EQ(stateListener.Events[0], "Starting");
     EXPECT_EQ(stateListener.Events[1], "Running");
@@ -947,7 +947,7 @@ TEST(VpnClientMultiChannelTest, SessionReconnectOnUnexpectedChannelClose) {
     // Close client channel unexpectedly (simulating network disconnect)
     co_await udpClient->RemoveChannel(clientChannel);
 
-    while (!session->StateMachine.IsState<VpnClientMultiChannelSession::State::kStarting>()) {
+    while (!session->State.template IsState<VpnClientMultiChannelSession::State::kStarting>()) {
       timeClient.FastForward(std::chrono::seconds(61));
       boost::asio::steady_timer waitTimer(io.get_executor());
       waitTimer.expires_after(std::chrono::milliseconds(10));
@@ -955,7 +955,7 @@ TEST(VpnClientMultiChannelTest, SessionReconnectOnUnexpectedChannelClose) {
     };
 
     // Verify session state moved back to kStarting and OnSessionStarting fired again (ready for reconnect)
-    EXPECT_TRUE(session->StateMachine.IsState<VpnClientMultiChannelSession::State::kStarting>());
+    EXPECT_TRUE(session->State.template IsState<VpnClientMultiChannelSession::State::kStarting>());
     EXPECT_EQ(stateListener.Events.size(), 3);
     EXPECT_EQ(stateListener.Events[2], "Starting");
 
