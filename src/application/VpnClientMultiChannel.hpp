@@ -185,15 +185,20 @@ public:
   const std::string address;
 
   enum class State : uint8_t {
-    kNone,     // StartChannel is not called
-    kStarting, // StartChannel is called
-    kRunning,  // OnChannelEstablished is received
-    kStopping, // StopChannel is called
+    kNone,             // StartChannel is not called
+    kStarting,         // StartChannel is called, not established
+    kStartInterrupted, // StartChannel is called, StopChannel is called before established
+    kRunning,          // OnChannelEstablished is received
+    kStopping,         // StopChannel is called, OnChannelClosed is not received
   };
 
   struct ActionStart {
     std::shared_ptr<UdpDynMux::Channel> Channel;
   };
+  struct ActionStartInterrupted {
+    std::shared_ptr<UdpDynMux::Channel> Channel;
+  };
+  struct ActionClosed {};
   struct ActionStarted {
     std::shared_ptr<UdpDynMux::Channel> Channel;
     std::shared_ptr<VpnClientMultiChannel::ChannelSideEndpoint> ChannelSide;
@@ -208,19 +213,31 @@ public:
     std::shared_ptr<UdpDynMux::Channel> Channel;
   };
 
-  struct StateData {
-    template <typename... Args> explicit StateData(Args&&... /*args*/) {}
+  struct StateNone {
+    explicit StateNone() = default;
+    explicit StateNone(const ActionStopped& action) {}
+    explicit StateNone(ActionClosed action) {}
   };
   struct StateStarting {
     explicit StateStarting(ActionStart action) : Channel(std::move(action.Channel)) {}
     explicit StateStarting(ActionStopped action) : Channel(std::move(action.Channel)) {}
+
+    std::shared_ptr<UdpDynMux::Channel> Channel;
+  };
+  struct StateStartInterrupted {
+    explicit StateStartInterrupted(ActionStartInterrupted action) : Channel(std::move(action.Channel)) {}
     std::shared_ptr<UdpDynMux::Channel> Channel;
   };
   struct StateRunningData {
     explicit StateRunningData(ActionStarted action)
         : Channel(std::move(action.Channel)), ChannelSide(std::move(action.ChannelSide)),
           SessionPipeline(std::move(action.SessionPipeline)) {}
-    explicit StateRunningData(ActionStop action)
+    std::shared_ptr<UdpDynMux::Channel> Channel;
+    std::shared_ptr<VpnClientMultiChannel::ChannelSideEndpoint> ChannelSide;
+    std::shared_ptr<Pipeline> SessionPipeline;
+  };
+  struct StateStoppingData {
+    explicit StateStoppingData(ActionStop action)
         : Channel(std::move(action.Channel)), ChannelSide(std::move(action.ChannelSide)),
           SessionPipeline(std::move(action.SessionPipeline)) {}
 
@@ -230,17 +247,20 @@ public:
   };
 
   StateMachine<State::kNone,
-               StateDefines<StateDefine<State::kNone, StateData>,           //
-                            StateDefine<State::kStarting, StateStarting>,   //
-                            StateDefine<State::kRunning, StateRunningData>, //
-                            StateDefine<State::kStopping, StateRunningData> //
+               StateDefines<StateDefine<State::kNone, StateNone>,                         //
+                            StateDefine<State::kStarting, StateStarting>,                 //
+                            StateDefine<State::kStartInterrupted, StateStartInterrupted>, //
+                            StateDefine<State::kRunning, StateRunningData>,               //
+                            StateDefine<State::kStopping, StateStoppingData>              //
                             >,
-               Transitions<Transition<State::kNone, ActionStart, State::kStarting>,      //
-                           Transition<State::kStarting, ActionStarted, State::kRunning>, //
-                           Transition<State::kRunning, ActionStop, State::kStopping>,    //
-                           Transition<State::kRunning, ActionStopped, State::kStarting>, //
-                           Transition<State::kStopping, ActionStopped, State::kNone>     //
-                           >                                                             //
+               Transitions<Transition<State::kNone, ActionStart, State::kStarting>,                        //
+                           Transition<State::kStarting, ActionStarted, State::kRunning>,                   //
+                           Transition<State::kStarting, ActionStartInterrupted, State::kStartInterrupted>, //
+                           Transition<State::kStartInterrupted, ActionClosed, State::kNone>,               //
+                           Transition<State::kRunning, ActionStop, State::kStopping>,                      //
+                           Transition<State::kRunning, ActionStopped, State::kStarting>,                   //
+                           Transition<State::kStopping, ActionStopped, State::kNone>                       //
+                           >                                                                               //
                >
       StateMachine;
 };

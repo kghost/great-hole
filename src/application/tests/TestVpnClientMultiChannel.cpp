@@ -894,6 +894,10 @@ TEST(VpnClientMultiChannelTest, SessionReconnectOnUnexpectedChannelClose) {
   Omni::Fiber::AsioExecutor executor(io.get_executor());
   Omni::Fiber::Manager manager(executor);
 
+  Omni::TimeTravel::Client timeClient;
+  AsioWarpListener listener(io);
+  timeClient.RegisterListener(listener);
+
   auto udpClient = std::make_shared<UdpDynMux>(
       io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
   auto udpServer = std::make_shared<UdpDynMux>(
@@ -943,11 +947,12 @@ TEST(VpnClientMultiChannelTest, SessionReconnectOnUnexpectedChannelClose) {
     // Close client channel unexpectedly (simulating network disconnect)
     co_await udpClient->RemoveChannel(clientChannel);
 
-    do {
+    while (!session->StateMachine.IsState<VpnClientMultiChannelSession::State::kStarting>()) {
+      timeClient.FastForward(std::chrono::seconds(61));
       boost::asio::steady_timer waitTimer(io.get_executor());
       waitTimer.expires_after(std::chrono::milliseconds(10));
       co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
-    } while (!session->StateMachine.IsState<VpnClientMultiChannelSession::State::kStarting>());
+    };
 
     // Verify session state moved back to kStarting and OnSessionStarting fired again (ready for reconnect)
     EXPECT_TRUE(session->StateMachine.IsState<VpnClientMultiChannelSession::State::kStarting>());

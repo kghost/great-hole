@@ -415,10 +415,16 @@ auto VpnClientMultiChannel::StopChannel(const std::weak_ptr<VpnClientMultiChanne
   bool needStop = false;
 
   co_await session->StateMachine.Action(Overload{
-      [&](C<VpnClientMultiChannelSession::State::kRunning>,
-          auto& data) -> Omni::Fiber::Coroutine<VpnClientMultiChannelSession::ActionStop> {
+      [&](C<VpnClientMultiChannelSession::State::kStarting>,
+          auto& data) -> VpnClientMultiChannelSession::ActionStartInterrupted {
         needStop = true;
-        co_return VpnClientMultiChannelSession::ActionStop{
+        return VpnClientMultiChannelSession::ActionStartInterrupted{
+            .Channel = std::move(data.Channel),
+        };
+      },
+      [&](C<VpnClientMultiChannelSession::State::kRunning>, auto& data) -> VpnClientMultiChannelSession::ActionStop {
+        needStop = true;
+        return VpnClientMultiChannelSession::ActionStop{
             .Channel = std::move(data.Channel),
             .ChannelSide = std::move(data.ChannelSide),
             .SessionPipeline = std::move(data.SessionPipeline),
@@ -430,9 +436,23 @@ auto VpnClientMultiChannel::StopChannel(const std::weak_ptr<VpnClientMultiChanne
     _StateListener.get().OnSessionStopping(session);
     // Because RemoveChannel calls OnChannelClosed callback, which modifies state, we can not call it inside state
     // action, otherwise it will deadlock. Instead we do it here.
-    auto& data = session->StateMachine.GetData<VpnClientMultiChannelSession::State::kStopping>();
-    co_await _UdpDynMux->RemoveChannel(data.Channel);
+    if (session->StateMachine.IsState<VpnClientMultiChannelSession::State::kStopping>()) {
+      auto& data = session->StateMachine.GetData<VpnClientMultiChannelSession::State::kStopping>();
+      co_await _UdpDynMux->RemoveChannel(data.Channel);
+    } else if (session->StateMachine.IsState<VpnClientMultiChannelSession::State::kStartInterrupted>()) {
+      auto& data = session->StateMachine.GetData<VpnClientMultiChannelSession::State::kStartInterrupted>();
+      co_await _UdpDynMux->RemoveChannel(data.Channel);
+    } else {
+      assert(false);
+    }
   }
+
+  co_await session->StateMachine.Action(Overload{
+      [&](C<VpnClientMultiChannelSession::State::kStartInterrupted>, auto& /*data*/)
+          -> VpnClientMultiChannelSession::ActionClosed { return VpnClientMultiChannelSession::ActionClosed{}; },
+  });
+
+  assert(session->StateMachine.IsState<VpnClientMultiChannelSession::State::kNone>());
   co_return;
 }
 
