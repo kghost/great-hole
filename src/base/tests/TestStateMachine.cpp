@@ -1,10 +1,16 @@
 #include "StateMachine.hpp"
 
 #include <cstdint>
+#include <functional>
+#include <stdexcept>
 #include <string>
 
+#include <boost/asio.hpp>
 #include <gtest/gtest.h>
 
+#include "Asio.hpp"
+#include "Coroutine.hpp"
+#include "Manager.hpp"
 #include "Utils/Overload.hpp"
 
 namespace gh {
@@ -60,6 +66,15 @@ using TestMachine =
                              Transition<States::State1, Action1To3, States::State3>,
                              Transition<States::State2, Action2To1, States::State1>>>;
 
+void RunFiberTest(std::function<Omni::Fiber::Coroutine<void>()> fn) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+  manager.SpawnRoot("root", std::move(fn));
+  io.restart();
+  io.run();
+}
+
 TEST(StateMachineTest, InitialState) {
   TestMachine machine;
 
@@ -67,96 +82,123 @@ TEST(StateMachineTest, InitialState) {
   EXPECT_TRUE(machine.IsState<States::InitialState>());
   EXPECT_FALSE(machine.IsState<States::State1>());
 
-  EXPECT_NE(machine.GetData<States::InitialState>(), nullptr);
-  EXPECT_EQ(machine.GetData<States::State1>(), nullptr);
+  EXPECT_NO_THROW(machine.GetData<States::InitialState>());
+  EXPECT_THROW(machine.GetData<States::State1>(), std::runtime_error);
 }
 
 TEST(StateMachineTest, SingleActionTransition) {
-  TestMachine machine;
+  RunFiberTest([&]() -> Omni::Fiber::Coroutine<void> {
+    TestMachine machine;
 
-  machine.Action(
-      Overload{[](std::integral_constant<States, States::InitialState>,
-                  Nothing&) -> TestMachine::ActionResult<States::InitialState> { return ActionInitTo1{.value = 42}; },
-               [](auto, auto&) -> std::variant<Action1To2, Action1To3, Action2To1> {
-                 ADD_FAILURE() << "Should not be called";
-                 return Action1To2{};
-               }});
+    co_await machine.Action(
+        Overload{[](std::integral_constant<States, States::InitialState>,
+                    Nothing&) -> TestMachine::ActionResult<States::InitialState> { return ActionInitTo1{.value = 42}; },
+                 [](auto tag, auto&) {
+                   using Tag = decltype(tag);
+                   ADD_FAILURE() << "Should not be called";
+                   return TestMachine::ActionResult<Tag::value>{};
+                 }});
 
-  EXPECT_EQ(machine.GetState(), States::State1);
-  EXPECT_TRUE(machine.IsState<States::State1>());
+    EXPECT_EQ(machine.GetState(), States::State1);
+    EXPECT_TRUE(machine.IsState<States::State1>());
 
-  const auto* data1 = machine.GetData<States::State1>();
-  ASSERT_NE(data1, nullptr);
-  EXPECT_EQ(data1->val, 42);
+    EXPECT_EQ(machine.GetData<States::State1>().val, 42);
+    co_return;
+  });
 }
 
 TEST(StateMachineTest, VariantActionResultTransition) {
-  TestMachine machine;
+  RunFiberTest([&]() -> Omni::Fiber::Coroutine<void> {
+    TestMachine machine;
 
-  // Transition from InitialState to State1
-  machine.Action(
-      Overload{[](std::integral_constant<States, States::InitialState>,
-                  Nothing&) -> TestMachine::ActionResult<States::InitialState> { return ActionInitTo1{.value = 100}; },
-               [](auto, auto&) -> std::variant<Action1To2, Action1To3, Action2To1> { return Action1To2{}; }});
+    // Transition from InitialState to State1
+    co_await machine.Action(
+        Overload{[](std::integral_constant<States, States::InitialState>,
+                    Nothing&) -> TestMachine::ActionResult<States::InitialState> { return ActionInitTo1{.value = 100}; },
+                 [](auto tag, auto&) {
+                   using Tag = decltype(tag);
+                   return TestMachine::ActionResult<Tag::value>{};
+                 }});
 
-  EXPECT_EQ(machine.GetState(), States::State1);
+    EXPECT_EQ(machine.GetState(), States::State1);
 
-  // Transition from State1 to State3 using variant ActionResult
-  machine.Action(Overload{[](std::integral_constant<States, States::State1>,
-                             StateData1& data) -> TestMachine::ActionResult<States::State1> {
-                            EXPECT_EQ(data.val, 100);
-                            return Action1To3{.count = 3.14};
-                          },
-                          [](auto, auto&) -> std::variant<ActionInitTo1, Action1To2, Action1To3, Action2To1> {
-                            ADD_FAILURE() << "Unexpected state call";
-                            return Action1To2{};
-                          }});
+    // Transition from State1 to State3 using variant ActionResult
+    co_await machine.Action(Overload{[](std::integral_constant<States, States::State1>,
+                               StateData1& data) -> TestMachine::ActionResult<States::State1> {
+                              EXPECT_EQ(data.val, 100);
+                              return Action1To3{.count = 3.14};
+                            },
+                            [](auto tag, auto&) {
+                              using Tag = decltype(tag);
+                              ADD_FAILURE() << "Unexpected state call";
+                              return TestMachine::ActionResult<Tag::value>{};
+                            }});
 
-  EXPECT_EQ(machine.GetState(), States::State3);
-  EXPECT_TRUE(machine.IsState<States::State3>());
+    EXPECT_EQ(machine.GetState(), States::State3);
+    EXPECT_TRUE(machine.IsState<States::State3>());
 
-  const auto* data3 = machine.GetData<States::State3>();
-  ASSERT_NE(data3, nullptr);
-  EXPECT_DOUBLE_EQ(data3->num, 3.14);
+    const auto& data3 = machine.GetData<States::State3>();
+    EXPECT_DOUBLE_EQ(data3.num, 3.14);
+    co_return;
+  });
 }
 
 TEST(StateMachineTest, DataDestructionAndConstruction) {
-  static int dtorsRun = 0;
+  RunFiberTest([&]() -> Omni::Fiber::Coroutine<void> {
+    static int dtorsRun = 0;
 
-  struct TrackDtor {
-    explicit TrackDtor(ActionInitTo1 arg) { (void)arg; }
-    ~TrackDtor() { dtorsRun++; }
-    TrackDtor(const TrackDtor&) = delete;
-    auto operator=(const TrackDtor&) -> TrackDtor& = delete;
-    TrackDtor(TrackDtor&&) noexcept = default;
-    auto operator=(TrackDtor&&) noexcept -> TrackDtor& = default;
-  };
+    struct TrackDtor {
+      explicit TrackDtor(ActionInitTo1 arg) { (void)arg; }
+      ~TrackDtor() { dtorsRun++; }
+      TrackDtor(const TrackDtor&) = delete;
+      auto operator=(const TrackDtor&) -> TrackDtor& = delete;
+      TrackDtor(TrackDtor&&) noexcept = default;
+      auto operator=(TrackDtor&&) noexcept -> TrackDtor& = default;
+    };
 
-  using DtorMachine =
-      StateMachine<States::InitialState,
-                   StateDefines<StateDefine<States::InitialState, Nothing>, StateDefine<States::State1, TrackDtor>,
-                                StateDefine<States::State2, StateData2>>,
-                   Transitions<Transition<States::InitialState, ActionInitTo1, States::State1>,
-                               Transition<States::State1, Action1To2, States::State2>>>;
+    using DtorMachine =
+        StateMachine<States::InitialState,
+                     StateDefines<StateDefine<States::InitialState, Nothing>, StateDefine<States::State1, TrackDtor>,
+                                  StateDefine<States::State2, StateData2>>,
+                     Transitions<Transition<States::InitialState, ActionInitTo1, States::State1>,
+                                 Transition<States::State1, Action1To2, States::State2>>>;
 
-  dtorsRun = 0;
-  {
-    DtorMachine machine;
-    EXPECT_EQ(dtorsRun, 0);
+    dtorsRun = 0;
+    {
+      DtorMachine machine;
+      EXPECT_EQ(dtorsRun, 0);
 
-    machine.Action([](std::integral_constant<States, States::InitialState>, Nothing&) -> ActionInitTo1 {
-      return ActionInitTo1{};
-    });
+      co_await machine.Action([](std::integral_constant<States, States::InitialState>, Nothing&) -> ActionInitTo1 {
+        return ActionInitTo1{};
+      });
+      EXPECT_EQ(machine.GetState(), States::State1);
+      EXPECT_EQ(dtorsRun, 0);
+
+      // Transition from State1 to State2 should destroy TrackDtor
+      co_await machine.Action([](std::integral_constant<States, States::State1>, TrackDtor&) -> Action1To2 {
+        return Action1To2{.name = "hello"};
+      });
+      EXPECT_EQ(machine.GetState(), States::State2);
+      EXPECT_EQ(dtorsRun, 1);
+    }
+    co_return;
+  });
+}
+
+TEST(StateMachineTest, CoroutineVisitorTransition) {
+  RunFiberTest([&]() -> Omni::Fiber::Coroutine<void> {
+    TestMachine machine;
+
+    co_await machine.Action(
+        [](std::integral_constant<States, States::InitialState>,
+           Nothing&) -> Omni::Fiber::Coroutine<TestMachine::ActionResult<States::InitialState>> {
+          co_return ActionInitTo1{.value = 88};
+        });
+
     EXPECT_EQ(machine.GetState(), States::State1);
-    EXPECT_EQ(dtorsRun, 0);
-
-    // Transition from State1 to State2 should destroy TrackDtor
-    machine.Action([](std::integral_constant<States, States::State1>, TrackDtor&) -> Action1To2 {
-      return Action1To2{.name = "hello"};
-    });
-    EXPECT_EQ(machine.GetState(), States::State2);
-    EXPECT_EQ(dtorsRun, 1);
-  }
+    EXPECT_EQ(machine.GetData<States::State1>().val, 88);
+    co_return;
+  });
 }
 
 TEST(StateMachineTest, StateTypeConstraintCheck) {

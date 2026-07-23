@@ -85,7 +85,7 @@ using MyMachine = gh::StateMachine<
 
 MyMachine machine;
 
-machine.Action(gh::Overload{
+co_await machine.Action(gh::Overload{
   [](std::integral_constant<States, States::State1>, StateData1& data) -> MyMachine::ActionResult<States::State1> {
     return Action1To2{.info = "data"};
   },
@@ -94,5 +94,18 @@ machine.Action(gh::Overload{
 
 States currentState = machine.GetState();
 bool isInit = machine.IsState<States::InitialState>();
+const auto& data1 = machine.GetData<States::State1>(); // Returns StateData1& (throws std::runtime_error on mismatch)
 ```
+
+### Action Visitor & `std::monostate` Rules
+
+1. **Visitor Signature**: Action visitors passed to `co_await machine.Action(...)` must accept 2 parameters:
+   - `std::integral_constant<States, StateVal>`: Tag identifying the current state enum value.
+   - `StateData&`: Reference to the data associated with the current state.
+2. **Return Types & Coroutines**:
+   - Visitors can be synchronous or asynchronous returning `Omni::Fiber::Coroutine<...>`.
+   - Returned action types must be defined in `Transitions` for the current state.
+3. **`std::monostate` & No-Op Transitions**:
+   - Returning `std::monostate` (or a `std::variant` containing `std::monostate`) represents a **no-op transition**. The state machine remains in the current state without modifying or destroying its existing state data.
+   - For terminal states (states with no outgoing transitions), `ActionResult<StateVal>` evaluates to `std::variant<std::monostate>`. Visitor handlers on terminal states can safely return `void` or `std::monostate{}`.
 

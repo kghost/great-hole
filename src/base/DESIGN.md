@@ -35,13 +35,16 @@ The lifecycle is controlled by the `Stop()` method, which performs the following
 ### Key Components
 
 - **Variant Storage (`_storage`)**: State data for all defined states is stored in `std::variant<StateDataTypes...>`. The initial state's data is default-constructed using `std::in_place_index<kInitialIndex>`.
+- **Fiber Synchronization (`_Mutex`)**: State transitions are serialized under `Omni::Fiber::Mutex`.
 - **In-Place Construction / Destruction**: When transitioning from `StateA` to `StateB` via `Action`:
   1. The destructor for `StateA` data is automatically called by `_storage.template emplace<targetIndex>(...)`.
   2. The target state data is constructed in-place by passing the action object `TargetData(action)`.
 - **Compile-Time Transition Lookup (`FindTargetState`)**:
   Matches `(FromState, ActionType)` against `TransitionsPack` at compile time to compute the target state enum value and its index in `StateDefinesPack`.
-- **Action Visitor Dispatch (`ExecuteForIndex`)**:
-  `Action(visitor)` uses index-sequence fold expressions to match `_stateIndex` against state indices. It invokes `visitor(std::integral_constant<StateType, CurrentState>{}, currentData)` if invocable, extracts the returned action (handling single actions or `std::variant` action packs), and executes `ApplyAction`.
+- **Coroutine Action Visitor Dispatch (`ExecuteForIndex`)**:
+  `Action(visitor)` returns `Omni::Fiber::Coroutine<void>`, acquiring `_Mutex` before dispatching. It uses index-sequence fold expressions to match `_stateIndex` against state indices. It supports both synchronous visitors and coroutine visitors returning `Omni::Fiber::Coroutine<...>`, unwraps single action objects or `std::variant` action packs, and executes `ApplyAction`.
+- **Type-Safe Data Access (`GetData<StateVal>()`)**:
+  Returns a reference (`auto&` / `const auto&`) to the current state data. Throws `std::runtime_error` if the current state does not match `StateVal`.
 - **`ActionResult<StateVal>` Deduction**:
   Filters all `Transition` declarations originating from `StateVal`, collects unique `actionType`s, and forms `std::variant<ActionTypes...>`.
 

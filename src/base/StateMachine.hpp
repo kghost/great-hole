@@ -2,9 +2,13 @@
 
 #include <array>
 #include <cstddef>
+#include <format>
 #include <type_traits>
 #include <utility>
 #include <variant>
+
+#include "Coroutine.hpp"
+#include "Mutex.hpp"
 
 namespace gh {
 
@@ -133,7 +137,7 @@ public:
 template <typename TypeListInst> struct TypeListToVariant;
 
 template <typename... Actions> struct TypeListToVariant<TypeList<Actions...>> {
-  using type = std::variant<Actions...>;
+  using type = std::conditional_t<sizeof...(Actions) == 0, std::variant<std::monostate>, std::variant<Actions...>>;
 };
 
 template <auto FromStateVal, typename Action, typename TransitionsPack> struct FindTargetState;
@@ -194,8 +198,31 @@ public:
 };
 
 template <typename T> struct IsVariant : std::false_type {};
-
 template <typename... Ts> struct IsVariant<std::variant<Ts...>> : std::true_type {};
+
+template <typename T> constexpr auto ToUnderlyingValue(T val) noexcept {
+  if constexpr (std::is_enum_v<T>) {
+    return static_cast<std::underlying_type_t<T>>(val);
+  } else {
+    return val;
+  }
+}
+
+template <typename ActionType, typename AllowedTypeList> struct IsActionInList : std::false_type {};
+template <typename ActionType, typename... AllowedActions>
+struct IsActionInList<ActionType, TypeList<AllowedActions...>>
+    : std::bool_constant<(std::is_same_v<ActionType, AllowedActions> || ...)> {};
+
+template <typename ResultType, typename AllowedTypeList>
+struct IsValidActionResult : IsActionInList<ResultType, AllowedTypeList> {};
+
+template <typename AllowedTypeList> struct IsValidActionResult<void, AllowedTypeList> : std::true_type {};
+template <typename AllowedTypeList> struct IsValidActionResult<std::monostate, AllowedTypeList> : std::true_type {};
+
+template <typename... Ts, typename AllowedTypeList>
+struct IsValidActionResult<std::variant<Ts...>, AllowedTypeList>
+    : std::bool_constant<((std::is_same_v<Ts, std::monostate> || IsActionInList<Ts, AllowedTypeList>::value) && ...)> {
+};
 
 } // namespace detail
 
@@ -228,6 +255,8 @@ public:
   using ActionResult = typename detail::TypeListToVariant<
       typename detail::FilterActionsFromState<StateVal, TransitionsPack>::type>::type;
 
+  template <auto StateVal> using CoroutineActionResult = Omni::Fiber::Coroutine<ActionResult<StateVal>>;
+
 private:
   template <typename DefsPack> struct DataVariantFromDefines;
 
@@ -239,6 +268,7 @@ private:
 
   static constexpr std::size_t kInitialIndex = detail::IndexOfState<InitialState, StateDefinesPack>::value;
 
+  Omni::Fiber::Mutex _Mutex;
   StorageType _storage{std::in_place_index<kInitialIndex>};
   std::size_t _stateIndex{kInitialIndex};
 
@@ -257,32 +287,39 @@ public:
 
   template <auto StateVal> [[nodiscard]] auto IsState() const noexcept -> bool { return GetState() == StateVal; }
 
-  template <auto StateVal> auto GetData() -> auto* {
+  template <auto StateVal> auto GetData() -> auto& {
     constexpr std::size_t idx = detail::IndexOfState<StateVal, StateDefinesPack>::value;
     if (_stateIndex == idx) {
-      return std::get_if<idx>(&_storage);
+      return std::get<idx>(_storage);
     }
-    return static_cast<std::variant_alternative_t<idx, StorageType>*>(nullptr);
+    throw std::runtime_error(std::format("State does not match: {} != {}",
+                                         detail::ToUnderlyingValue(kStates[_stateIndex]),
+                                         detail::ToUnderlyingValue(StateVal)));
   }
 
-  template <auto StateVal> auto GetData() const -> const auto* {
+  template <auto StateVal> auto GetData() const -> const auto& {
     constexpr std::size_t idx = detail::IndexOfState<StateVal, StateDefinesPack>::value;
     if (_stateIndex == idx) {
-      return std::get_if<idx>(&_storage);
+      return std::get<idx>(_storage);
     }
-    return static_cast<const std::variant_alternative_t<idx, StorageType>*>(nullptr);
+    throw std::runtime_error(std::format("State does not match: {} != {}",
+                                         detail::ToUnderlyingValue(kStates[_stateIndex]),
+                                         detail::ToUnderlyingValue(StateVal)));
   }
 
-  template <typename Visitor> void Action(Visitor&& visitor) {
-    [this, &visitor]<std::size_t... Is>(std::index_sequence<Is...>) -> void {
+  template <typename Visitor> auto Action(Visitor&& visitor) -> Omni::Fiber::Coroutine<void> {
+    auto lock = co_await _Mutex.Wait();
+    co_await [this, &visitor]<std::size_t... Is>(std::index_sequence<Is...>) -> Omni::Fiber::Coroutine<void> {
       bool handled = false;
-      ((_stateIndex == Is ? (ExecuteForIndex<Is>(std::forward<Visitor>(visitor)), handled = true) : false) || ...);
+      ((_stateIndex == Is ? (co_await ExecuteForIndex<Is>(std::forward<Visitor>(visitor)), handled = true) : false) ||
+       ...);
       (void)handled;
     }(std::make_index_sequence<std::variant_size_v<StorageType>>{});
   }
 
 private:
-  template <std::size_t Index, typename Visitor> void ExecuteForIndex(Visitor&& visitor) {
+  template <std::size_t Index, typename Visitor>
+  auto ExecuteForIndex(Visitor&& visitor) -> Omni::Fiber::Coroutine<void> {
     constexpr StateType currentState = kStates[Index];
     using CurrentData = std::variant_alternative_t<Index, StorageType>;
     CurrentData& currentData = std::get<Index>(_storage);
@@ -290,33 +327,63 @@ private:
     using TagType = std::integral_constant<StateType, currentState>;
 
     if constexpr (std::is_invocable_v<Visitor&, TagType, CurrentData&>) {
-      auto actionResult = std::forward<Visitor>(visitor)(TagType{}, currentData);
-      using ResultType = std::decay_t<decltype(actionResult)>;
-      if constexpr (detail::IsVariant<ResultType>::value) {
-        std::visit([this](auto&& act) { this->ApplyAction<currentState>(std::forward<decltype(act)>(act)); },
-                   actionResult);
+      using RawResult = std::invoke_result_t<Visitor&, TagType, CurrentData&>;
+      using ActionResType =
+          typename Omni::Fiber::CoroutineTraits<std::decay_t<RawResult>>::CoroutineReturnTypeOrOriginalType;
+      using AllowedActions = typename detail::FilterActionsFromState<currentState, TransitionsPack>::type;
+
+      static_assert(detail::IsValidActionResult<ActionResType, AllowedActions>::value,
+                    "Action result returned by visitor is not defined in transitions for this state!");
+
+      if constexpr (Omni::Fiber::CoroutineTraits<std::decay_t<RawResult>>::value) {
+        if constexpr (std::is_void_v<ActionResType>) {
+          co_await std::forward<Visitor>(visitor)(TagType{}, currentData);
+        } else {
+          auto actionResult = co_await std::forward<Visitor>(visitor)(TagType{}, currentData);
+          using ResultType = std::decay_t<decltype(actionResult)>;
+          if constexpr (detail::IsVariant<ResultType>::value) {
+            std::visit(
+                [this](auto&& act) -> auto {
+                  using ActType = std::decay_t<decltype(act)>;
+                  if constexpr (!std::is_same_v<ActType, std::monostate>) {
+                    this->ApplyAction<currentState>(std::forward<decltype(act)>(act));
+                  }
+                },
+                actionResult);
+          } else {
+            this->ApplyAction<currentState>(std::move(actionResult));
+          }
+        }
       } else {
-        ApplyAction<currentState>(actionResult);
-      }
-    } else if constexpr (std::is_invocable_v<Visitor&, CurrentData&>) {
-      auto actionResult = std::forward<Visitor>(visitor)(currentData);
-      using ResultType = std::decay_t<decltype(actionResult)>;
-      if constexpr (detail::IsVariant<ResultType>::value) {
-        std::visit([this](auto&& act) { this->ApplyAction<currentState>(std::forward<decltype(act)>(act)); },
-                   actionResult);
-      } else {
-        ApplyAction<currentState>(actionResult);
+        if constexpr (std::is_void_v<ActionResType>) {
+          std::forward<Visitor>(visitor)(TagType{}, currentData);
+        } else {
+          auto actionResult = std::forward<Visitor>(visitor)(TagType{}, currentData);
+          using ResultType = std::decay_t<decltype(actionResult)>;
+          if constexpr (detail::IsVariant<ResultType>::value) {
+            std::visit(
+                [this](auto&& act) -> auto {
+                  using ActType = std::decay_t<decltype(act)>;
+                  if constexpr (!std::is_same_v<ActType, std::monostate>) {
+                    this->ApplyAction<currentState>(std::forward<decltype(act)>(act));
+                  }
+                },
+                actionResult);
+          } else {
+            this->ApplyAction<currentState>(std::move(actionResult));
+          }
+        }
       }
     }
   }
 
-  template <auto CurrentStateVal, typename ActionType> void ApplyAction(ActionType&& action) {
-    using FoundTarget = detail::FindTargetState<CurrentStateVal, std::decay_t<ActionType>, TransitionsPack>;
-    if constexpr (FoundTarget::found) {
-      constexpr auto targetStateVal = FoundTarget::targetState;
+  template <auto CurrentStateVal, typename ActionResult> void ApplyAction(ActionResult&& result) {
+    using FoundTarget = detail::FindTargetState<CurrentStateVal, std::decay_t<ActionResult>, TransitionsPack>;
+    static_assert(FoundTarget::found, "No valid transition found!");
+    constexpr auto targetStateVal = FoundTarget::targetState;
+    if constexpr (targetStateVal != CurrentStateVal) {
       constexpr std::size_t targetIndex = detail::IndexOfState<targetStateVal, StateDefinesPack>::value;
-
-      _storage.template emplace<targetIndex>(std::forward<ActionType>(action));
+      _storage.template emplace<targetIndex>(std::forward<ActionResult>(result));
       _stateIndex = targetIndex;
     }
   }
