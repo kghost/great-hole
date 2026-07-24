@@ -47,8 +47,8 @@
       }
     },
     {
-      "name": "configure-windows-debug-ninja",
-      "binaryDir": "${sourceDir}/build-debug-non-asan",
+      "name": "configure-windows-ninja-debug",
+      "binaryDir": "${sourceDir}/build-windows-ninja-debug-non-asan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -59,8 +59,8 @@
       "generator": "Ninja"
     },
     {
-      "name": "configure-windows-release-ninja",
-      "binaryDir": "${sourceDir}/build-release-non-asan",
+      "name": "configure-windows-ninja-release",
+      "binaryDir": "${sourceDir}/build-windows-ninja-release-non-asan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -71,8 +71,8 @@
       "generator": "Ninja"
     },
     {
-      "name": "configure-windows-debug-ninja-asan",
-      "binaryDir": "${sourceDir}/build-debug-asan",
+      "name": "configure-windows-ninja-debug-asan",
+      "binaryDir": "${sourceDir}/build-windows-ninja-debug-asan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -84,8 +84,8 @@
       "generator": "Ninja"
     },
     {
-      "name": "configure-windows-release-ninja-asan",
-      "binaryDir": "${sourceDir}/build-release-asan",
+      "name": "configure-windows-ninja-release-asan",
+      "binaryDir": "${sourceDir}/build-windows-ninja-release-asan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -132,14 +132,14 @@
     { "name": "build-debug-tidy", "configurePreset": "configure-debug-tidy", "jobs": 16 },
     { "name": "build-debug-gcc-14", "configurePreset": "configure-debug-gcc-14", "jobs": 8 },
     { "name": "build-debug-gcc-snapshot", "configurePreset": "configure-debug-gcc-snapshot", "jobs": 8 },
-    { "name": "build-windows-debug-msvc", "configurePreset": "configure-windows-msvc", "configuration": "Debug", "jobs": 8 },
-    { "name": "build-windows-debug-msvc-asan", "configurePreset": "configure-windows-msvc-asan", "configuration": "Debug", "jobs": 8 },
-    { "name": "build-windows-release-msvc", "configurePreset": "configure-windows-msvc", "configuration": "Release", "jobs": 8 },
-    { "name": "build-windows-release-msvc-asan", "configurePreset": "configure-windows-msvc-asan", "configuration": "Release", "jobs": 8 },
-    { "name": "build-windows-debug-ninja", "configurePreset": "configure-windows-debug-ninja", "jobs": 8 },
-    { "name": "build-windows-release-ninja", "configurePreset": "configure-windows-release-ninja", "jobs": 8 },
-    { "name": "build-windows-debug-ninja-asan", "configurePreset": "configure-windows-debug-ninja-asan", "jobs": 8 },
-    { "name": "build-windows-release-ninja-asan", "configurePreset": "configure-windows-release-ninja-asan", "jobs": 8 },
+    { "name": "build-windows-msvc-debug", "configurePreset": "configure-windows-msvc", "configuration": "Debug", "jobs": 8 },
+    { "name": "build-windows-msvc-debug-asan", "configurePreset": "configure-windows-msvc-asan", "configuration": "Debug", "jobs": 8 },
+    { "name": "build-windows-msvc-release", "configurePreset": "configure-windows-msvc", "configuration": "Release", "jobs": 8 },
+    { "name": "build-windows-msvc-release-asan", "configurePreset": "configure-windows-msvc-asan", "configuration": "Release", "jobs": 8 },
+    { "name": "build-windows-ninja-debug", "configurePreset": "configure-windows-ninja-debug", "jobs": 8 },
+    { "name": "build-windows-ninja-release", "configurePreset": "configure-windows-ninja-release", "jobs": 8 },
+    { "name": "build-windows-ninja-debug-asan", "configurePreset": "configure-windows-ninja-debug-asan", "jobs": 8 },
+    { "name": "build-windows-ninja-release-asan", "configurePreset": "configure-windows-ninja-release-asan", "jobs": 8 },
     { "name": "build-android-arm64-v8a-debug", "configurePreset": "configure-android-arm64-v8a-debug", "jobs": 16 },
     { "name": "build-android-x86_64-debug", "configurePreset": "configure-android-x86_64-debug", "jobs": 16 },
     { "name": "build-android-arm64-v8a-release", "configurePreset": "configure-android-arm64-v8a-release", "jobs": 16 },
@@ -149,8 +149,8 @@
     { "name": "test-debug", "configurePreset": "configure-debug" },
     { "name": "test-debug-gcc-14", "configurePreset": "configure-debug-gcc-14" },
     { "name": "test-debug-gcc-snapshot", "configurePreset": "configure-debug-gcc-snapshot" },
-    { "name": "test-windows-debug-ninja-asan", "configurePreset": "configure-windows-debug-ninja-asan" },
-    { "name": "test-windows-release-ninja-asan", "configurePreset": "configure-windows-release-ninja-asan" }
+    { "name": "test-windows-ninja-debug-asan", "configurePreset": "configure-windows-ninja-debug-asan" },
+    { "name": "test-windows-ninja-release-asan", "configurePreset": "configure-windows-ninja-release-asan" }
   ],
   "workflowPresets": [
     {
@@ -178,61 +178,61 @@
       ]
     },
     {
-      "name": "windows-debug-msvc",
+      "name": "windows-msvc-debug",
       "steps": [
         { "type": "configure", "name": "configure-windows-msvc" },
-        { "type": "build", "name": "build-windows-debug-msvc" }
+        { "type": "build", "name": "build-windows-msvc-debug" }
       ]
     },
     {
-      "name": "windows-debug-msvc-asan",
+      "name": "windows-msvc-debug-asan",
       "steps": [
         { "type": "configure", "name": "configure-windows-msvc-asan" },
-        { "type": "build", "name": "build-windows-debug-msvc-asan" }
+        { "type": "build", "name": "build-windows-msvc-debug-asan" }
       ]
     },
     {
-      "name": "windows-release-msvc",
+      "name": "windows-msvc-release",
       "steps": [
         { "type": "configure", "name": "configure-windows-msvc" },
-        { "type": "build", "name": "build-windows-release-msvc" }
+        { "type": "build", "name": "build-windows-msvc-release" }
       ]
     },
     {
-      "name": "windows-release-msvc-asan",
+      "name": "windows-msvc-release-asan",
       "steps": [
         { "type": "configure", "name": "configure-windows-msvc-asan" },
-        { "type": "build", "name": "build-windows-release-msvc-asan" }
+        { "type": "build", "name": "build-windows-msvc-release-asan" }
       ]
     },
     {
-      "name": "windows-debug-ninja",
+      "name": "windows-ninja-debug",
       "steps": [
-        { "type": "configure", "name": "configure-windows-debug-ninja" },
-        { "type": "build", "name": "build-windows-debug-ninja" }
+        { "type": "configure", "name": "configure-windows-ninja-debug" },
+        { "type": "build", "name": "build-windows-ninja-debug" }
       ]
     },
     {
-      "name": "windows-release-ninja",
+      "name": "windows-ninja-release",
       "steps": [
-        { "type": "configure", "name": "configure-windows-release-ninja" },
-        { "type": "build", "name": "build-windows-release-ninja" }
+        { "type": "configure", "name": "configure-windows-ninja-release" },
+        { "type": "build", "name": "build-windows-ninja-release" }
       ]
     },
     {
-      "name": "windows-debug-ninja-asan",
+      "name": "windows-ninja-debug-asan",
       "steps": [
-        { "type": "configure", "name": "configure-windows-debug-ninja-asan" },
-        { "type": "build", "name": "build-windows-debug-ninja-asan" },
-        { "type": "test", "name": "test-windows-debug-ninja-asan" }
+        { "type": "configure", "name": "configure-windows-ninja-debug-asan" },
+        { "type": "build", "name": "build-windows-ninja-debug-asan" },
+        { "type": "test", "name": "test-windows-ninja-debug-asan" }
       ]
     },
     {
-      "name": "windows-release-ninja-asan",
+      "name": "windows-ninja-release-asan",
       "steps": [
-        { "type": "configure", "name": "configure-windows-release-ninja-asan" },
-        { "type": "build", "name": "build-windows-release-ninja-asan" },
-        { "type": "test", "name": "test-windows-release-ninja-asan" }
+        { "type": "configure", "name": "configure-windows-ninja-release-asan" },
+        { "type": "build", "name": "build-windows-ninja-release-asan" },
+        { "type": "test", "name": "test-windows-ninja-release-asan" }
       ]
     },
     {
