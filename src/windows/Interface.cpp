@@ -210,8 +210,7 @@ auto PlatformImpl::AddEndpoint(const PskType& psk, const std::string& address) -
 
   _TaskQueue.Push(
       [&promise, psk, address](const auto& /*policyEngine*/, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
-        auto session = co_await dataPlane->AddEndpoint(psk, address);
-        promise.set_value(session);
+        promise.set_value(dataPlane->AddEndpoint(psk, address));
         co_return;
       });
 
@@ -224,7 +223,7 @@ void PlatformImpl::RemoveEndpoint(VpnEndpoint endpoint) {
 
   _TaskQueue.Push(
       [&promise, endpoint](const auto& /*policyEngine*/, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
-        co_await dataPlane->RemoveEndpoint(endpoint);
+        dataPlane->RemoveEndpoint(endpoint);
         promise.set_value();
         co_return;
       });

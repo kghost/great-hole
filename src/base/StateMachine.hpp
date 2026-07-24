@@ -377,6 +377,7 @@ private:
         }
       }
     }
+    co_return;
   }
 
   template <auto CurrentStateVal, typename ActionResult> void ApplyAction(ActionResult&& result) {

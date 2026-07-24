@@ -48,8 +48,21 @@
     },
     {
       "name": "configure-windows-debug-ninja",
-      "binaryDir": "${sourceDir}/build-non-asan",
+      "binaryDir": "${sourceDir}/build-debug-non-asan",
       "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+        "SKIP_ASAN": "ON",
+        "SKIP_NON_ASAN": "OFF",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      },
+      "generator": "Ninja"
+    },
+    {
+      "name": "configure-windows-release-ninja",
+      "binaryDir": "${sourceDir}/build-release-non-asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "SKIP_ASAN": "ON",
         "SKIP_NON_ASAN": "OFF",
@@ -59,7 +72,7 @@
     },
     {
       "name": "configure-windows-debug-ninja-asan",
-      "binaryDir": "${sourceDir}/build",
+      "binaryDir": "${sourceDir}/build-debug-asan",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -124,6 +137,7 @@
     { "name": "build-windows-release-msvc", "configurePreset": "configure-windows-msvc", "configuration": "Release", "jobs": 8 },
     { "name": "build-windows-release-msvc-asan", "configurePreset": "configure-windows-msvc-asan", "configuration": "Release", "jobs": 8 },
     { "name": "build-windows-debug-ninja", "configurePreset": "configure-windows-debug-ninja", "jobs": 8 },
+    { "name": "build-windows-release-ninja", "configurePreset": "configure-windows-release-ninja", "jobs": 8 },
     { "name": "build-windows-debug-ninja-asan", "configurePreset": "configure-windows-debug-ninja-asan", "jobs": 8 },
     { "name": "build-windows-release-ninja-asan", "configurePreset": "configure-windows-release-ninja-asan", "jobs": 8 },
     { "name": "build-android-arm64-v8a-debug", "configurePreset": "configure-android-arm64-v8a-debug", "jobs": 16 },
@@ -196,6 +210,13 @@
       "steps": [
         { "type": "configure", "name": "configure-windows-debug-ninja" },
         { "type": "build", "name": "build-windows-debug-ninja" }
+      ]
+    },
+    {
+      "name": "windows-release-ninja",
+      "steps": [
+        { "type": "configure", "name": "configure-windows-release-ninja" },
+        { "type": "build", "name": "build-windows-release-ninja" }
       ]
     },
     {

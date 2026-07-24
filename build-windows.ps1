@@ -7,5 +7,8 @@ cmake --workflow --preset windows-debug-msvc-asan
 cmake --workflow --preset windows-release-msvc
 cmake --workflow --preset windows-release-msvc-asan
 cmake --workflow --preset windows-debug-ninja
+cmake --workflow --preset windows-release-ninja
 cmake --workflow --preset windows-debug-ninja-asan
 cmake --workflow --preset windows-release-ninja-asan
+
+New-Item -ItemType Junction -Path "build" -Target "build-debug-asan"

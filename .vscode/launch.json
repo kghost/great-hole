@@ -5,9 +5,9 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "launch great-hole",
             "type": "lldb-dap",
             "request": "launch",
-            "name": "launch great-hole",
             "program": "${workspaceFolder}/build/src/great-hole",
             "console": "integratedTerminal",
             "initCommands": [
@@ -25,9 +25,9 @@
             ]
         },
         {
+            "name": "(lldb-dap) Launch test",
             "type": "lldb-dap",
             "request": "launch",
-            "name": "launch test",
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
             "program": "${cmake.testProgram}",
@@ -42,6 +42,16 @@
                     ".",
                     "${workspaceFolder}"
                 ]
+            ]
+        },
+        {
+            "name": "(cppvsdbg) Launch test",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "program": "${cmake.testProgram}",
+            "args": [
+                "${cmake.testArgs}"
             ]
         }
     ]

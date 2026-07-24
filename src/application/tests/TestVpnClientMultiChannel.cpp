@@ -49,6 +49,11 @@ public:
   void OnPostWarpChild() override {
 #ifndef _WIN32
     _Io.notify_fork(boost::asio::io_context::fork_child);
+#else
+    boost::asio::post(_Io, [] {});
+    auto dummyTimer = std::make_shared<boost::asio::steady_timer>(_Io);
+    dummyTimer->expires_at(std::chrono::steady_clock::time_point::min());
+    dummyTimer->async_wait([dummyTimer](const boost::system::error_code&) {});
 #endif
   }
 
