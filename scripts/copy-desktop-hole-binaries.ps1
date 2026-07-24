@@ -23,14 +23,14 @@ Copy-Item -Path $SrcHeader -Destination $DestHeader -Force
 # Build variants to process (standard and ASan-instrumented)
 $Variants = @(
     @{
-        Name = "windows-msvc"
+        Name     = "windows-msvc"
         BuildDir = "$GreatHoleDir\build-windows-msvc"
-        IsAsan = $false
+        IsAsan   = $false
     },
     @{
-        Name = "windows-msvc-asan"
+        Name     = "windows-msvc-asan"
         BuildDir = "$GreatHoleDir\build-windows-msvc-asan"
-        IsAsan = $true
+        IsAsan   = $true
     }
 )
 
@@ -58,7 +58,6 @@ foreach ($Variant in $Variants) {
                     "great-hole-windows-asan.pdb"               = "src/windows/Debug/great-hole-windows-asan.pdb"
                     "WinDivert.dll"                             = "_deps/windivert-src/x64/WinDivert.dll"
                     "WinDivert64.sys"                           = "_deps/windivert-src/x64/WinDivert64.sys"
-                    "cares.dll"                                 = "src/windows/Debug/cares.dll"
                     "boost_filesystem-vc145-mt-gd-x64-1_90.dll" = "src/windows/Debug/boost_filesystem-vc145-mt-gd-x64-1_90.dll"
                     "boost_log-vc145-mt-gd-x64-1_90.dll"        = "src/windows/Debug/boost_log-vc145-mt-gd-x64-1_90.dll"
                     "boost_thread-vc145-mt-gd-x64-1_90.dll"     = "src/windows/Debug/boost_thread-vc145-mt-gd-x64-1_90.dll"
@@ -71,7 +70,6 @@ foreach ($Variant in $Variants) {
                     "great-hole-windows-asan.pdb"            = "src/windows/Release/great-hole-windows-asan.pdb"
                     "WinDivert.dll"                          = "_deps/windivert-src/x64/WinDivert.dll"
                     "WinDivert64.sys"                        = "_deps/windivert-src/x64/WinDivert64.sys"
-                    "cares.dll"                              = "src/windows/Release/cares.dll"
                     "boost_filesystem-vc145-mt-x64-1_90.dll" = "src/windows/Release/boost_filesystem-vc145-mt-x64-1_90.dll"
                     "boost_log-vc145-mt-x64-1_90.dll"        = "src/windows/Release/boost_log-vc145-mt-x64-1_90.dll"
                     "boost_thread-vc145-mt-x64-1_90.dll"     = "src/windows/Release/boost_thread-vc145-mt-x64-1_90.dll"
@@ -86,7 +84,6 @@ foreach ($Variant in $Variants) {
                     "great-hole-windows.pdb"                    = "src/windows/Debug/great-hole-windows.pdb"
                     "WinDivert.dll"                             = "_deps/windivert-src/x64/WinDivert.dll"
                     "WinDivert64.sys"                           = "_deps/windivert-src/x64/WinDivert64.sys"
-                    "cares.dll"                                 = "src/windows/Debug/cares.dll"
                     "boost_filesystem-vc145-mt-gd-x64-1_90.dll" = "src/windows/Debug/boost_filesystem-vc145-mt-gd-x64-1_90.dll"
                     "boost_log-vc145-mt-gd-x64-1_90.dll"        = "src/windows/Debug/boost_log-vc145-mt-gd-x64-1_90.dll"
                     "boost_thread-vc145-mt-gd-x64-1_90.dll"     = "src/windows/Debug/boost_thread-vc145-mt-gd-x64-1_90.dll"
@@ -99,7 +96,6 @@ foreach ($Variant in $Variants) {
                     "great-hole-windows.pdb"                 = "src/windows/Release/great-hole-windows.pdb"
                     "WinDivert.dll"                          = "_deps/windivert-src/x64/WinDivert.dll"
                     "WinDivert64.sys"                        = "_deps/windivert-src/x64/WinDivert64.sys"
-                    "cares.dll"                              = "src/windows/Release/cares.dll"
                     "boost_filesystem-vc145-mt-x64-1_90.dll" = "src/windows/Release/boost_filesystem-vc145-mt-x64-1_90.dll"
                     "boost_log-vc145-mt-x64-1_90.dll"        = "src/windows/Release/boost_log-vc145-mt-x64-1_90.dll"
                     "boost_thread-vc145-mt-x64-1_90.dll"     = "src/windows/Release/boost_thread-vc145-mt-x64-1_90.dll"
