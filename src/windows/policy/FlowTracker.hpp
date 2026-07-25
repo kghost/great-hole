@@ -38,8 +38,8 @@ public:
   auto operator=(FlowTracker&&) -> FlowTracker& = delete;
 
   // WinDivertFlowSnifferCallback overrides
-  auto OnFlowEstablished(FlowKey key, uint32_t pid) -> Omni::Fiber::Coroutine<void> override;
-  auto OnFlowDeleted(FlowKey key) -> Omni::Fiber::Coroutine<void> override;
+  auto OnFlowEstablished(const FlowKey& key, uint32_t pid) -> Omni::Fiber::Coroutine<void> override;
+  auto OnFlowDeleted(const FlowKey& key) -> Omni::Fiber::Coroutine<void> override;
 
   [[nodiscard]] auto GetPidForConnection(const ConnectionTracker::ConnectionKey& key) -> std::optional<DWORD>;
   void AddPendingMark(const ConnectionTracker::ConnectionKey& key,
@@ -48,15 +48,15 @@ public:
   [[nodiscard]] auto GetFlows() const -> std::vector<Interface::FlowInfo>;
   [[nodiscard]] auto GetPendingFlows() const -> std::vector<Interface::PendingFlowInfo>;
 
-  [[nodiscard]] static auto ToFlowKey(const ConnectionTracker::ConnectionKey& key) -> std::optional<FlowKey>;
+  [[nodiscard]] static auto ToFlowWildcardKey(const ConnectionTracker::ConnectionKey& key) -> std::optional<FlowKey>;
+  [[nodiscard]] static auto ToFlowExactKey(const ConnectionTracker::ConnectionKey& key) -> std::optional<FlowKey>;
 
 private:
   FlowTrackerDeferredCallback& _Callback;
-
   std::map<FlowKey, DWORD> _FlowToPid;
-  std::map<FlowKey,
-           std::vector<std::pair<ConnectionTracker::ConnectionKey, std::weak_ptr<VpnClientMultiChannel::Mark>>>>
+  std::list<std::pair<ConnectionTracker::ConnectionKey, std::weak_ptr<VpnClientMultiChannel::Mark>>>
       _PendingFlowResumers;
+  [[nodiscard]] auto PickPending(const FlowKey& key) -> std::vector<std::weak_ptr<VpnClientMultiChannel::Mark>>;
 };
 
 } // namespace gh::policy

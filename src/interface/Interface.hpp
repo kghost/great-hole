@@ -64,6 +64,7 @@ struct FlowConnection {
 
 struct FlowInfo {
   std::string Protocol;
+  std::string LocalAddress;
   uint16_t LocalPort{0};
   uint32_t ProcessId{0};
 };

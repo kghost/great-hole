@@ -24,19 +24,18 @@ namespace {
 
 class ConsoleFlowSnifferCallback : public WinDivertFlowSnifferCallback {
 public:
-  auto OnFlowEstablished(FlowKey key, uint32_t pid) -> Omni::Fiber::Coroutine<void> override {
-    std::cout << "[+] ESTABLISHED LocalPort: " << key
-              << " | PID: " << pid << " (" << GetProcessNameAndPath(pid) << ")" << std::endl;
+  auto OnFlowEstablished(const FlowKey& key, uint32_t pid) -> Omni::Fiber::Coroutine<void> override {
+    std::cout << "[+] ESTABLISHED LocalPort: " << key << " | PID: " << pid << " (" << GetProcessNameAndPath(pid) << ")"
+              << std::endl;
     co_return;
   }
 
-  auto OnFlowDeleted(FlowKey key) -> Omni::Fiber::Coroutine<void> override {
+  auto OnFlowDeleted(const FlowKey& key) -> Omni::Fiber::Coroutine<void> override {
     std::cout << "[-] DELETED LocalPort:     " << key << std::endl;
     co_return;
   }
 
 private:
-
   static auto GetProcessNameAndPath(uint32_t pid) -> std::string {
     if (pid == 0) {
       return "System Idle Process";

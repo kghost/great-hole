@@ -18,7 +18,8 @@ class MockDeferredPacketInjector : public DeferredPacketInjector {
 public:
   std::vector<Packet> InjectedPackets;
 
-  auto Inject(Packet&& packet, const WINDIVERT_ADDRESS& /*addr*/, WinDivertRouteCallback::Result /*route*/) -> Omni::Fiber::Coroutine<void> override {
+  auto Inject(Packet&& packet, const WINDIVERT_ADDRESS& /*addr*/, WinDivertRouteCallback::Result /*route*/)
+      -> Omni::Fiber::Coroutine<void> override {
     InjectedPackets.push_back(std::move(packet));
     co_return;
   }
@@ -57,7 +58,7 @@ TEST_F(TestPolicySelector, OutOfOrder_F_Pr_P) {
   bool testDone = false;
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     // 1. Flow establishing PID
-    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowKey(key).value(), pid);
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(), pid);
 
     // 2. Process starts/policy resolved
     selector.GetProcessTreeTracker().AddProcess(pid, 0, "C:\\App\\bypass.exe");
@@ -111,7 +112,7 @@ TEST_F(TestPolicySelector, OutOfOrder_Pr_F_P) {
     selector.GetProcessTreeTracker().AddProcess(pid, 0, "C:\\App\\bypass.exe");
 
     // 2. Flow establishing PID
-    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowKey(key).value(), pid);
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(), pid);
 
     // 3. Packet arrives
     auto resolved = selector.ResolvePolicy(key);
@@ -159,7 +160,7 @@ TEST_F(TestPolicySelector, OutOfOrder_F_P_Pr) {
   bool testDone = false;
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     // 1. Flow establishing PID
-    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowKey(key).value(), pid);
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(), pid);
 
     // 2. Packet arrives (Process not started yet)
     auto resolved = selector.ResolvePolicy(key);
@@ -256,7 +257,7 @@ TEST_F(TestPolicySelector, OutOfOrder_Pr_P_F) {
     }
 
     // 3. Flow establishes PID (fully automatic continuation trigger)
-    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowKey(key).value(), pid);
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(), pid);
 
     // Verification: mark should now be Bypass and the packet should be injected
     if (vpnMark != nullptr) {
@@ -323,7 +324,7 @@ TEST_F(TestPolicySelector, OutOfOrder_P_F_Pr) {
     }
 
     // 2. Flow establishes PID (process not started yet, so remains deferred)
-    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowKey(key).value(), pid);
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(), pid);
 
     if (vpnMark != nullptr) {
       EXPECT_TRUE(std::holds_alternative<VpnClientMultiChannel::Mark::Deferred>(vpnMark->GetValue()));
@@ -411,7 +412,7 @@ TEST_F(TestPolicySelector, OutOfOrder_P_Pr_F) {
     EXPECT_TRUE(injector.InjectedPackets.empty());
 
     // 3. Flow establishes PID (fully automatic continuation trigger)
-    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowKey(key).value(), pid);
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(), pid);
 
     // Verification: mark should now be Bypass and the packet should be injected
     if (vpnMark != nullptr) {
@@ -453,10 +454,10 @@ TEST_F(TestPolicySelector, GetConnectionsTest) {
   bool testDone = false;
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     static const std::vector<uint8_t> ip4TcpSyn = {
-        0x45, 0x00, 0x00, 0x3c, 0x46, 0x10, 0x40, 0x00, 0x40, 0x06, 0xe0, 0xff, 0x7f, 0x00, 0x00, 0x01, 0x7f, 0x59, 0x15,
-        0x52, 0x83, 0xb8, 0xd4, 0x31, 0xd5, 0xdb, 0x43, 0x66, 0x00, 0x00, 0x00, 0x00, 0xa0, 0x02, 0xff, 0xd7, 0x13, 0xdb,
-        0x00, 0x00, 0x02, 0x04, 0xff, 0xd7, 0x04, 0x02, 0x08, 0x0a, 0x9a, 0x29, 0xbf, 0x4e, 0x00, 0x00, 0x00, 0x00, 0x01,
-        0x03, 0x03, 0x07};
+        0x45, 0x00, 0x00, 0x3c, 0x46, 0x10, 0x40, 0x00, 0x40, 0x06, 0xe0, 0xff, 0x7f, 0x00, 0x00,
+        0x01, 0x7f, 0x59, 0x15, 0x52, 0x83, 0xb8, 0xd4, 0x31, 0xd5, 0xdb, 0x43, 0x66, 0x00, 0x00,
+        0x00, 0x00, 0xa0, 0x02, 0xff, 0xd7, 0x13, 0xdb, 0x00, 0x00, 0x02, 0x04, 0xff, 0xd7, 0x04,
+        0x02, 0x08, 0x0a, 0x9a, 0x29, 0xbf, 0x4e, 0x00, 0x00, 0x00, 0x00, 0x01, 0x03, 0x03, 0x07};
 
     Packet packet(ip4TcpSyn.size());
     std::copy(ip4TcpSyn.begin(), ip4TcpSyn.end(), packet.Data().begin());

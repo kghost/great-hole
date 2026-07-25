@@ -1,15 +1,28 @@
 #pragma once
 
 #include <boost/asio.hpp>
+#include <boost/asio/ip/address_v4.hpp>
 #include <boost/asio/windows/object_handle.hpp>
 #include <optional>
 
+#include <variant>
 #include <windows.h>
 
 #include "Logger.hpp"
 #include "ServiceBase.hpp"
+#include "Utils/Overload.hpp"
 
 namespace gh {
+
+inline auto operator<=>(const boost::asio::ip::address_v4& lhs, const boost::asio::ip::address_v4& rhs) noexcept
+    -> std::strong_ordering {
+  return lhs.to_uint() <=> rhs.to_uint();
+}
+
+inline auto operator<=>(const boost::asio::ip::address_v6& lhs, const boost::asio::ip::address_v6& rhs) noexcept
+    -> std::strong_ordering {
+  return lhs.to_bytes() <=> rhs.to_bytes();
+}
 
 class WinDivertFlowSnifferCallback {
 public:
@@ -38,14 +51,50 @@ public:
     }
   }
 
-  struct FlowKey {
+  struct FlowIp4Key {
     Protocol Proto{};
+    boost::asio::ip::address_v4 LocalAddress;
     uint16_t LocalPort{0};
-    auto operator<=>(const FlowKey&) const = default;
+
+    friend auto operator<=>(const FlowIp4Key& lhs, const FlowIp4Key& rhs) noexcept {
+      if (auto cmp = lhs.Proto <=> rhs.Proto; cmp != 0) {
+        return cmp;
+      }
+      if (auto cmp = lhs.LocalAddress.to_uint() <=> rhs.LocalAddress.to_uint(); cmp != 0) {
+        return cmp;
+      }
+      return lhs.LocalPort <=> rhs.LocalPort;
+    }
+    friend bool operator==(const FlowIp4Key& lhs, const FlowIp4Key& rhs) noexcept {
+      return lhs.Proto == rhs.Proto && lhs.LocalAddress == rhs.LocalAddress && lhs.LocalPort == rhs.LocalPort;
+    }
+    friend bool operator<(const FlowIp4Key& lhs, const FlowIp4Key& rhs) noexcept { return (lhs <=> rhs) < 0; }
   };
 
-  virtual auto OnFlowEstablished(FlowKey key, uint32_t pid) -> Omni::Fiber::Coroutine<void> = 0;
-  virtual auto OnFlowDeleted(FlowKey key) -> Omni::Fiber::Coroutine<void> = 0;
+  struct FlowIp6Key {
+    Protocol Proto{};
+    boost::asio::ip::address_v6 LocalAddress;
+    uint16_t LocalPort{0};
+
+    friend auto operator<=>(const FlowIp6Key& lhs, const FlowIp6Key& rhs) noexcept {
+      if (auto cmp = lhs.Proto <=> rhs.Proto; cmp != 0) {
+        return cmp;
+      }
+      if (auto cmp = lhs.LocalAddress.to_bytes() <=> rhs.LocalAddress.to_bytes(); cmp != 0) {
+        return cmp;
+      }
+      return lhs.LocalPort <=> rhs.LocalPort;
+    }
+    friend bool operator==(const FlowIp6Key& lhs, const FlowIp6Key& rhs) noexcept {
+      return lhs.Proto == rhs.Proto && lhs.LocalAddress == rhs.LocalAddress && lhs.LocalPort == rhs.LocalPort;
+    }
+    friend bool operator<(const FlowIp6Key& lhs, const FlowIp6Key& rhs) noexcept { return (lhs <=> rhs) < 0; }
+  };
+
+  using FlowKey = std::variant<FlowIp4Key, FlowIp6Key>;
+
+  virtual auto OnFlowEstablished(const FlowKey& key, uint32_t pid) -> Omni::Fiber::Coroutine<void> = 0;
+  virtual auto OnFlowDeleted(const FlowKey& key) -> Omni::Fiber::Coroutine<void> = 0;
 };
 
 class WinDivertFlowSniffer : public ServiceBase {
@@ -76,7 +125,11 @@ private:
 };
 
 inline auto operator<<(std::ostream& stream, const WinDivertFlowSnifferCallback::FlowKey& key) -> std::ostream& {
-  return stream << WinDivertFlowSnifferCallback::ProtocolToString(key.Proto) << ":" << key.LocalPort;
+  return std::visit(Overload{[&](const auto& key) -> std::ostream& {
+                      return stream << WinDivertFlowSnifferCallback::ProtocolToString(key.Proto) << ":"
+                                    << key.LocalAddress << ":" << key.LocalPort;
+                    }},
+                    key);
 }
 
 } // namespace gh

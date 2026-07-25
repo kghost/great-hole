@@ -130,27 +130,53 @@ auto WinDivertFlowSniffer::DoWork() -> Omni::Fiber::Coroutine<void> {
       continue;
     }
 
-    const auto key = ([&] -> WinDivertFlowSnifferCallback::FlowKey {
+    const auto key = ([&] -> std::optional<WinDivertFlowSnifferCallback::FlowKey> {
+      boost::asio::ip::address_v6::bytes_type address_v6_bytes;
+      // NOLINTBEGIN(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+      // NOLINTBEGIN(cppcoreguidelines-pro-type-reinterpret-cast)
+      WinDivertHelperHtonIPv6Address(flow.LocalAddr, reinterpret_cast<UINT*>(address_v6_bytes.data()));
+      // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
+      // NOLINTEND(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+      auto local6 = boost::asio::ip::address_v6(address_v6_bytes);
       if (addr.IPv6 == 0) {
-        return WinDivertFlowSnifferCallback::FlowKey{.Proto = flow.Protocol == IPPROTO_TCP
-                                                                  ? WinDivertFlowSnifferCallback::Protocol::Ipv4Tcp
-                                                                  : WinDivertFlowSnifferCallback::Protocol::Ipv4Udp,
-                                                     .LocalPort = flow.LocalPort};
+        if (local6.is_v4_mapped()) {
+          auto local4 = boost::asio::ip::make_address_v4(boost::asio::ip::v4_mapped, local6);
+          return WinDivertFlowSnifferCallback::FlowIp4Key{
+              .Proto = flow.Protocol == IPPROTO_TCP ? WinDivertFlowSnifferCallback::Protocol::Ipv4Tcp
+                                                    : WinDivertFlowSnifferCallback::Protocol::Ipv4Udp,
+              .LocalAddress = local4,
+              .LocalPort = flow.LocalPort};
+        } else {
+          if (local6.is_unspecified()) {
+            return WinDivertFlowSnifferCallback::FlowIp4Key{
+                .Proto = flow.Protocol == IPPROTO_TCP ? WinDivertFlowSnifferCallback::Protocol::Ipv4Tcp
+                                                      : WinDivertFlowSnifferCallback::Protocol::Ipv4Udp,
+                .LocalAddress = boost::asio::ip::address_v4::any(),
+                .LocalPort = flow.LocalPort};
+          }
+          BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
+              << "WinDivertFlowSniffer: local address not mapped IPv4: " << local6;
+          return std::nullopt;
+        }
       } else {
-        return WinDivertFlowSnifferCallback::FlowKey{.Proto = flow.Protocol == IPPROTO_TCP
-                                                                  ? WinDivertFlowSnifferCallback::Protocol::Ipv6Tcp
-                                                                  : WinDivertFlowSnifferCallback::Protocol::Ipv6Udp,
-                                                     .LocalPort = flow.LocalPort};
+        return WinDivertFlowSnifferCallback::FlowIp6Key{.Proto = flow.Protocol == IPPROTO_TCP
+                                                                     ? WinDivertFlowSnifferCallback::Protocol::Ipv6Tcp
+                                                                     : WinDivertFlowSnifferCallback::Protocol::Ipv6Udp,
+                                                        .LocalAddress = local6,
+                                                        .LocalPort = flow.LocalPort};
       }
     })();
 
-    if (addr.Event == WINDIVERT_EVENT_SOCKET_BIND) {
-      BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
-          << "WinDivertFlowSniffer: Flow established (" << key << "), PID: " << flow.ProcessId;
-      co_await _Callback.OnFlowEstablished(key, flow.ProcessId);
-    } else if (addr.Event == WINDIVERT_EVENT_SOCKET_CLOSE) {
-      BOOST_LOG_SEV(_Logger, boost::log::trivial::trace) << "WinDivertFlowSniffer: Flow deleted (" << key << ")";
-      co_await _Callback.OnFlowDeleted(key);
+    if (key.has_value()) {
+      if (addr.Event == WINDIVERT_EVENT_SOCKET_BIND) {
+        BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
+            << "WinDivertFlowSniffer: Flow established (" << key.value() << "), PID: " << flow.ProcessId;
+        co_await _Callback.OnFlowEstablished(key.value(), flow.ProcessId);
+      } else if (addr.Event == WINDIVERT_EVENT_SOCKET_CLOSE) {
+        BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
+            << "WinDivertFlowSniffer: Flow deleted (" << key.value() << ")";
+        co_await _Callback.OnFlowDeleted(key.value());
+      }
     }
   }
 }
