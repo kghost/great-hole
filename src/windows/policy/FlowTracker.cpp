@@ -6,6 +6,7 @@
 #include <optional>
 #include <variant>
 
+#include "PolicySelector.hpp"
 #include "Utils/Overload.hpp"
 
 namespace gh::policy {
@@ -60,58 +61,6 @@ auto FlowTracker::OnFlowDeleted(FlowKey key) -> Omni::Fiber::Coroutine<void> {
   }
   co_return;
 }
-
-namespace {
-
-auto ToFlowConnection(const ConnectionTracker::ConnectionKey& key) -> Interface::FlowConnection {
-  return std::visit(Overload{
-                        [](const ConnectionTracker::Ip4TcpKey& key) -> Interface::FlowConnection {
-                          return {.Protocol = "TCPv4",
-                                  .LocalAddress = key.LocalAddress.to_string(),
-                                  .RemoteAddress = key.RemoteAddress.to_string(),
-                                  .LocalPort = key.LocalPort,
-                                  .RemotePort = key.RemotePort};
-                        },
-                        [](const ConnectionTracker::Ip6TcpKey& key) -> Interface::FlowConnection {
-                          return {.Protocol = "TCPv6",
-                                  .LocalAddress = key.LocalAddress.to_string(),
-                                  .RemoteAddress = key.RemoteAddress.to_string(),
-                                  .LocalPort = key.LocalPort,
-                                  .RemotePort = key.RemotePort};
-                        },
-                        [](const ConnectionTracker::Ip4UdpKey& key) -> Interface::FlowConnection {
-                          return {.Protocol = "UDPv4",
-                                  .LocalAddress = key.LocalAddress.to_string(),
-                                  .RemoteAddress = key.RemoteAddress.to_string(),
-                                  .LocalPort = key.LocalPort,
-                                  .RemotePort = key.RemotePort};
-                        },
-                        [](const ConnectionTracker::Ip6UdpKey& key) -> Interface::FlowConnection {
-                          return {.Protocol = "UDPv6",
-                                  .LocalAddress = key.LocalAddress.to_string(),
-                                  .RemoteAddress = key.RemoteAddress.to_string(),
-                                  .LocalPort = key.LocalPort,
-                                  .RemotePort = key.RemotePort};
-                        },
-                        [](const ConnectionTracker::IcmpKey& key) -> Interface::FlowConnection {
-                          return {.Protocol = "ICMPv4",
-                                  .LocalAddress = key.LocalAddress.to_string(),
-                                  .RemoteAddress = key.RemoteAddress.to_string(),
-                                  .LocalPort = 0,
-                                  .RemotePort = 0};
-                        },
-                        [](const ConnectionTracker::Icmp6Key& key) -> Interface::FlowConnection {
-                          return {.Protocol = "ICMPv6",
-                                  .LocalAddress = key.LocalAddress.to_string(),
-                                  .RemoteAddress = key.RemoteAddress.to_string(),
-                                  .LocalPort = 0,
-                                  .RemotePort = 0};
-                        },
-                    },
-                    key);
-}
-
-} // namespace
 
 auto FlowTracker::GetFlows() const -> std::vector<Interface::FlowInfo> {
   std::vector<Interface::FlowInfo> flows;

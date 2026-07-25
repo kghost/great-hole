@@ -123,8 +123,14 @@ public:
   ConnectionTracker(ConnectionTracker&&) = delete;
   auto operator=(ConnectionTracker&&) -> ConnectionTracker& = delete;
 
+  struct TrackedEntry {
+    ConnectionKey Key;
+    std::string Mark;
+  };
+
   auto GetName() const -> std::string override { return "ConnectionTracker"; }
   void Clear();
+  [[nodiscard]] auto GetConnections() const -> std::vector<TrackedEntry>;
 
   auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
   auto DoWork() -> Omni::Fiber::Coroutine<void> override;

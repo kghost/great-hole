@@ -16,8 +16,69 @@
 
 namespace gh::policy {
 
+auto ToFlowConnection(const ConnectionTracker::ConnectionKey& key) -> Interface::FlowConnection {
+  return std::visit(Overload{
+                        [](const ConnectionTracker::Ip4TcpKey& key) -> Interface::FlowConnection {
+                          return {.Protocol = "TCPv4",
+                                  .LocalAddress = key.LocalAddress.to_string(),
+                                  .RemoteAddress = key.RemoteAddress.to_string(),
+                                  .LocalPort = key.LocalPort,
+                                  .RemotePort = key.RemotePort};
+                        },
+                        [](const ConnectionTracker::Ip6TcpKey& key) -> Interface::FlowConnection {
+                          return {.Protocol = "TCPv6",
+                                  .LocalAddress = key.LocalAddress.to_string(),
+                                  .RemoteAddress = key.RemoteAddress.to_string(),
+                                  .LocalPort = key.LocalPort,
+                                  .RemotePort = key.RemotePort};
+                        },
+                        [](const ConnectionTracker::Ip4UdpKey& key) -> Interface::FlowConnection {
+                          return {.Protocol = "UDPv4",
+                                  .LocalAddress = key.LocalAddress.to_string(),
+                                  .RemoteAddress = key.RemoteAddress.to_string(),
+                                  .LocalPort = key.LocalPort,
+                                  .RemotePort = key.RemotePort};
+                        },
+                        [](const ConnectionTracker::Ip6UdpKey& key) -> Interface::FlowConnection {
+                          return {.Protocol = "UDPv6",
+                                  .LocalAddress = key.LocalAddress.to_string(),
+                                  .RemoteAddress = key.RemoteAddress.to_string(),
+                                  .LocalPort = key.LocalPort,
+                                  .RemotePort = key.RemotePort};
+                        },
+                        [](const ConnectionTracker::IcmpKey& key) -> Interface::FlowConnection {
+                          return {.Protocol = "ICMPv4",
+                                  .LocalAddress = key.LocalAddress.to_string(),
+                                  .RemoteAddress = key.RemoteAddress.to_string(),
+                                  .LocalPort = key.Id,
+                                  .RemotePort = 0};
+                        },
+                        [](const ConnectionTracker::Icmp6Key& key) -> Interface::FlowConnection {
+                          return {.Protocol = "ICMPv6",
+                                  .LocalAddress = key.LocalAddress.to_string(),
+                                  .RemoteAddress = key.RemoteAddress.to_string(),
+                                  .LocalPort = key.Id,
+                                  .RemotePort = 0};
+                        },
+                    },
+                    key);
+}
+
 PolicySelector::PolicySelector(boost::asio::any_io_executor& executor, PolicyRegistry& registry)
     : _FlowTracker(*this), _TreeTracker(std::make_shared<ProcessTreeTracker>(executor, *this, registry)) {}
+
+auto PolicySelector::GetConnections() const -> std::vector<Interface::TrackedConnectionInfo> {
+  if (!_ConnectionTracker) {
+    return {};
+  }
+  auto entries = _ConnectionTracker->GetConnections();
+  std::vector<Interface::TrackedConnectionInfo> result;
+  result.reserve(entries.size());
+  for (const auto& entry : entries) {
+    result.push_back({.Connection = ToFlowConnection(entry.Key), .Mark = entry.Mark});
+  }
+  return result;
+}
 
 auto PolicySelector::SelectConnectionMark(const ConnectionTracker::ConnectionKey& key)
     -> std::shared_ptr<ConnectionMark> {

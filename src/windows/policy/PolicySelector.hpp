@@ -43,6 +43,7 @@ public:
   void ClearInjector() { _Injector = std::nullopt; }
   auto GetProcessTreeTracker() -> ProcessTreeTracker& { return *_TreeTracker; }
   auto GetFlowTracker() -> FlowTracker& { return _FlowTracker; }
+  [[nodiscard]] auto GetConnections() const -> std::vector<Interface::TrackedConnectionInfo>;
 
   auto SelectConnectionMark(const ConnectionTracker::ConnectionKey& key) -> std::shared_ptr<ConnectionMark> override;
 
@@ -63,5 +64,7 @@ private:
   std::shared_ptr<ProcessTreeTracker> _TreeTracker;
   gh::base::ComponentLogger _Logger{boost::log::keywords::channel = "PolicySelector"};
 };
+
+[[nodiscard]] auto ToFlowConnection(const ConnectionTracker::ConnectionKey& key) -> Interface::FlowConnection;
 
 } // namespace gh::policy

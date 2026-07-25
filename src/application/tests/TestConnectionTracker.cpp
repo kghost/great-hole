@@ -187,8 +187,16 @@ TEST(ConnectionTrackerTest, BasicOperations) {
     EXPECT_TRUE(res2.has_value());
     EXPECT_EQ(GetMark(res2), &mark2);
 
+    auto connections = tracker->GetConnections();
+    EXPECT_EQ(connections.size(), 2);
+    if (connections.size() == 2) {
+      EXPECT_FALSE(connections[0].Mark.empty());
+      EXPECT_FALSE(connections[1].Mark.empty());
+    }
+
     selector.Result = &g_TestDiscardMark;
     tracker->Clear();
+    EXPECT_TRUE(tracker->GetConnections().empty());
     auto resClear = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(p2, selector);
     EXPECT_TRUE(resClear.has_value());
     EXPECT_EQ(GetMark(resClear), &g_TestDiscardMark);

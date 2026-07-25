@@ -434,6 +434,55 @@ TEST_F(TestPolicySelector, OutOfOrder_P_Pr_F) {
   EXPECT_TRUE(testDone);
 }
 
+TEST_F(TestPolicySelector, GetConnectionsTest) {
+  boost::asio::io_context ioContext;
+  Omni::Fiber::AsioExecutor executor(ioContext.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  PolicyRegistry reg;
+  boost::asio::any_io_executor asioExecutor = ioContext.get_executor();
+  PolicySelector selector(asioExecutor, reg);
+
+  EXPECT_TRUE(selector.GetConnections().empty());
+
+  auto tracker = std::make_shared<ConnectionTracker>(ioContext.get_executor());
+  selector.SetConnectionTracker(tracker);
+
+  EXPECT_TRUE(selector.GetConnections().empty());
+
+  bool testDone = false;
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    static const std::vector<uint8_t> ip4TcpSyn = {
+        0x45, 0x00, 0x00, 0x3c, 0x46, 0x10, 0x40, 0x00, 0x40, 0x06, 0xe0, 0xff, 0x7f, 0x00, 0x00, 0x01, 0x7f, 0x59, 0x15,
+        0x52, 0x83, 0xb8, 0xd4, 0x31, 0xd5, 0xdb, 0x43, 0x66, 0x00, 0x00, 0x00, 0x00, 0xa0, 0x02, 0xff, 0xd7, 0x13, 0xdb,
+        0x00, 0x00, 0x02, 0x04, 0xff, 0xd7, 0x04, 0x02, 0x08, 0x0a, 0x9a, 0x29, 0xbf, 0x4e, 0x00, 0x00, 0x00, 0x00, 0x01,
+        0x03, 0x03, 0x07};
+
+    Packet packet(ip4TcpSyn.size());
+    std::copy(ip4TcpSyn.begin(), ip4TcpSyn.end(), packet.Data().begin());
+
+    tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(packet, selector);
+
+    auto connections = selector.GetConnections();
+    EXPECT_EQ(connections.size(), 1);
+    if (!connections.empty()) {
+      EXPECT_EQ(connections[0].Connection.Protocol, "TCPv4");
+      EXPECT_EQ(connections[0].Connection.LocalAddress, "127.0.0.1");
+      EXPECT_EQ(connections[0].Connection.RemoteAddress, "127.89.21.82");
+      EXPECT_EQ(connections[0].Connection.LocalPort, 33720);
+      EXPECT_EQ(connections[0].Connection.RemotePort, 54321);
+      EXPECT_EQ(connections[0].Mark, "Deferred");
+    }
+
+    testDone = true;
+    co_return;
+  });
+
+  ioContext.restart();
+  ioContext.run();
+  EXPECT_TRUE(testDone);
+}
+
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

@@ -52,6 +52,7 @@ public:
   void SetDefaultPolicy(const PolicyRule& policy) override;
   void LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy) override;
   auto GetFlows() -> std::vector<FlowInfo> override;
+  auto GetConnections() -> std::vector<TrackedConnectionInfo> override;
   auto GetProcessTree() -> std::vector<ProcessInfo> override;
   auto GetPendingConnections() -> PendingConnections override;
 
@@ -349,6 +350,17 @@ auto PlatformImpl::GetFlows() -> std::vector<FlowInfo> {
   _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
     auto trackedFlows = policyEngine->GetPolicySelector().GetFlowTracker().GetFlows();
     promise.set_value(std::move(trackedFlows));
+    co_return;
+  });
+  return future.get();
+}
+
+auto PlatformImpl::GetConnections() -> std::vector<TrackedConnectionInfo> {
+  std::promise<std::vector<TrackedConnectionInfo>> promise;
+  auto future = promise.get_future();
+  _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+    auto connections = policyEngine->GetPolicySelector().GetConnections();
+    promise.set_value(std::move(connections));
     co_return;
   });
   return future.get();

@@ -88,6 +88,11 @@ struct ProcessInfo {
   std::optional<PolicyRule> Policy;
 };
 
+struct TrackedConnectionInfo {
+  FlowConnection Connection;
+  std::string Mark;
+};
+
 struct PendingFlowInfo {
   FlowConnection Connection;
   std::optional<size_t> QueueSize;
@@ -150,6 +155,7 @@ public:
   virtual void SetDefaultPolicy(const PolicyRule& policy) = 0;
   virtual void LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy) = 0;
   virtual auto GetFlows() -> std::vector<FlowInfo> = 0;
+  virtual auto GetConnections() -> std::vector<TrackedConnectionInfo> = 0;
   virtual auto GetProcessTree() -> std::vector<ProcessInfo> = 0;
   virtual auto GetPendingConnections() -> PendingConnections = 0;
 

@@ -117,6 +117,35 @@ void ConnectionTracker::Clear() {
   _Icmp6Table.clear();
 }
 
+auto ConnectionTracker::GetConnections() const -> std::vector<TrackedEntry> {
+  std::vector<TrackedEntry> connections;
+  connections.reserve(_Ip4TcpTable.size() + _Ip6TcpTable.size() + _Ip4UdpTable.size() + _Ip6UdpTable.size() +
+                      _IcmpTable.size() + _Icmp6Table.size());
+  auto addEntry = [&](const auto& key, const auto& entry) -> void {
+    std::string markDesc = entry.ConnectionEntryMark ? entry.ConnectionEntryMark->GetDescription() : "";
+    connections.push_back(TrackedEntry{.Key = key, .Mark = std::move(markDesc)});
+  };
+  for (const auto& [key, entry] : _Ip4TcpTable) {
+    addEntry(key, entry);
+  }
+  for (const auto& [key, entry] : _Ip6TcpTable) {
+    addEntry(key, entry);
+  }
+  for (const auto& [key, entry] : _Ip4UdpTable) {
+    addEntry(key, entry);
+  }
+  for (const auto& [key, entry] : _Ip6UdpTable) {
+    addEntry(key, entry);
+  }
+  for (const auto& [key, entry] : _IcmpTable) {
+    addEntry(key, entry);
+  }
+  for (const auto& [key, entry] : _Icmp6Table) {
+    addEntry(key, entry);
+  }
+  return connections;
+}
+
 template <typename KeyDirection>
 auto ConnectionTracker::ParseConnectionKey(std::span<const uint8_t> packet, PacketType type, auto&& function)
     -> Result {
