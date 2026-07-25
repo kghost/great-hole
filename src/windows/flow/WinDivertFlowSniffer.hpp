@@ -115,6 +115,8 @@ protected:
   auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
+  auto BootstrapConnections() -> Omni::Fiber::Coroutine<void>;
+
   boost::asio::any_io_executor _Executor;
   WinDivertFlowSnifferCallback& _Callback;
   HANDLE _WinDivertFlowHandle = INVALID_HANDLE_VALUE;

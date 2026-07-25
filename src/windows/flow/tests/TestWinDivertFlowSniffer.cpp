@@ -159,6 +159,8 @@ TEST(WinDivertFlowSnifferTest, FlowEventsTcpUdp) {
       co_return;
     }
 
+    callback.Clear();
+
     // 1. TCP IPv4 Established
     {
       auto local = boost::asio::ip::make_address("192.168.1.100");
