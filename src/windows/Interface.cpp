@@ -65,7 +65,7 @@ private:
   void StartThread();
   void JoinThread();
 
-  using BridgeTask = std::function<Omni::Fiber::Coroutine<void>(const std::shared_ptr<gh::policy::PolicyEngine>&,
+  using BridgeTask = std::function<Omni::Fiber::Coroutine<void>(std::shared_ptr<gh::policy::PolicyEngine>&,
                                                                 std::unique_ptr<gh::TunnelDataPlane>&)>;
 
   DataPlaneCallbacks& _Callbacks;
@@ -96,7 +96,7 @@ void PlatformImpl::StartThread() {
 
     manager.SpawnRoot("bridge_task_processor", [this, ioExecutor]() -> Omni::Fiber::Coroutine<void> {
       auto guard = boost::asio::make_work_guard(ioExecutor);
-      auto policyEngine = std::make_shared<gh::policy::PolicyEngine>(ioExecutor);
+      std::shared_ptr<gh::policy::PolicyEngine> policyEngine;
       std::unique_ptr<gh::TunnelDataPlane> dataPlane;
 
       _Running = true;
@@ -129,9 +129,12 @@ auto PlatformImpl::StartEngine() -> std::error_code {
   std::promise<ErrorCode> promise;
   auto future = promise.get_future();
 
-  _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+  _TaskQueue.Push([this, &promise](auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+    assert(!policyEngine);
+    policyEngine = std::make_shared<gh::policy::PolicyEngine>(_IoContext.get_executor());
     auto err = co_await policyEngine->Start();
     if (err) {
+      policyEngine.reset();
       promise.set_value(err);
       co_return;
     }
@@ -147,8 +150,9 @@ auto PlatformImpl::StopEngine() -> std::error_code {
   std::promise<ErrorCode> promise;
   auto future = promise.get_future();
 
-  _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+  _TaskQueue.Push([&promise](auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
     auto err = co_await policyEngine->Stop();
+    policyEngine.reset();
     if (err) {
       promise.set_value(err);
       co_return;

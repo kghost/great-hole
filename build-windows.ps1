@@ -11,4 +11,4 @@ cmake --workflow --preset windows-ninja-release
 cmake --workflow --preset windows-ninja-debug-asan
 cmake --workflow --preset windows-ninja-release-asan
 
-New-Item -ItemType Junction -Path "build" -Target "build-windows-ninja-debug-asan"
+if (!(Test-Path "build")) { New-Item -ItemType Junction -Path "build" -Target "build-windows-ninja-debug-asan" }
