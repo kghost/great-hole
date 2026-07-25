@@ -219,3 +219,39 @@ TEST_F(TestFlowTracker, DeletePendingFlow) {
   ioContext.run();
   EXPECT_TRUE(testDone);
 }
+
+TEST_F(TestFlowTracker, ExpiredPendingFlowMark) {
+  Omni::Fiber::AsioExecutor executor(ioContext.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  bool testDone = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    boost::asio::ip::address localIp = boost::asio::ip::make_address("127.0.0.1");
+    boost::asio::ip::address remoteIp = boost::asio::ip::make_address("8.8.8.8");
+    ConnectionTracker::Ip4TcpKey key1{
+        .LocalAddress = localIp.to_v4(), .RemoteAddress = remoteIp.to_v4(), .LocalPort = 11111, .RemotePort = 80};
+
+    {
+      VpnClientMultiChannel::Mark::Deferred deferred;
+      deferred.Packets.push_back(std::make_unique<MockDeferredPacket>(Packet{}));
+      auto mark = std::make_shared<VpnClientMultiChannel::Mark>(std::move(deferred));
+      tracker.AddPendingMark(key1, mark);
+    } // mark is destroyed here
+
+    // Since mark expired, GetPendingFlows should ignore it
+    auto pending = tracker.GetPendingFlows();
+    EXPECT_TRUE(pending.empty());
+
+    // On flow established, expired mark should safely be ignored
+    co_await tracker.OnFlowEstablished(FlowTracker::ToFlowKey(key1).value(), 1234);
+
+    testDone = true;
+    co_return;
+  });
+
+  ioContext.restart();
+  ioContext.run();
+  EXPECT_TRUE(testDone);
+}
+

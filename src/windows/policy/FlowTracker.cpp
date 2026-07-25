@@ -31,6 +31,11 @@ auto FlowTracker::GetPidForConnection(const ConnectionTracker::ConnectionKey& ke
 
 void FlowTracker::AddPendingMark(const ConnectionTracker::ConnectionKey& key,
                                  const std::shared_ptr<VpnClientMultiChannel::Mark>& mark) {
+  for (auto& [_pid, marks] : _PendingFlowResumers) {
+    std::erase_if(marks, [](const auto& item) -> auto { return item.second.expired(); });
+  }
+  std::erase_if(_PendingFlowResumers, [](const auto& item) -> auto { return item.second.empty(); });
+
   auto flowKey = ToFlowKey(key);
   if (flowKey.has_value()) {
     _PendingFlowResumers[flowKey.value()].emplace_back(key, mark);
@@ -40,15 +45,17 @@ void FlowTracker::AddPendingMark(const ConnectionTracker::ConnectionKey& key,
 auto FlowTracker::OnFlowEstablished(FlowKey key, uint32_t pid) -> Omni::Fiber::Coroutine<void> {
   auto [iterator, inserted] = _FlowToPid.try_emplace(key, pid);
   if (inserted) {
-    std::vector<std::pair<ConnectionTracker::ConnectionKey, std::shared_ptr<VpnClientMultiChannel::Mark>>> resolved;
+    std::vector<std::pair<ConnectionTracker::ConnectionKey, std::weak_ptr<VpnClientMultiChannel::Mark>>> resolved;
 
     if (auto resumerIter = _PendingFlowResumers.find(key); resumerIter != _PendingFlowResumers.end()) {
       resolved = std::move(resumerIter->second);
       _PendingFlowResumers.erase(resumerIter);
     }
 
-    for (auto& [connKey, mark] : resolved) {
-      co_await _Callback.FlowTrackerContinue(mark, pid);
+    for (auto& [connKey, weakMark] : resolved) {
+      if (auto mark = weakMark.lock()) {
+        co_await _Callback.FlowTrackerContinue(mark, pid);
+      }
     }
   }
   co_return;
@@ -74,8 +81,10 @@ auto FlowTracker::GetFlows() const -> std::vector<Interface::FlowInfo> {
 auto FlowTracker::GetPendingFlows() const -> std::vector<Interface::PendingFlowInfo> {
   std::vector<Interface::PendingFlowInfo> pending;
   for (const auto& [port, vec] : _PendingFlowResumers) {
-    for (const auto& [key, mark] : vec) {
-      pending.push_back({.Connection = ToFlowConnection(key), .QueueSize = mark->GetPendingQueueSize()});
+    for (const auto& [key, weakMark] : vec) {
+      if (auto mark = weakMark.lock()) {
+        pending.push_back({.Connection = ToFlowConnection(key), .QueueSize = mark->GetPendingQueueSize()});
+      }
     }
   }
   return pending;

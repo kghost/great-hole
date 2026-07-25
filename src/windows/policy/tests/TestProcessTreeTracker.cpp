@@ -236,3 +236,57 @@ TEST_F(TestProcessTreeTracker, GetPendingProcesses) {
   pending = tracker.GetPendingProcesses();
   EXPECT_TRUE(pending.empty());
 }
+
+TEST_F(TestProcessTreeTracker, ExpiredPendingProcessMark) {
+  {
+    VpnClientMultiChannel::Mark::Deferred deferred;
+    deferred.Packets.push_back(std::make_unique<MockDeferredPacket>(Packet{}));
+    auto mark = std::make_shared<VpnClientMultiChannel::Mark>(std::move(deferred));
+    tracker.AddPendingMark(7001, mark);
+  } // mark is destroyed here
+
+  // GetPendingProcesses returns entry with std::nullopt queue size for unpurged expired process
+  auto pending = tracker.GetPendingProcesses();
+  EXPECT_EQ(pending.size(), 1);
+  if (!pending.empty()) {
+    EXPECT_EQ(pending[0].ProcessId, 7001);
+    EXPECT_FALSE(pending[0].QueueSize.has_value());
+  }
+
+  // Adding a new pending mark purges the expired mark
+  VpnClientMultiChannel::Mark::Deferred deferred2;
+  deferred2.Packets.push_back(std::make_unique<MockDeferredPacket>(Packet{}));
+  auto mark2 = std::make_shared<VpnClientMultiChannel::Mark>(std::move(deferred2));
+  tracker.AddPendingMark(7002, mark2);
+
+  pending = tracker.GetPendingProcesses();
+  EXPECT_EQ(pending.size(), 1);
+  if (!pending.empty()) {
+    EXPECT_EQ(pending[0].ProcessId, 7002);
+    EXPECT_EQ(pending[0].QueueSize.value_or(0), 1);
+  }
+}
+
+TEST_F(TestProcessTreeTracker, MultiplePendingMarksForPid) {
+  VpnClientMultiChannel::Mark::Deferred deferred1;
+  deferred1.Packets.push_back(std::make_unique<MockDeferredPacket>(Packet{}));
+  auto mark1 = std::make_shared<VpnClientMultiChannel::Mark>(std::move(deferred1));
+
+  VpnClientMultiChannel::Mark::Deferred deferred2;
+  deferred2.Packets.push_back(std::make_unique<MockDeferredPacket>(Packet{}));
+  deferred2.Packets.push_back(std::make_unique<MockDeferredPacket>(Packet{}));
+  auto mark2 = std::make_shared<VpnClientMultiChannel::Mark>(std::move(deferred2));
+
+  tracker.AddPendingMark(8000, mark1);
+  tracker.AddPendingMark(8000, mark2);
+
+  auto pending = tracker.GetPendingProcesses();
+  EXPECT_EQ(pending.size(), 1);
+  if (!pending.empty()) {
+    EXPECT_EQ(pending[0].ProcessId, 8000);
+    EXPECT_EQ(pending[0].QueueSize.value_or(0), 3);
+  }
+}
+
+
+

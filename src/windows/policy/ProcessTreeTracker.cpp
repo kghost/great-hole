@@ -3,6 +3,7 @@
 #include <array>
 #include <boost/log/sources/record_ostream.hpp>
 #include <boost/log/trivial.hpp>
+#include <cstddef>
 #include <format>
 #include <optional>
 #include <string>
@@ -272,7 +273,11 @@ void ProcessTreeTracker::ClearAllMock() {
 }
 
 void ProcessTreeTracker::AddPendingMark(DWORD pid, const std::shared_ptr<VpnClientMultiChannel::Mark>& mark) {
-  _PendingProcessMarks.try_emplace(pid, mark);
+  for (auto& [_pid, marks] : _PendingProcessMarks) {
+    std::erase_if(marks, [](const auto& item) -> auto { return item.expired(); });
+  }
+  std::erase_if(_PendingProcessMarks, [](const auto& item) -> auto { return item.second.empty(); });
+  _PendingProcessMarks[pid].insert(mark);
 }
 
 auto ProcessTreeTracker::GetAction(DWORD pid) const -> std::optional<PolicyRule::RoutingAction> {
@@ -306,9 +311,18 @@ auto ProcessTreeTracker::GetProcessTree() const -> std::vector<Interface::Proces
 
 auto ProcessTreeTracker::GetPendingProcesses() const -> std::vector<Interface::PendingProcessInfo> {
   std::vector<Interface::PendingProcessInfo> pending;
-  pending.reserve(_PendingProcessMarks.size());
-  for (const auto& [pid, mark] : _PendingProcessMarks) {
-    pending.push_back({.ProcessId = pid, .QueueSize = mark->GetPendingQueueSize()});
+  for (const auto& [pid, set] : _PendingProcessMarks) {
+    size_t count = 0;
+    bool hasValid = false;
+    for (const auto& weakMark : set) {
+      if (auto mark = weakMark.lock()) {
+        if (auto value = mark->GetPendingQueueSize(); value.has_value()) {
+          count += value.value();
+          hasValid = true;
+        }
+      }
+    }
+    pending.push_back({.ProcessId = pid, .QueueSize = hasValid ? std::optional<size_t>(count) : std::nullopt});
   }
   return pending;
 }
@@ -509,11 +523,15 @@ void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
       _TaskQueue.Push([this, pid, parentPid, execPath]() -> Omni::Fiber::Coroutine<void> {
         const auto& node = AddProcess(pid, parentPid, execPath);
         if (auto pendingIt = _PendingProcessMarks.find(pid); pendingIt != _PendingProcessMarks.end()) {
-          auto mark = std::move(pendingIt->second);
+          auto marksSet = std::move(pendingIt->second);
           _PendingProcessMarks.erase(pendingIt);
           const auto policy = node.Policy;
           auto action = policy.has_value() ? policy.value().Action : _Registry.GetDefaultAction();
-          co_await _Callback.ProcessTreeTrackerContinue(mark, action);
+          for (const auto& weakMark : marksSet) {
+            if (auto mark = weakMark.lock()) {
+              co_await _Callback.ProcessTreeTrackerContinue(mark, action);
+            }
+          }
         }
       });
     }

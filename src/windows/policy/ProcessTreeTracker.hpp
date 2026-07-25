@@ -2,6 +2,7 @@
 
 #include <boost/asio.hpp>
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -88,8 +89,7 @@ private:
   PolicyRegistry& _Registry;
 
   std::map<DWORD, ProcessNode> _ProcessMap;
-  // TODO: change to weak_ptr
-  std::map<DWORD, std::shared_ptr<VpnClientMultiChannel::Mark>> _PendingProcessMarks;
+  std::map<DWORD, std::set<std::weak_ptr<VpnClientMultiChannel::Mark>, std::owner_less<>>> _PendingProcessMarks;
 
   TRACEHANDLE _EtwSessionHandle = 0;
   std::thread _EtwThread;

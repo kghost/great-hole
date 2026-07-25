@@ -54,9 +54,8 @@ private:
   FlowTrackerDeferredCallback& _Callback;
 
   std::map<FlowKey, DWORD> _FlowToPid;
-  // TODO: change to weak_ptr
   std::map<FlowKey,
-           std::vector<std::pair<ConnectionTracker::ConnectionKey, std::shared_ptr<VpnClientMultiChannel::Mark>>>>
+           std::vector<std::pair<ConnectionTracker::ConnectionKey, std::weak_ptr<VpnClientMultiChannel::Mark>>>>
       _PendingFlowResumers;
 };
 
