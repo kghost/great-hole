@@ -1,6 +1,5 @@
 #include "Interface.hpp"
 
-#include <atomic>
 #include <future>
 #include <memory>
 #include <string>
@@ -63,6 +62,9 @@ public:
   void SetWinDivertFlowSnifferLogLevel(LogLevel level) override;
 
 private:
+  void StartThread();
+  void JoinThread();
+
   using BridgeTask = std::function<Omni::Fiber::Coroutine<void>(const std::shared_ptr<gh::policy::PolicyEngine>&,
                                                                 std::unique_ptr<gh::TunnelDataPlane>&)>;
 
@@ -70,16 +72,21 @@ private:
   boost::asio::io_context _IoContext;
   std::thread _AsioThread;
   Omni::Fiber::ExternalQueue<BridgeTask> _TaskQueue;
-  std::atomic<bool> _Stop = false;
+  bool _Running = false;
   gh::base::LogConfiguration _LogConfig;
 };
 
 PlatformImpl::PlatformImpl(DataPlaneCallbacks& callbacks)
-    : _Callbacks(callbacks), _TaskQueue(_IoContext.get_executor()) {}
-PlatformImpl::~PlatformImpl() {}
+    : _Callbacks(callbacks), _TaskQueue(_IoContext.get_executor()) {
+  StartThread();
+}
 
-auto PlatformImpl::StartEngine() -> std::error_code {
-  _Stop.store(false);
+PlatformImpl::~PlatformImpl() { JoinThread(); }
+
+void PlatformImpl::StartThread() {
+  if (_AsioThread.joinable()) {
+    return;
+  }
   _IoContext.restart();
 
   _AsioThread = std::thread([this]() -> void {
@@ -92,7 +99,8 @@ auto PlatformImpl::StartEngine() -> std::error_code {
       auto policyEngine = std::make_shared<gh::policy::PolicyEngine>(ioExecutor);
       std::unique_ptr<gh::TunnelDataPlane> dataPlane;
 
-      while (!_Stop.load()) {
+      _Running = true;
+      while (_Running) {
         co_await _TaskQueue;
         while (!_TaskQueue.IsEmpty()) {
           auto task = _TaskQueue.PopFront();
@@ -107,61 +115,50 @@ auto PlatformImpl::StartEngine() -> std::error_code {
 
     _IoContext.run();
   });
+}
 
+void PlatformImpl::JoinThread() {
+  _TaskQueue.Push([this](const auto& /*policyEngine*/, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+    _Running = false;
+    co_return;
+  });
+  _AsioThread.join();
+}
+
+auto PlatformImpl::StartEngine() -> std::error_code {
   std::promise<ErrorCode> promise;
   auto future = promise.get_future();
 
-  _TaskQueue.Push(
-      [this, &promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-        auto err = co_await policyEngine->Start();
-        if (err) {
-          promise.set_value(err);
-          _Stop.store(true);
-          co_return;
-        }
-
-        promise.set_value(ErrorCode{});
-        co_return;
-      });
-
-  auto err = future.get();
-  if (err) {
-    if (_AsioThread.joinable()) {
-      _AsioThread.join();
+  _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+    auto err = co_await policyEngine->Start();
+    if (err) {
+      promise.set_value(err);
+      co_return;
     }
-    return err;
-  }
 
-  return ErrorCode{};
+    promise.set_value(ErrorCode{});
+    co_return;
+  });
+
+  return future.get();
 }
 
 auto PlatformImpl::StopEngine() -> std::error_code {
   std::promise<ErrorCode> promise;
   auto future = promise.get_future();
 
-  _TaskQueue.Push(
-      [this, &promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-        auto err = co_await policyEngine->Stop();
-        if (err) {
-          promise.set_value(err);
-          co_return;
-        }
+  _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+    auto err = co_await policyEngine->Stop();
+    if (err) {
+      promise.set_value(err);
+      co_return;
+    }
 
-        promise.set_value(ErrorCode{});
-        _Stop.store(true);
-        co_return;
-      });
+    promise.set_value(ErrorCode{});
+    co_return;
+  });
 
-  auto err = future.get();
-  if (err) {
-    return err;
-  }
-
-  if (_AsioThread.joinable()) {
-    _AsioThread.join();
-  }
-
-  return ErrorCode{};
+  return future.get();
 }
 
 auto PlatformImpl::StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code {
@@ -354,9 +351,6 @@ auto PlatformImpl::GetFlows() -> std::vector<FlowInfo> {
 }
 
 auto PlatformImpl::GetProcessTree() -> std::vector<ProcessInfo> {
-  if (_Stop.load()) {
-    return {};
-  }
   std::promise<std::vector<ProcessInfo>> promise;
   auto future = promise.get_future();
   _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
@@ -368,9 +362,6 @@ auto PlatformImpl::GetProcessTree() -> std::vector<ProcessInfo> {
 }
 
 auto PlatformImpl::GetPendingConnections() -> PendingConnections {
-  if (_Stop.load()) {
-    return {};
-  }
   std::promise<PendingConnections> promise;
   auto future = promise.get_future();
   _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
@@ -388,10 +379,6 @@ auto PlatformImpl::GetPendingConnections() -> PendingConnections {
 }
 
 void PlatformImpl::SetLogLevel(LogLevel level) {
-  if (!_AsioThread.joinable() || _Stop.load()) {
-    _LogConfig.SetLogLevel(level);
-    return;
-  }
   std::promise<void> promise;
   auto future = promise.get_future();
   _TaskQueue.Push(
@@ -404,10 +391,6 @@ void PlatformImpl::SetLogLevel(LogLevel level) {
 }
 
 void PlatformImpl::SetProcessTreeTrackerLogLevel(LogLevel level) {
-  if (!_AsioThread.joinable() || _Stop.load()) {
-    _LogConfig.SetComponentLogLevel("ProcessTreeTracker", level);
-    return;
-  }
   std::promise<void> promise;
   auto future = promise.get_future();
   _TaskQueue.Push(
@@ -420,10 +403,6 @@ void PlatformImpl::SetProcessTreeTrackerLogLevel(LogLevel level) {
 }
 
 void PlatformImpl::SetPolicySelectorLogLevel(LogLevel level) {
-  if (!_AsioThread.joinable() || _Stop.load()) {
-    _LogConfig.SetComponentLogLevel("PolicySelector", level);
-    return;
-  }
   std::promise<void> promise;
   auto future = promise.get_future();
   _TaskQueue.Push(
@@ -436,10 +415,6 @@ void PlatformImpl::SetPolicySelectorLogLevel(LogLevel level) {
 }
 
 void PlatformImpl::SetWinDivertFlowSnifferLogLevel(LogLevel level) {
-  if (!_AsioThread.joinable() || _Stop.load()) {
-    _LogConfig.SetComponentLogLevel("WinDivertFlowSniffer", level);
-    return;
-  }
   std::promise<void> promise;
   auto future = promise.get_future();
   _TaskQueue.Push(
