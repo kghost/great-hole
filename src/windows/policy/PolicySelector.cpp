@@ -102,8 +102,7 @@ auto PolicySelector::ResolvePolicy(const ConnectionTracker::ConnectionKey& key) 
       return mark;
     }
   } else {
-    BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
-        << "ResolvePolicy: key=" << key << " - no PID found, deferring";
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::trace) << "ResolvePolicy: key=" << key << " - no PID found, deferring";
     auto mark = std::make_shared<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Deferred{});
     _FlowTracker.AddPendingMark(key, mark);
     return mark;
@@ -195,7 +194,6 @@ auto PolicySelector::WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& add
   auto result = _ConnectionTracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(packet, *this);
   if (result.has_value()) {
     auto mark = std::dynamic_pointer_cast<VpnClientMultiChannel::Mark>(result.value());
-    packet.SetMark(mark);
 
     return std::visit(
         Overload{
@@ -213,7 +211,8 @@ auto PolicySelector::WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& add
               deferred.Packets.push_back(std::make_unique<WinDivertDeferredPacket>(std::move(packet), addr));
               return WinDivertRouteCallback::Result::Discard;
             },
-            [](const std::weak_ptr<VpnClientMultiChannelSession>&) -> gh::WinDivertRouteCallback::Result {
+            [&packet, &mark](const std::weak_ptr<VpnClientMultiChannelSession>&) -> gh::WinDivertRouteCallback::Result {
+              packet.SetMark(mark);
               return WinDivertRouteCallback::Result::Normal;
             },
         },
