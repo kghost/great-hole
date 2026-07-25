@@ -12,6 +12,7 @@
 #include <windows.h>
 
 #include "ExternalQueue.hpp"
+#include "Logger.hpp"
 #include "PolicyRegistry.hpp"
 #include "ServiceBase.hpp"
 #include "VpnClientMultiChannel.hpp"
@@ -95,6 +96,7 @@ private:
   std::thread _EtwThread;
   std::atomic<bool> _Running{false};
   std::string _SessionName;
+  gh::base::ComponentLogger _Logger{boost::log::keywords::channel = "ProcessTreeTracker"};
 };
 
 } // namespace gh::policy

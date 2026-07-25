@@ -26,6 +26,7 @@ class VpnClientMultiChannelSession;
 
 namespace Interface {
 
+enum class LogLevel : std::uint8_t { Trace = 0, Debug = 1, Info = 2, Warning = 3, Error = 4, Fatal = 5, Off = 6 };
 enum class TunnelState : std::uint8_t { Starting = 0, Running = 1, Stopping = 2, Stopped = 3, Failed = 4 };
 enum class PolicyScope : std::uint8_t { SingleProcess, ProcessSubtree };
 
@@ -151,6 +152,12 @@ public:
   virtual auto GetFlows() -> std::vector<FlowInfo> = 0;
   virtual auto GetProcessTree() -> std::vector<ProcessInfo> = 0;
   virtual auto GetPendingConnections() -> PendingConnections = 0;
+
+  // Logging Interface
+  virtual void SetLogLevel(LogLevel level) = 0;
+  virtual void SetProcessTreeTrackerLogLevel(LogLevel level) = 0;
+  virtual void SetPolicySelectorLogLevel(LogLevel level) = 0;
+  virtual void SetWinDivertFlowSnifferLogLevel(LogLevel level) = 0;
 };
 
 GREAT_HOLE_INTERFACE_API auto CreatePlatform(DataPlaneCallbacks& callbacks) -> std::shared_ptr<PlatformInterface>;

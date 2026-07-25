@@ -6,6 +6,7 @@
 
 #include <windows.h>
 
+#include "Logger.hpp"
 #include "ServiceBase.hpp"
 
 namespace gh {
@@ -71,6 +72,7 @@ private:
   HANDLE _ReadEvent = nullptr;
   std::optional<boost::asio::windows::object_handle> _ReadObject;
   OVERLAPPED _Overlapped{};
+  gh::base::ComponentLogger _Logger{boost::log::keywords::channel = "WinDivertFlowSniffer"};
 };
 
 inline auto operator<<(std::ostream& stream, const WinDivertFlowSnifferCallback::FlowKey& key) -> std::ostream& {

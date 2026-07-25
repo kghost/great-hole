@@ -75,7 +75,7 @@ if(WIN32)
 endif()
 
 # Dependencies
-find_package(Boost REQUIRED COMPONENTS log program_options filesystem thread)
+find_package(Boost REQUIRED COMPONENTS log log_setup program_options filesystem thread)
 
 if(ANDROID)
   # Find CARES manually

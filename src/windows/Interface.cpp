@@ -16,6 +16,7 @@
 #include "ErrorCode.hpp"
 #include "ExternalQueue.hpp"
 #include "Fiber.hpp"
+#include "Logger.hpp"
 #include "Manager.hpp"
 #include "PolicyEngine.hpp"
 #include "TunnelDataPlane.hpp"
@@ -55,6 +56,12 @@ public:
   auto GetProcessTree() -> std::vector<ProcessInfo> override;
   auto GetPendingConnections() -> PendingConnections override;
 
+  // Logging Interface
+  void SetLogLevel(LogLevel level) override;
+  void SetProcessTreeTrackerLogLevel(LogLevel level) override;
+  void SetPolicySelectorLogLevel(LogLevel level) override;
+  void SetWinDivertFlowSnifferLogLevel(LogLevel level) override;
+
 private:
   using BridgeTask = std::function<Omni::Fiber::Coroutine<void>(const std::shared_ptr<gh::policy::PolicyEngine>&,
                                                                 std::unique_ptr<gh::TunnelDataPlane>&)>;
@@ -64,6 +71,7 @@ private:
   std::thread _AsioThread;
   Omni::Fiber::ExternalQueue<BridgeTask> _TaskQueue;
   std::atomic<bool> _Stop = false;
+  gh::base::LogConfiguration _LogConfig;
 };
 
 PlatformImpl::PlatformImpl(DataPlaneCallbacks& callbacks)
@@ -127,6 +135,35 @@ auto PlatformImpl::StartEngine() -> std::error_code {
   return ErrorCode{};
 }
 
+auto PlatformImpl::StopEngine() -> std::error_code {
+  std::promise<ErrorCode> promise;
+  auto future = promise.get_future();
+
+  _TaskQueue.Push(
+      [this, &promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        auto err = co_await policyEngine->Stop();
+        if (err) {
+          promise.set_value(err);
+          co_return;
+        }
+
+        promise.set_value(ErrorCode{});
+        _Stop.store(true);
+        co_return;
+      });
+
+  auto err = future.get();
+  if (err) {
+    return err;
+  }
+
+  if (_AsioThread.joinable()) {
+    _AsioThread.join();
+  }
+
+  return ErrorCode{};
+}
+
 auto PlatformImpl::StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code {
   std::promise<ErrorCode> promise;
   auto future = promise.get_future();
@@ -173,35 +210,6 @@ auto PlatformImpl::StopVpn() -> std::error_code {
   });
 
   return future.get();
-}
-
-auto PlatformImpl::StopEngine() -> std::error_code {
-  std::promise<ErrorCode> promise;
-  auto future = promise.get_future();
-
-  _TaskQueue.Push(
-      [this, &promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-        auto err = co_await policyEngine->Stop();
-        if (err) {
-          promise.set_value(err);
-          co_return;
-        }
-
-        promise.set_value(ErrorCode{});
-        _Stop.store(true);
-        co_return;
-      });
-
-  auto err = future.get();
-  if (err) {
-    return err;
-  }
-
-  if (_AsioThread.joinable()) {
-    _AsioThread.join();
-  }
-
-  return ErrorCode{};
 }
 
 auto PlatformImpl::AddEndpoint(const PskType& psk, const std::string& address) -> VpnEndpoint {
@@ -377,6 +385,70 @@ auto PlatformImpl::GetPendingConnections() -> PendingConnections {
     co_return;
   });
   return future.get();
+}
+
+void PlatformImpl::SetLogLevel(LogLevel level) {
+  if (!_AsioThread.joinable() || _Stop.load()) {
+    _LogConfig.SetLogLevel(level);
+    return;
+  }
+  std::promise<void> promise;
+  auto future = promise.get_future();
+  _TaskQueue.Push(
+      [this, &promise, level](const auto& /*policyEngine*/, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        _LogConfig.SetLogLevel(level);
+        promise.set_value();
+        co_return;
+      });
+  future.get();
+}
+
+void PlatformImpl::SetProcessTreeTrackerLogLevel(LogLevel level) {
+  if (!_AsioThread.joinable() || _Stop.load()) {
+    _LogConfig.SetComponentLogLevel("ProcessTreeTracker", level);
+    return;
+  }
+  std::promise<void> promise;
+  auto future = promise.get_future();
+  _TaskQueue.Push(
+      [this, &promise, level](const auto& /*policyEngine*/, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        _LogConfig.SetComponentLogLevel("ProcessTreeTracker", level);
+        promise.set_value();
+        co_return;
+      });
+  future.get();
+}
+
+void PlatformImpl::SetPolicySelectorLogLevel(LogLevel level) {
+  if (!_AsioThread.joinable() || _Stop.load()) {
+    _LogConfig.SetComponentLogLevel("PolicySelector", level);
+    return;
+  }
+  std::promise<void> promise;
+  auto future = promise.get_future();
+  _TaskQueue.Push(
+      [this, &promise, level](const auto& /*policyEngine*/, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        _LogConfig.SetComponentLogLevel("PolicySelector", level);
+        promise.set_value();
+        co_return;
+      });
+  future.get();
+}
+
+void PlatformImpl::SetWinDivertFlowSnifferLogLevel(LogLevel level) {
+  if (!_AsioThread.joinable() || _Stop.load()) {
+    _LogConfig.SetComponentLogLevel("WinDivertFlowSniffer", level);
+    return;
+  }
+  std::promise<void> promise;
+  auto future = promise.get_future();
+  _TaskQueue.Push(
+      [this, &promise, level](const auto& /*policyEngine*/, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
+        _LogConfig.SetComponentLogLevel("WinDivertFlowSniffer", level);
+        promise.set_value();
+        co_return;
+      });
+  future.get();
 }
 
 auto CreatePlatform(DataPlaneCallbacks& callbacks) -> std::shared_ptr<PlatformInterface> {

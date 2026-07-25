@@ -2,6 +2,7 @@
 
 #include <boost/asio.hpp>
 #include <boost/asio/ip/address_v6.hpp>
+#include <boost/log/sources/record_ostream.hpp>
 #include <boost/log/trivial.hpp>
 #include <utility>
 
@@ -25,14 +26,14 @@ auto WinDivertFlowSniffer::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
       WinDivertOpen("true", WINDIVERT_LAYER_SOCKET, 0, WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY);
   if (_WinDivertFlowHandle == INVALID_HANDLE_VALUE) {
     DWORD err = GetLastError();
-    BOOST_LOG_TRIVIAL(error) << "WinDivertFlowSniffer: WinDivertOpen failed: " << err;
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::error) << "WinDivertFlowSniffer: WinDivertOpen failed: " << err;
     co_return SysError(err);
   }
 
   _ReadEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
   if (_ReadEvent == nullptr) {
     DWORD err = GetLastError();
-    BOOST_LOG_TRIVIAL(error) << "WinDivertFlowSniffer: CreateEventW failed: " << err;
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::error) << "WinDivertFlowSniffer: CreateEventW failed: " << err;
     WinDivertClose(_WinDivertFlowHandle);
     _WinDivertFlowHandle = INVALID_HANDLE_VALUE;
     co_return SysError(err);
@@ -107,11 +108,12 @@ auto WinDivertFlowSniffer::DoWork() -> Omni::Fiber::Coroutine<void> {
         if (GetOverlappedResult(_WinDivertFlowHandle, &overlapped, &transferred, FALSE) == TRUE) {
           // Success
         } else {
-          BOOST_LOG_TRIVIAL(error) << "WinDivertFlowSniffer: GetOverlappedResult failed: " << GetLastError();
+          BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
+              << "WinDivertFlowSniffer: GetOverlappedResult failed: " << GetLastError();
           co_return;
         }
       } else {
-        BOOST_LOG_TRIVIAL(error) << "WinDivertFlowSniffer: WinDivertRecvEx failed: " << err;
+        BOOST_LOG_SEV(_Logger, boost::log::trivial::error) << "WinDivertFlowSniffer: WinDivertRecvEx failed: " << err;
         co_return;
       }
     }
@@ -143,10 +145,11 @@ auto WinDivertFlowSniffer::DoWork() -> Omni::Fiber::Coroutine<void> {
     })();
 
     if (addr.Event == WINDIVERT_EVENT_SOCKET_BIND) {
-      BOOST_LOG_TRIVIAL(trace) << "WinDivertFlowSniffer: Flow established (" << key << "), PID: " << flow.ProcessId;
+      BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
+          << "WinDivertFlowSniffer: Flow established (" << key << "), PID: " << flow.ProcessId;
       co_await _Callback.OnFlowEstablished(key, flow.ProcessId);
     } else if (addr.Event == WINDIVERT_EVENT_SOCKET_CLOSE) {
-      BOOST_LOG_TRIVIAL(trace) << "WinDivertFlowSniffer: Flow deleted (" << key << ")";
+      BOOST_LOG_SEV(_Logger, boost::log::trivial::trace) << "WinDivertFlowSniffer: Flow deleted (" << key << ")";
       co_await _Callback.OnFlowDeleted(key);
     }
   }

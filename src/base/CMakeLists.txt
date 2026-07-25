@@ -11,13 +11,16 @@ foreach(suffix "" "-asan")
   add_library(${target} STATIC
     ServiceBase.cpp
     ErrorCode.cpp
+    Logger.cpp
   )
 
   target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
   target_link_libraries(${target} PUBLIC
     Boost::log
+    Boost::log_setup
     omni-fiber${suffix}
+    great-hole-interface${suffix}
   )
 
   if(suffix STREQUAL "-asan")

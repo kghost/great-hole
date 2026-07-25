@@ -1,6 +1,7 @@
 #include "ProcessTreeTracker.hpp"
 
 #include <array>
+#include <boost/log/sources/record_ostream.hpp>
 #include <boost/log/trivial.hpp>
 #include <format>
 #include <optional>
@@ -25,7 +26,7 @@ namespace {
 
 constexpr size_t kEtwPropertiesBufferExtra = 1024;
 
-void StopOrphanedSessions() {
+void StopOrphanedSessions(gh::base::ComponentLogger& logger) {
   constexpr unsigned kMaxSessionNameLen = 1024;
   constexpr unsigned kMaxLogfilePathLen = 1024;
   constexpr unsigned kPropertiesSize =
@@ -60,8 +61,8 @@ void StopOrphanedSessions() {
                                                                   sessions[i]->LoggerNameOffset);
         std::wstring name(loggerName);
         if (name.starts_with(L"DesktopHoleProcessTrace_")) {
-          BOOST_LOG_TRIVIAL(info) << "ProcessTreeTracker: Stopping orphaned session: "
-                                  << gh::ToString(name).value_or("");
+          BOOST_LOG_SEV(logger, boost::log::trivial::info)
+              << "ProcessTreeTracker: Stopping orphaned session: " << gh::ToString(name).value_or("");
           ControlTraceW(0, loggerName, sessions[i], EVENT_TRACE_CONTROL_STOP);
         }
       }
@@ -82,7 +83,7 @@ auto ProcessTreeTracker::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
     co_return ErrorCode{};
   }
 
-  StopOrphanedSessions();
+  StopOrphanedSessions(_Logger);
 
   _SessionName = std::format("DesktopHoleProcessTrace_{}", GetCurrentProcessId());
 
@@ -100,14 +101,14 @@ auto ProcessTreeTracker::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
 
   ULONG status = StartTraceW(&_EtwSessionHandle, ToWstring(_SessionName).value().c_str(), properties);
   if (status != ERROR_SUCCESS) {
-    BOOST_LOG_TRIVIAL(error) << "ProcessTreeTracker: StartTraceW failed: " << status;
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::error) << "ProcessTreeTracker: StartTraceW failed: " << status;
     co_return gh::SysError(status);
   }
 
   status = EnableTraceEx2(_EtwSessionHandle, &_ProcessEventsGuid, EVENT_CONTROL_CODE_ENABLE_PROVIDER,
                           TRACE_LEVEL_INFORMATION, 0, 0, 0, nullptr);
   if (status != ERROR_SUCCESS) {
-    BOOST_LOG_TRIVIAL(error) << "ProcessTreeTracker: EnableTraceEx2 failed: " << status;
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::error) << "ProcessTreeTracker: EnableTraceEx2 failed: " << status;
     ControlTraceW(_EtwSessionHandle, ToWstring(_SessionName).value().c_str(), properties, EVENT_TRACE_CONTROL_STOP);
     _EtwSessionHandle = 0;
     co_return gh::SysError(status);
@@ -161,8 +162,9 @@ void ProcessTreeTracker::ApplyPolicyToDescendantsLocked(const std::set<DWORD>& c
   for (DWORD childPid : children) {
     auto childIt = _ProcessMap.find(childPid);
     if (childIt != _ProcessMap.end()) {
-      BOOST_LOG_TRIVIAL(info) << "PID[" << childPid << ":" << childIt->second.ExecutablePath << "] Applying policy "
-                              << PolicyRuleToString(rule);
+      BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
+          << "PID[" << childPid << ":" << childIt->second.ExecutablePath << "] Applying policy "
+          << PolicyRuleToString(rule);
       childIt->second.Policy = rule;
       ApplyPolicyToDescendantsLocked(childIt->second.Children, rule);
     }
@@ -175,9 +177,9 @@ void ProcessTreeTracker::EvaluatePolicyLocked(ProcessNode& node) {
     auto parentIt = _ProcessMap.find(node.ParentProcessId);
     if (parentIt != _ProcessMap.end() && parentIt->second.Policy.has_value() &&
         parentIt->second.Policy.value().Scope == PolicyScope::ProcessSubtree) {
-      BOOST_LOG_TRIVIAL(info) << "PID[" << node.ProcessId << ":" << node.ExecutablePath
-                              << "] Inheriting policy from parent "
-                              << PolicyRuleToString(parentIt->second.Policy.value());
+      BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
+          << "PID[" << node.ProcessId << ":" << node.ExecutablePath << "] Inheriting policy from parent "
+          << PolicyRuleToString(parentIt->second.Policy.value());
       node.Policy = parentIt->second.Policy.value();
       ApplyPolicyToDescendantsLocked(node.Children, parentIt->second.Policy.value());
       inherited = true;
@@ -187,8 +189,9 @@ void ProcessTreeTracker::EvaluatePolicyLocked(ProcessNode& node) {
   if (!inherited) {
     auto rule = _Registry.GetRuleForPath(node.ExecutablePath);
     if (rule.has_value()) {
-      BOOST_LOG_TRIVIAL(info) << "PID[" << node.ProcessId << ":" << node.ExecutablePath << "] Applying policy "
-                              << PolicyRuleToString(rule.value());
+      BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
+          << "PID[" << node.ProcessId << ":" << node.ExecutablePath << "] Applying policy "
+          << PolicyRuleToString(rule.value());
       node.Policy = rule;
       if (rule.value().Scope == PolicyScope::ProcessSubtree) {
         ApplyPolicyToDescendantsLocked(node.Children, rule.value());
@@ -227,8 +230,9 @@ auto ProcessTreeTracker::RegisterPidPolicy(DWORD pid, const PolicyRule& rule) ->
     return false;
   }
 
-  BOOST_LOG_TRIVIAL(info) << "PID[" << pid << ":" << iterator->second.ExecutablePath << "] Register PID policy "
-                          << PolicyRuleToString(rule);
+  BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
+      << "PID[" << pid << ":" << iterator->second.ExecutablePath << "] Register PID policy "
+      << PolicyRuleToString(rule);
   iterator->second.Policy = rule;
   if (rule.Scope == PolicyScope::ProcessSubtree) {
     ApplyPolicyToDescendantsLocked(iterator->second.Children, rule);
@@ -268,7 +272,8 @@ void ProcessTreeTracker::RemoveProcess(DWORD pid) {
     }
     _ProcessMap.erase(iterator);
   } else {
-    BOOST_LOG_TRIVIAL(warning) << "ProcessTreeTracker: Process " << pid << " not found in process map";
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
+        << "ProcessTreeTracker: Process " << pid << " not found in process map";
     _PendingProcessMarks.erase(pid);
   }
 }
@@ -360,8 +365,8 @@ void ProcessTreeTracker::BuildInitialSnapshot() {
     auto& node = iterator->second;
     auto rule = _Registry.GetRuleForPath(node.ExecutablePath);
     if (rule.has_value()) {
-      BOOST_LOG_TRIVIAL(info) << "PID[" << pid << ":" << node.ExecutablePath << "] Initial policy "
-                              << PolicyRuleToString(rule.value());
+      BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
+          << "PID[" << pid << ":" << node.ExecutablePath << "] Initial policy " << PolicyRuleToString(rule.value());
       node.Policy = rule;
       if (rule.value().Scope == PolicyScope::ProcessSubtree) {
         ApplyPolicyToDescendantsLocked(node.Children, rule.value());
@@ -400,7 +405,7 @@ void ProcessTreeTracker::EtwThreadProc() {
 
   TRACEHANDLE traceHandle = OpenTraceW(&traceLogfile);
   if (traceHandle == INVALID_PROCESSTRACE_HANDLE) {
-    BOOST_LOG_TRIVIAL(error) << "ProcessTreeTracker: OpenTraceW failed: " << GetLastError();
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::error) << "ProcessTreeTracker: OpenTraceW failed: " << GetLastError();
     std::vector<char> propertiesBuf(sizeof(EVENT_TRACE_PROPERTIES) + kEtwPropertiesBufferExtra);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto* properties = reinterpret_cast<EVENT_TRACE_PROPERTIES*>(propertiesBuf.data());
@@ -413,7 +418,7 @@ void ProcessTreeTracker::EtwThreadProc() {
 
   ULONG status = ProcessTrace(&traceHandle, 1, nullptr, nullptr);
   if (status != ERROR_SUCCESS && status != ERROR_CANCELLED) {
-    BOOST_LOG_TRIVIAL(error) << "ProcessTreeTracker: ProcessTrace failed: " << status;
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::error) << "ProcessTreeTracker: ProcessTrace failed: " << status;
   }
 
   CloseTrace(traceHandle);

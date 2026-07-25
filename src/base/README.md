@@ -109,3 +109,15 @@ const auto& data1 = machine.GetData<States::State1>(); // Returns StateData1& (t
    - Returning `std::monostate` (or a `std::variant` containing `std::monostate`) represents a **no-op transition**. The state machine remains in the current state without modifying or destroying its existing state data.
    - For terminal states (states with no outgoing transitions), `ActionResult<StateVal>` evaluates to `std::variant<std::monostate>`. Visitor handlers on terminal states can safely return `void` or `std::monostate{}`.
 
+---
+
+## 4. Component Logger Architecture (`Logger.hpp`)
+
+`Logger.hpp` centralizes Boost.Log formatting and component-level filtering across GreatHole components.
+
+### Features
+- **ComponentLogger**: Typedef for `boost::log::sources::severity_channel_logger_mt<boost::log::trivial::severity_level>`.
+- **Formatting Registration (`InitLoggerFormat`)**: Initializes `add_console_log` with standard format `[%TimeStamp%] [%Severity%] [%Channel%]: %Message%`.
+- **Granular Log Level Filtering**: Supports both global default log levels (`SetLogLevel`) and channel/component specific log levels (`SetComponentLogLevel`).
+
+

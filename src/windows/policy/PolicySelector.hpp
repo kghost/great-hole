@@ -6,6 +6,7 @@
 #include "ConnectionTracker.hpp"
 #include "EndpointWinDivert.hpp"
 #include "FlowTracker.hpp"
+#include "Logger.hpp"
 #include "ProcessTreeTracker.hpp"
 
 namespace gh::policy {
@@ -60,6 +61,7 @@ private:
   std::optional<std::reference_wrapper<DeferredPacketInjector>> _Injector;
   FlowTracker _FlowTracker;
   std::shared_ptr<ProcessTreeTracker> _TreeTracker;
+  gh::base::ComponentLogger _Logger{boost::log::keywords::channel = "PolicySelector"};
 };
 
 } // namespace gh::policy
