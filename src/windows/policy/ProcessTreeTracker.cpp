@@ -76,15 +76,8 @@ ProcessTreeTracker::ProcessTreeTracker(boost::asio::any_io_executor executor,
                                        ProcessTreeTrackerDeferredCallback& callback, PolicyRegistry& registry)
     : _Executor(std::move(executor)), _TaskQueue(_Executor), _Callback(callback), _Registry(registry) {}
 
-ProcessTreeTracker::~ProcessTreeTracker() { assert(!_Running); }
-
 auto ProcessTreeTracker::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
-  if (_Running) {
-    co_return ErrorCode{};
-  }
-
   StopOrphanedSessions(_Logger);
-
   _SessionName = std::format("DesktopHoleProcessTrace_{}", GetCurrentProcessId());
 
   // Set up properties for StartTraceW
@@ -116,7 +109,6 @@ auto ProcessTreeTracker::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
 
   BuildInitialSnapshot();
 
-  _Running = true;
   _EtwThread = std::thread([this]() -> void { EtwThreadProc(); });
   co_return ErrorCode{};
 }
@@ -138,8 +130,6 @@ auto ProcessTreeTracker::DoWork() -> Omni::Fiber::Coroutine<void> {
 }
 
 auto ProcessTreeTracker::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
-  _Running = false;
-
   if (_EtwSessionHandle != 0) {
     std::vector<char> propertiesBuf(sizeof(EVENT_TRACE_PROPERTIES) + kEtwPropertiesBufferExtra);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -153,6 +143,7 @@ auto ProcessTreeTracker::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
     _EtwThread.join();
   }
 
+  _TaskQueue.Clear();
   _ProcessMap.clear();
   _PendingProcessMarks.clear();
   co_return ErrorCode{};
@@ -162,9 +153,8 @@ void ProcessTreeTracker::ApplyPolicyToDescendantsLocked(const std::set<DWORD>& c
   for (DWORD childPid : children) {
     auto childIt = _ProcessMap.find(childPid);
     if (childIt != _ProcessMap.end()) {
-      BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
-          << "PID[" << childPid << ":" << childIt->second.ExecutablePath << "] Applying policy "
-          << PolicyRuleToString(rule);
+      BOOST_LOG_SEV(_Logger, boost::log::trivial::info) << "PID[" << childPid << ":" << childIt->second.ExecutablePath
+                                                        << "] Applying policy " << PolicyRuleToString(rule);
       childIt->second.Policy = rule;
       ApplyPolicyToDescendantsLocked(childIt->second.Children, rule);
     }
@@ -189,9 +179,8 @@ void ProcessTreeTracker::EvaluatePolicyLocked(ProcessNode& node) {
   if (!inherited) {
     auto rule = _Registry.GetRuleForPath(node.ExecutablePath);
     if (rule.has_value()) {
-      BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
-          << "PID[" << node.ProcessId << ":" << node.ExecutablePath << "] Applying policy "
-          << PolicyRuleToString(rule.value());
+      BOOST_LOG_SEV(_Logger, boost::log::trivial::info) << "PID[" << node.ProcessId << ":" << node.ExecutablePath
+                                                        << "] Applying policy " << PolicyRuleToString(rule.value());
       node.Policy = rule;
       if (rule.value().Scope == PolicyScope::ProcessSubtree) {
         ApplyPolicyToDescendantsLocked(node.Children, rule.value());
@@ -230,9 +219,8 @@ auto ProcessTreeTracker::RegisterPidPolicy(DWORD pid, const PolicyRule& rule) ->
     return false;
   }
 
-  BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
-      << "PID[" << pid << ":" << iterator->second.ExecutablePath << "] Register PID policy "
-      << PolicyRuleToString(rule);
+  BOOST_LOG_SEV(_Logger, boost::log::trivial::info) << "PID[" << pid << ":" << iterator->second.ExecutablePath
+                                                    << "] Register PID policy " << PolicyRuleToString(rule);
   iterator->second.Policy = rule;
   if (rule.Scope == PolicyScope::ProcessSubtree) {
     ApplyPolicyToDescendantsLocked(iterator->second.Children, rule);
@@ -412,7 +400,6 @@ void ProcessTreeTracker::EtwThreadProc() {
     properties->Wnode.BufferSize = static_cast<ULONG>(propertiesBuf.size());
     ControlTraceW(_EtwSessionHandle, ToWstring(_SessionName).value().c_str(), properties, EVENT_TRACE_CONTROL_STOP);
     _EtwSessionHandle = 0;
-    _Running = false;
     return;
   }
 
@@ -425,10 +412,6 @@ void ProcessTreeTracker::EtwThreadProc() {
 }
 
 void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
-  if (!_Running) {
-    return;
-  }
-
   if (record->EventHeader.ProviderId != _ProcessEventsGuid) {
     return;
   }

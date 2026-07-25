@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <boost/asio.hpp>
 #include <map>
 #include <optional>
@@ -45,7 +44,7 @@ class ProcessTreeTracker : public ServiceBase {
 public:
   explicit ProcessTreeTracker(boost::asio::any_io_executor executor, ProcessTreeTrackerDeferredCallback& callback,
                               PolicyRegistry& registry);
-  ~ProcessTreeTracker() override;
+  ~ProcessTreeTracker() override = default;
 
   ProcessTreeTracker(const ProcessTreeTracker&) = delete;
   auto operator=(const ProcessTreeTracker&) -> ProcessTreeTracker& = delete;
@@ -94,7 +93,6 @@ private:
 
   TRACEHANDLE _EtwSessionHandle = 0;
   std::thread _EtwThread;
-  std::atomic<bool> _Running{false};
   std::string _SessionName;
   gh::base::ComponentLogger _Logger{boost::log::keywords::channel = "ProcessTreeTracker"};
 };
