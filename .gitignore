@@ -12,5 +12,5 @@
 /.vs/
 /vcpkg_installed/
 /openwrt-build/
-/build/
+/build
 /build-*/

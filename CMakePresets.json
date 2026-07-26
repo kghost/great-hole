@@ -3,24 +3,24 @@
   "cmakeMinimumRequired": { "major": 3, "minor": 20, "patch": 0 },
   "configurePresets": [
     {
-      "name": "configure-debug",
-      "binaryDir": "${sourceDir}/build",
+      "name": "configure-clang-debug",
+      "binaryDir": "${sourceDir}/build-clang-debug",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "CMAKE_C_COMPILER": "clang", "CMAKE_CXX_COMPILER": "clang++" }
     },
     {
-      "name": "configure-debug-tidy",
-      "inherits": "configure-debug",
-      "binaryDir": "${sourceDir}/build-tidy",
+      "name": "configure-clang-tidy",
+      "inherits": "configure-clang-debug",
+      "binaryDir": "${sourceDir}/build-clang-tidy",
       "cacheVariables": { "BUILD_WITH_CLANG_TIDY": "ON" }
     },
     {
-      "name": "configure-debug-gcc-14",
-      "binaryDir": "${sourceDir}/build-gcc-14",
+      "name": "configure-gcc-14-debug",
+      "binaryDir": "${sourceDir}/build-gcc-14-debug",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "CMAKE_C_COMPILER": "/usr/bin/gcc-14", "CMAKE_CXX_COMPILER": "/usr/bin/g++-14" }
     },
     {
-      "name": "configure-debug-gcc-snapshot",
-      "binaryDir": "${sourceDir}/build-gcc-snapshot",
+      "name": "configure-gcc-snapshot-debug",
+      "binaryDir": "${sourceDir}/build-gcc-snapshot-debug",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug", "CMAKE_C_COMPILER": "/usr/lib/gcc-snapshot/bin/gcc", "CMAKE_CXX_COMPILER": "/usr/lib/gcc-snapshot/bin/g++" }
     },
     {
@@ -128,10 +128,10 @@
     }
   ],
   "buildPresets": [
-    { "name": "build-debug", "configurePreset": "configure-debug", "jobs": 16 },
-    { "name": "build-debug-tidy", "configurePreset": "configure-debug-tidy", "jobs": 16 },
-    { "name": "build-debug-gcc-14", "configurePreset": "configure-debug-gcc-14", "jobs": 8 },
-    { "name": "build-debug-gcc-snapshot", "configurePreset": "configure-debug-gcc-snapshot", "jobs": 8 },
+    { "name": "build-clang-debug", "configurePreset": "configure-clang-debug", "jobs": 16 },
+    { "name": "build-clang-tidy", "configurePreset": "configure-clang-tidy", "jobs": 16 },
+    { "name": "build-gcc-14-debug", "configurePreset": "configure-gcc-14-debug", "jobs": 8 },
+    { "name": "build-gcc-snapshot-debug", "configurePreset": "configure-gcc-snapshot-debug", "jobs": 8 },
     { "name": "build-windows-msvc-debug", "configurePreset": "configure-windows-msvc", "configuration": "Debug", "jobs": 8 },
     { "name": "build-windows-msvc-debug-asan", "configurePreset": "configure-windows-msvc-asan", "configuration": "Debug", "jobs": 8 },
     { "name": "build-windows-msvc-release", "configurePreset": "configure-windows-msvc", "configuration": "Release", "jobs": 8 },
@@ -146,35 +146,35 @@
     { "name": "build-android-x86_64-release", "configurePreset": "configure-android-x86_64-release", "jobs": 16 }
   ],
   "testPresets": [
-    { "name": "test-debug", "configurePreset": "configure-debug" },
-    { "name": "test-debug-gcc-14", "configurePreset": "configure-debug-gcc-14" },
-    { "name": "test-debug-gcc-snapshot", "configurePreset": "configure-debug-gcc-snapshot" },
+    { "name": "test-clang-debug", "configurePreset": "configure-clang-debug" },
+    { "name": "test-gcc-14-debug", "configurePreset": "configure-gcc-14-debug" },
+    { "name": "test-gcc-snapshot-debug", "configurePreset": "configure-gcc-snapshot-debug" },
     { "name": "test-windows-ninja-debug-asan", "configurePreset": "configure-windows-ninja-debug-asan" },
     { "name": "test-windows-ninja-release-asan", "configurePreset": "configure-windows-ninja-release-asan" }
   ],
   "workflowPresets": [
     {
-      "name": "debug",
+      "name": "clang-debug",
       "steps": [
-        { "type": "configure", "name": "configure-debug" },
-        { "type": "build", "name": "build-debug" },
-        { "type": "test", "name": "test-debug" }
+        { "type": "configure", "name": "configure-clang-debug" },
+        { "type": "build", "name": "build-clang-debug" },
+        { "type": "test", "name": "test-clang-debug" }
       ]
     },
     {
-      "name": "debug-gcc-14",
+      "name": "gcc-14-debug",
       "steps": [
-        { "type": "configure", "name": "configure-debug-gcc-14" },
-        { "type": "build", "name": "build-debug-gcc-14" },
-        { "type": "test", "name": "test-debug-gcc-14" }
+        { "type": "configure", "name": "configure-gcc-14-debug" },
+        { "type": "build", "name": "build-gcc-14-debug" },
+        { "type": "test", "name": "test-gcc-14-debug" }
       ]
     },
     {
-      "name": "debug-gcc-snapshot",
+      "name": "gcc-snapshot-debug",
       "steps": [
-        { "type": "configure", "name": "configure-debug-gcc-snapshot" },
-        { "type": "build", "name": "build-debug-gcc-snapshot" },
-        { "type": "test", "name": "test-debug-gcc-snapshot" }
+        { "type": "configure", "name": "configure-gcc-snapshot-debug" },
+        { "type": "build", "name": "build-gcc-snapshot-debug" },
+        { "type": "test", "name": "test-gcc-snapshot-debug" }
       ]
     },
     {
