@@ -8,7 +8,6 @@
 #include <windows.h>
 
 #include "Endpoint.hpp"
-#include "Pipe.hpp"
 
 namespace gh {
 
@@ -26,20 +25,7 @@ public:
   virtual auto WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> Result = 0;
 };
 
-class DeferredPacketInjector {
-public:
-  explicit DeferredPacketInjector() = default;
-  virtual ~DeferredPacketInjector() = default;
-
-  DeferredPacketInjector(const DeferredPacketInjector&) = delete;
-  auto operator=(const DeferredPacketInjector&) -> DeferredPacketInjector& = delete;
-  DeferredPacketInjector(DeferredPacketInjector&&) = delete;
-  auto operator=(DeferredPacketInjector&&) -> DeferredPacketInjector& = delete;
-
-  virtual auto Inject(Packet&& packet, const WINDIVERT_ADDRESS& addr, WinDivertRouteCallback::Result route) -> Omni::Fiber::Coroutine<void> = 0;
-};
-
-class WinDivert : public Endpoint, public DeferredPacketInjector {
+class WinDivert : public Endpoint {
 public:
   WinDivert(boost::asio::any_io_executor executor, std::string name, uint32_t ifIdx, uint32_t ifSubIdx,
             WinDivertRouteCallback& callback);
@@ -52,7 +38,6 @@ public:
 
   auto Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override;
   auto Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> override;
-  auto Inject(Packet&& packet, const WINDIVERT_ADDRESS& addr, WinDivertRouteCallback::Result route) -> Omni::Fiber::Coroutine<void> override;
 
 protected:
   auto GetName() const -> std::string override;
@@ -60,18 +45,11 @@ protected:
   auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
-  struct InjectedPacket {
-    Packet Pkt;
-    WINDIVERT_ADDRESS Addr;
-    WinDivertRouteCallback::Result Route;
-  };
-
   boost::asio::any_io_executor _Executor;
   const std::string _Name;
   const uint32_t _IfIdx;
   const uint32_t _IfSubIdx;
   WinDivertRouteCallback& _RouteCallback;
-  Omni::Fiber::Pipe<InjectedPacket> _InjectedPacketPipe;
 
   HANDLE _WinDivertHandle = INVALID_HANDLE_VALUE;
   HANDLE _ReadEvent = nullptr;

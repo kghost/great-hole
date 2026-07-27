@@ -42,7 +42,7 @@ public:
   virtual void SetDefaultPolicy(const PolicyRule& policy) = 0;
   virtual void LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy) = 0;
   virtual auto GetFlows() -> std::vector<FlowInfo> = 0;
-  virtual auto GetPendingConnections() -> PendingConnections = 0;
+
 
   // Logging Interface
   virtual void SetLogLevel(LogLevel level) = 0;
@@ -64,20 +64,7 @@ struct FlowInfo {
   uint32_t ProcessId{0};
 };
 
-struct PendingFlowInfo {
-  FlowConnection Connection;
-  size_t QueueSize{0};
-};
 
-struct PendingProcessInfo {
-  uint32_t ProcessId{0};
-  size_t QueueSize{0};
-};
-
-struct PendingConnections {
-  std::vector<PendingFlowInfo> PendingFlows;
-  std::vector<PendingProcessInfo> PendingProcesses;
-};
 
 // Factory function to create the platform-specific implementation
 auto CreatePlatform(DataPlaneCallbacks& callbacks) -> std::shared_ptr<PlatformInterface>;
@@ -88,6 +75,6 @@ auto CreatePlatform(DataPlaneCallbacks& callbacks) -> std::shared_ptr<PlatformIn
 ## 3. Implementation Details (`PlatformImpl`)
 
 The Windows-specific implementation (`PlatformImpl` in `Interface.cpp`):
-- Inherits from `gh::Interface::PlatformInterface` and `gh::DeferredPacketInjector`.
+- Inherits from `gh::Interface::PlatformInterface`.
 - Spawns a dedicated worker thread (`_AsioThread`) running a `boost::asio::io_context` and `Omni::Fiber::Manager` to execute async operations.
 - Uses `Omni::Fiber::EventQueue` to safely marshal calls from the caller's thread onto the internal Boost.Asio thread and block appropriately using `std::promise` and `std::future`.

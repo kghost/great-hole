@@ -2,7 +2,6 @@
 
 #include <boost/asio.hpp>
 #include <map>
-#include <memory>
 #include <optional>
 #include <set>
 #include <string>
@@ -13,25 +12,11 @@
 
 #include "ExternalQueue.hpp"
 #include "Logger.hpp"
+#include "MoveOnlyFunction.hpp"
 #include "PolicyRegistry.hpp"
 #include "ServiceBase.hpp"
-#include "VpnClientMultiChannel.hpp"
 
 namespace gh::policy {
-
-class ProcessTreeTrackerDeferredCallback {
-public:
-  explicit ProcessTreeTrackerDeferredCallback() = default;
-  virtual ~ProcessTreeTrackerDeferredCallback() = default;
-
-  ProcessTreeTrackerDeferredCallback(const ProcessTreeTrackerDeferredCallback&) = delete;
-  auto operator=(const ProcessTreeTrackerDeferredCallback&) -> ProcessTreeTrackerDeferredCallback& = delete;
-  ProcessTreeTrackerDeferredCallback(ProcessTreeTrackerDeferredCallback&&) = delete;
-  auto operator=(ProcessTreeTrackerDeferredCallback&&) -> ProcessTreeTrackerDeferredCallback& = delete;
-
-  virtual auto ProcessTreeTrackerContinue(const std::shared_ptr<VpnClientMultiChannel::Mark>& mark,
-                                          const PolicyRule::RoutingAction& action) -> Omni::Fiber::Coroutine<void> = 0;
-};
 
 struct ProcessNode {
   DWORD ProcessId;
@@ -43,14 +28,13 @@ struct ProcessNode {
 
 class ProcessTreeTracker : public ServiceBase {
 public:
-  explicit ProcessTreeTracker(boost::asio::any_io_executor executor, ProcessTreeTrackerDeferredCallback& callback,
-                              PolicyRegistry& registry);
+  explicit ProcessTreeTracker(boost::asio::any_io_executor executor, PolicyRegistry& registry);
   ~ProcessTreeTracker() override = default;
 
   ProcessTreeTracker(const ProcessTreeTracker&) = delete;
   auto operator=(const ProcessTreeTracker&) -> ProcessTreeTracker& = delete;
   ProcessTreeTracker(ProcessTreeTracker&&) = delete;
-  auto operator=(ProcessTreeTracker&&) -> ProcessTreeTracker& = delete;
+  auto operator=(ProcessTreeTracker&&) -> ProcessTreeTracker&& = delete;
 
   auto GetName() const -> std::string override { return "ProcessTreeTracker"; }
 
@@ -63,12 +47,9 @@ public:
   auto AddProcess(DWORD pid, DWORD parentPid, const std::string& path) -> const ProcessNode&;
   void RemoveProcess(DWORD pid);
   void ClearAllMock();
-  [[nodiscard]] auto GetAction(DWORD pid) const -> std::optional<PolicyRule::RoutingAction>;
+  auto GetAction(DWORD pid) -> std::optional<PolicyRule::RoutingAction>;
   [[nodiscard]] auto GetProcessTree() const -> std::vector<Interface::ProcessInfo>;
-  [[nodiscard]] auto GetPendingProcesses() const -> std::vector<Interface::PendingProcessInfo>;
   void TestReEvaluatePolicy(DWORD pid);
-
-  void AddPendingMark(DWORD pid, const std::shared_ptr<VpnClientMultiChannel::Mark>& mark);
 
 private:
   [[nodiscard]] static auto GetProcessPath(DWORD pid) -> std::string;
@@ -85,11 +66,9 @@ private:
 
   boost::asio::any_io_executor _Executor;
   Omni::Fiber::ExternalQueue<Task> _TaskQueue;
-  ProcessTreeTrackerDeferredCallback& _Callback;
   PolicyRegistry& _Registry;
 
   std::map<DWORD, ProcessNode> _ProcessMap;
-  std::map<DWORD, std::set<std::weak_ptr<VpnClientMultiChannel::Mark>, std::owner_less<>>> _PendingProcessMarks;
 
   TRACEHANDLE _EtwSessionHandle = 0;
   std::thread _EtwThread;

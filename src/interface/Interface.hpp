@@ -94,21 +94,6 @@ struct TrackedConnectionInfo {
   std::string Mark;
 };
 
-struct PendingFlowInfo {
-  FlowConnection Connection;
-  std::optional<size_t> QueueSize;
-};
-
-struct PendingProcessInfo {
-  uint32_t ProcessId{0};
-  std::optional<size_t> QueueSize;
-};
-
-struct PendingConnections {
-  std::vector<PendingFlowInfo> PendingFlows;
-  std::vector<PendingProcessInfo> PendingProcesses;
-};
-
 class DataPlaneCallbacks {
 public:
   explicit DataPlaneCallbacks() = default;
@@ -158,7 +143,6 @@ public:
   virtual auto GetFlows() -> std::vector<FlowInfo> = 0;
   virtual auto GetConnections() -> std::vector<TrackedConnectionInfo> = 0;
   virtual auto GetProcessTree() -> std::vector<ProcessInfo> = 0;
-  virtual auto GetPendingConnections() -> PendingConnections = 0;
 
   // Logging Interface
   virtual void SetLogLevel(LogLevel level) = 0;

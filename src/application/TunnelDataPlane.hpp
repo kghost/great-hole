@@ -49,7 +49,6 @@ public:
   [[nodiscard]] auto GetConnectionTracker() const -> const std::shared_ptr<ConnectionTracker>& {
     return _ConnectionTracker;
   }
-  [[nodiscard]] auto GetInjector() const -> DeferredPacketInjector& { return *_WinDivert; }
 #else
   auto Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>;
   auto MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void>;

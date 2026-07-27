@@ -76,15 +76,14 @@ graph TD
 
 ### 3.1. Flow Tracker (`gh::policy::FlowTracker`)
 The `FlowTracker` maps active network connections (represented by connection keys) to their originating Process ID (PID).
-- **Driver Layer**: It opens a separate WinDivert handle using the `WINDIVERT_LAYER_FLOW` layer.
-- **Event Loop Integration**:
-  - It runs as an asynchronous worker on the Boost.Asio event loop using an overlapped event handle and `boost::asio::windows::object_handle`.
-  - When WinDivert yields a flow event, the `FlowTracker` parses the `WINDIVERT_ADDRESS`.
+- **Driver Layer & Table Lookups**:
+  - Receives socket events via `WinDivertFlowSniffer` (`WINDIVERT_LAYER_SOCKET`).
+  - When `GetPidForConnection` is queried for a connection not present in `_FlowToPid`, `FlowTracker` queries the Windows IP helper tables (`GetExtendedTcpTable` / `GetExtendedUdpTable` for IPv4/IPv6 TCP and UDP) to discover the owning PID on demand and caches it.
 - **Flow Cache**:
-  - Maintains a map: `ConnectionKey -> ProcessId`.
-  - On `WINDIVERT_EVENT_FLOW_ESTABLISHED`, it adds/updates the mapping.
-  - On `WINDIVERT_EVENT_FLOW_DELETED`, it removes the mapping.
-  - Because it runs on the single-threaded Boost.Asio loop, lookups from the packet capture pipeline are thread-safe and lock-free.
+  - Maintains a map: `FlowKey -> ProcessId`.
+  - On `OnFlowEstablished`, it adds/updates the mapping.
+  - On `OnFlowDeleted`, it removes the mapping.
+  - On `GetPidForConnection`, if missing from cache, it queries system TCP/UDP tables and caches the PID if found.
 
 ### 3.2. Process Tree Tracker (`gh::policy::ProcessTreeTracker`)
 The `ProcessTreeTracker` maintains the active Windows process tree and evaluates hierarchical policy rules.
@@ -94,10 +93,11 @@ The `ProcessTreeTracker` maintains the active Windows process tree and evaluates
   3. Captures a snapshot of currently running processes using `CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)` to build the initial `PID -> ProcessNode` map.
   4. Spawns a background thread running the ETW consumer session to call `OpenTraceW` and `ProcessTrace` and consume the buffered events.
   - This order eliminates the gap where process events starting in-between snapshot creation and ETW activation would be lost. Since the ETW session buffers events starting from step 1, any processes that started during the snapshot are processed in chronological order. Duplicate start events are safely ignored using `try_emplace`.
-- **ETW Monitoring**:
+- **ETW Monitoring & On-Demand Fallback**:
   - Subscribes to the `Microsoft-Windows-Kernel-Process` provider (GUID `{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}`).
-  - **Process Start (Event ID 1)**: Adds a new node containing the process path, PID, and parent PID. It immediately evaluates path-based rules and checks if the parent has a `ProcessSubtree` policy, caching the resulting `PolicyRule` directly on the newly created process node.
+  - **Process Start (Event ID 1)**: Adds a new node containing the process path, PID, and parent PID.
   - **Process Stop (Event ID 2)**: Purges the node.
+  - **On-Demand Query**: If `GetAction(pid)` is called for a process not yet in `_ProcessMap`, `ProcessTreeTracker` queries the process image path via `OpenProcess` (`PROCESS_QUERY_LIMITED_INFORMATION` / `QueryFullProcessImageNameW`), adds it to `_ProcessMap`, and evaluates policy on demand.
 - **PID Recycling Protection**:
   - > [!IMPORTANT]
     > PIDs are recycled rapidly by Windows. To prevent policy leaks or mis-association, the node is deleted immediately upon receipt of Event ID 2, invalidating any cached policy evaluations for that PID.
@@ -174,22 +174,9 @@ struct ProcessNode {
     std::set<DWORD> Children;
 };
 
-class ProcessTreeTrackerDeferredCallback {
-public:
-    virtual ~ProcessTreeTrackerDeferredCallback() = default;
-    virtual auto ProcessTreeTrackerContinue(const std::shared_ptr<VpnClientMultiChannel::Mark>& mark,
-                                            const PolicyRule::RoutingAction& action) -> Omni::Fiber::Coroutine<void> = 0;
-};
-
-struct PendingProcessRecord {
-    DWORD ProcessId;
-    size_t QueueSize;
-};
-
 class ProcessTreeTracker : public ServiceBase {
 public:
-    explicit ProcessTreeTracker(boost::asio::any_io_executor executor, ProcessTreeTrackerDeferredCallback& callback,
-                                PolicyRegistry& registry);
+    explicit ProcessTreeTracker(boost::asio::any_io_executor executor, PolicyRegistry& registry);
     ~ProcessTreeTracker() override;
 
     auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
@@ -199,10 +186,8 @@ public:
     auto RegisterPidPolicy(DWORD pid, const PolicyRule& rule) -> bool;
     auto AddProcess(DWORD pid, DWORD parentPid, const std::string& path) -> const ProcessNode&;
     void RemoveProcess(DWORD pid);
-    auto GetAction(DWORD pid) const -> std::optional<PolicyRule::RoutingAction>;
+    auto GetAction(DWORD pid) -> std::optional<PolicyRule::RoutingAction>;
     auto GetProcessTree() const -> std::vector<Interface::ProcessInfo>;
-    auto GetPendingProcesses() const -> std::vector<PendingProcessRecord>;
-    void AddPendingMark(DWORD pid, const std::shared_ptr<VpnClientMultiChannel::Mark>& mark);
 
 private:
     void BuildInitialSnapshot();
@@ -211,17 +196,9 @@ private:
 
     boost::asio::any_io_executor _Executor;
     std::map<DWORD, ProcessNode> _ProcessMap;
-    std::map<DWORD, std::shared_ptr<VpnClientMultiChannel::Mark>> _PendingProcessMarks;
     TRACEHANDLE _EtwSessionHandle = 0;
     std::thread _EtwThread;
     std::atomic<bool> _Running{false};
-};
-
-class FlowTrackerDeferredCallback {
-public:
-    virtual ~FlowTrackerDeferredCallback() = default;
-    virtual auto FlowTrackerContinue(const std::shared_ptr<VpnClientMultiChannel::Mark>& mark, DWORD pid)
-        -> Omni::Fiber::Coroutine<void> = 0;
 };
 
 struct FlowRecord {
@@ -229,30 +206,19 @@ struct FlowRecord {
   DWORD ProcessId;
 };
 
-struct PendingFlowRecord {
-  ConnectionTracker::ConnectionKey Key;
-  size_t QueueSize;
-};
-
 class FlowTracker : public WinDivertFlowSnifferCallback {
 public:
-  explicit FlowTracker(FlowTrackerDeferredCallback& callback);
-  ~FlowTracker() override;
+  explicit FlowTracker() = default;
+  ~FlowTracker() override = default;
 
   auto OnFlowEstablished(FlowKey key, uint32_t pid) -> Omni::Fiber::Coroutine<void> override;
   auto OnFlowDeleted(FlowKey key) -> Omni::Fiber::Coroutine<void> override;
 
   auto GetPidForConnection(const ConnectionTracker::ConnectionKey& key) -> std::optional<DWORD>;
-  void AddPendingMark(const ConnectionTracker::ConnectionKey& key,
-                      const std::shared_ptr<VpnClientMultiChannel::Mark>& mark);
-
   auto GetFlows() const -> std::vector<FlowRecord>;
-  auto GetPendingFlows() const -> std::vector<PendingFlowRecord>;
 
 private:
-  FlowTrackerDeferredCallback& _Callback;
-  std::map<ConnectionTracker::ConnectionKey, DWORD> _FlowToPid;
-  std::map<ConnectionTracker::ConnectionKey, std::shared_ptr<VpnClientMultiChannel::Mark>> _PendingFlowResumers;
+  std::map<FlowKey, DWORD> _FlowToPid;
 };
 
 } // namespace gh::policy

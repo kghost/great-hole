@@ -54,7 +54,6 @@ public:
   auto GetFlows() -> std::vector<FlowInfo> override;
   auto GetConnections() -> std::vector<TrackedConnectionInfo> override;
   auto GetProcessTree() -> std::vector<ProcessInfo> override;
-  auto GetPendingConnections() -> PendingConnections override;
 
   // Logging Interface
   void SetLogLevel(LogLevel level) override;
@@ -175,7 +174,6 @@ auto PlatformImpl::StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> s
                                                               auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
     dataPlane = std::make_unique<gh::TunnelDataPlane>(_IoContext.get_executor(), policyEngine->GetPolicySelector(),
                                                       policyEngine->GetPolicySelector(), _Callbacks);
-    policyEngine->GetPolicySelector().SetInjector(dataPlane->GetInjector());
     policyEngine->GetPolicySelector().SetConnectionTracker(dataPlane->GetConnectionTracker());
     auto err = co_await dataPlane->Start(mtu, key);
     if (err) {
@@ -203,7 +201,6 @@ auto PlatformImpl::StopVpn() -> std::error_code {
     }
 
     policyEngine->GetPolicySelector().ClearConnectionTracker();
-    policyEngine->GetPolicySelector().ClearInjector();
 
     dataPlane.reset();
 
@@ -372,23 +369,6 @@ auto PlatformImpl::GetProcessTree() -> std::vector<ProcessInfo> {
   _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
     auto processes = policyEngine->GetPolicySelector().GetProcessTreeTracker().GetProcessTree();
     promise.set_value(std::move(processes));
-    co_return;
-  });
-  return future.get();
-}
-
-auto PlatformImpl::GetPendingConnections() -> PendingConnections {
-  std::promise<PendingConnections> promise;
-  auto future = promise.get_future();
-  _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-    auto pendingFlows = policyEngine->GetPolicySelector().GetFlowTracker().GetPendingFlows();
-    auto pendingProcesses = policyEngine->GetPolicySelector().GetProcessTreeTracker().GetPendingProcesses();
-
-    PendingConnections result;
-    result.PendingFlows = std::move(pendingFlows);
-    result.PendingProcesses = std::move(pendingProcesses);
-
-    promise.set_value(std::move(result));
     co_return;
   });
   return future.get();

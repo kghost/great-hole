@@ -73,9 +73,8 @@ void StopOrphanedSessions(gh::base::ComponentLogger& logger) {
 
 } // namespace
 
-ProcessTreeTracker::ProcessTreeTracker(boost::asio::any_io_executor executor,
-                                       ProcessTreeTrackerDeferredCallback& callback, PolicyRegistry& registry)
-    : _Executor(std::move(executor)), _TaskQueue(_Executor), _Callback(callback), _Registry(registry) {}
+ProcessTreeTracker::ProcessTreeTracker(boost::asio::any_io_executor executor, PolicyRegistry& registry)
+    : _Executor(std::move(executor)), _TaskQueue(_Executor), _Registry(registry) {}
 
 auto ProcessTreeTracker::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   StopOrphanedSessions(_Logger);
@@ -146,7 +145,6 @@ auto ProcessTreeTracker::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
 
   _TaskQueue.Clear();
   _ProcessMap.clear();
-  _PendingProcessMarks.clear();
   co_return ErrorCode{};
 }
 
@@ -263,24 +261,12 @@ void ProcessTreeTracker::RemoveProcess(DWORD pid) {
   } else {
     BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
         << "ProcessTreeTracker: Process " << pid << " not found in process map";
-    _PendingProcessMarks.erase(pid);
   }
 }
 
-void ProcessTreeTracker::ClearAllMock() {
-  _ProcessMap.clear();
-  _PendingProcessMarks.clear();
-}
+void ProcessTreeTracker::ClearAllMock() { _ProcessMap.clear(); }
 
-void ProcessTreeTracker::AddPendingMark(DWORD pid, const std::shared_ptr<VpnClientMultiChannel::Mark>& mark) {
-  for (auto& [_pid, marks] : _PendingProcessMarks) {
-    std::erase_if(marks, [](const auto& item) -> auto { return item.expired(); });
-  }
-  std::erase_if(_PendingProcessMarks, [](const auto& item) -> auto { return item.second.empty(); });
-  _PendingProcessMarks[pid].insert(mark);
-}
-
-auto ProcessTreeTracker::GetAction(DWORD pid) const -> std::optional<PolicyRule::RoutingAction> {
+auto ProcessTreeTracker::GetAction(DWORD pid) -> std::optional<PolicyRule::RoutingAction> {
   if (pid == GetCurrentProcessId()) {
     return PolicyRegistry::GetCurrentProcessAction();
   }
@@ -293,6 +279,18 @@ auto ProcessTreeTracker::GetAction(DWORD pid) const -> std::optional<PolicyRule:
       return _Registry.GetDefaultAction();
     }
   }
+
+  // TODO: get ppid.
+  auto path = GetProcessPath(pid);
+  if (!path.empty()) {
+    const auto& node = AddProcess(pid, 0, path);
+    if (node.Policy.has_value()) {
+      return node.Policy.value().Action;
+    } else {
+      return _Registry.GetDefaultAction();
+    }
+  }
+
   return std::nullopt;
 }
 
@@ -307,24 +305,6 @@ auto ProcessTreeTracker::GetProcessTree() const -> std::vector<Interface::Proces
     });
   }
   return list;
-}
-
-auto ProcessTreeTracker::GetPendingProcesses() const -> std::vector<Interface::PendingProcessInfo> {
-  std::vector<Interface::PendingProcessInfo> pending;
-  for (const auto& [pid, set] : _PendingProcessMarks) {
-    size_t count = 0;
-    bool hasValid = false;
-    for (const auto& weakMark : set) {
-      if (auto mark = weakMark.lock()) {
-        if (auto value = mark->GetPendingQueueSize(); value.has_value()) {
-          count += value.value();
-          hasValid = true;
-        }
-      }
-    }
-    pending.push_back({.ProcessId = pid, .QueueSize = hasValid ? std::optional<size_t>(count) : std::nullopt});
-  }
-  return pending;
 }
 
 void ProcessTreeTracker::BuildInitialSnapshot() {
@@ -521,18 +501,8 @@ void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
 
     if (pid != 0) {
       _TaskQueue.Push([this, pid, parentPid, execPath]() -> Omni::Fiber::Coroutine<void> {
-        const auto& node = AddProcess(pid, parentPid, execPath);
-        if (auto pendingIt = _PendingProcessMarks.find(pid); pendingIt != _PendingProcessMarks.end()) {
-          auto marksSet = std::move(pendingIt->second);
-          _PendingProcessMarks.erase(pendingIt);
-          const auto policy = node.Policy;
-          auto action = policy.has_value() ? policy.value().Action : _Registry.GetDefaultAction();
-          for (const auto& weakMark : marksSet) {
-            if (auto mark = weakMark.lock()) {
-              co_await _Callback.ProcessTreeTrackerContinue(mark, action);
-            }
-          }
-        }
+        AddProcess(pid, parentPid, execPath);
+        co_return;
       });
     }
   } else if (eventId == 2) {

@@ -55,7 +55,6 @@ auto VpnClientMultiChannel::Mark::GetDescription() const -> std::string {
   return std::visit(Overload{[](const ToBeSelected&) -> std::string { return "ToBeSelected"; },
                              [](const Bypass&) -> std::string { return "Bypass"; },
                              [](const Discard&) -> std::string { return "Discard"; },
-                             [](const Deferred&) -> std::string { return "Deferred"; },
                              [](const Interface::VpnEndpoint& endpoint) -> std::string {
                                if (auto session = endpoint.lock()) {
                                  return session->GetDescription();
@@ -68,7 +67,6 @@ auto VpnClientMultiChannel::Mark::GetDescription() const -> std::string {
 auto VpnClientMultiChannel::Mark::Validate() const -> bool {
   return std::visit(Overload{[](const ToBeSelected&) -> bool { return false; },
                              [](const Bypass&) -> bool { return true; }, [](const Discard&) -> bool { return true; },
-                             [](const Deferred&) -> bool { return true; },
                              [](const Interface::VpnEndpoint& endpoint) -> bool {
                                if (auto session = endpoint.lock()) {
                                  return session->State.IsState<VpnClientMultiChannelSession::State::kRunning>();
@@ -238,10 +236,6 @@ private:
             [&](Mark::Discard) -> Omni::Fiber::Coroutine<ErrorCode> {
               BOOST_LOG_TRIVIAL(debug) << GetName() << ": Packet marked Discard";
               co_return ErrorCode{};
-            },
-            [&](const Mark::Deferred&) -> Omni::Fiber::Coroutine<ErrorCode> {
-              assert(false && "should not reach here");
-              std::unreachable();
             },
             [&](const Interface::VpnEndpoint& endpoint) -> Omni::Fiber::Coroutine<ErrorCode> {
               if (auto session = endpoint.lock()) {

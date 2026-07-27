@@ -39,26 +39,12 @@ public:
     struct ToBeSelected {};
     struct Bypass {};
     struct Discard {};
-    struct Deferred {
-      struct DeferredPacket {
-        explicit DeferredPacket() = default;
-        virtual ~DeferredPacket() = default;
-
-        DeferredPacket(const DeferredPacket&) = default;
-        auto operator=(const DeferredPacket&) -> DeferredPacket& = default;
-        DeferredPacket(DeferredPacket&&) = delete;
-        auto operator=(DeferredPacket&&) -> DeferredPacket& = delete;
-      };
-      std::vector<std::unique_ptr<DeferredPacket>> Packets;
-    };
-
     using ValueType =
-        std::variant<ToBeSelected, Bypass, Discard, Deferred, std::weak_ptr<VpnClientMultiChannelSession>>;
+        std::variant<ToBeSelected, Bypass, Discard, std::weak_ptr<VpnClientMultiChannelSession>>;
 
     explicit Mark() : _Value(ToBeSelected{}) {}
     explicit Mark(Bypass /*unused*/) : _Value(Bypass{}) {}
     explicit Mark(Discard /*unused*/) : _Value(Discard{}) {}
-    explicit Mark(Deferred deferred) : _Value(std::move(deferred)) {}
     explicit Mark(std::weak_ptr<VpnClientMultiChannelSession> session) : _Value(std::move(session)) {}
     ~Mark() override = default;
 
@@ -71,13 +57,6 @@ public:
     [[nodiscard]] auto Validate() const -> bool override;
     [[nodiscard]] auto GetValue() -> ValueType& { return _Value; }
     void Swap(Mark& other) { _Value.swap(other._Value); }
-
-    [[nodiscard]] auto GetPendingQueueSize() const -> std::optional<size_t> {
-      if (const auto* const deferred = std::get_if<Deferred>(&_Value)) {
-        return deferred->Packets.size();
-      }
-      return std::nullopt;
-    }
 
   private:
     ValueType _Value;

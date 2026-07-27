@@ -7,8 +7,6 @@
 
 #include "Asio.hpp"
 #include "Coroutine.hpp"
-#include "Select.hpp"
-#include "SelectPair.hpp"
 
 namespace gh {
 
@@ -19,9 +17,6 @@ WinDivert::WinDivert(boost::asio::any_io_executor executor, std::string name, ui
 
 WinDivert::~WinDivert() {
   assert(_WinDivertHandle == INVALID_HANDLE_VALUE);
-  if (!_InjectedPacketPipe.IsClosed()) {
-    _InjectedPacketPipe.GetConsumer().DiscardAndClose();
-  }
 }
 
 auto WinDivert::GetName() const -> std::string {
@@ -36,16 +31,16 @@ auto WinDivert::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
 
   if (_WinDivertHandle == INVALID_HANDLE_VALUE) {
     DWORD err = GetLastError();
-    BOOST_LOG_TRIVIAL(error) << "WinDivert: WinDivertOpen failed: " << err;
+    BOOST_LOG_TRIVIAL(error) << GetName() << ": WinDivertOpen failed with error: " << err;
     co_return SysError(err);
   }
 
   _ReadEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
   _WriteEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 
-  if ((_ReadEvent == nullptr) || (_WriteEvent == nullptr)) {
+  if (_ReadEvent == nullptr || _WriteEvent == nullptr) {
     DWORD err = GetLastError();
-    BOOST_LOG_TRIVIAL(error) << "WinDivert: CreateEventW failed: " << err;
+    BOOST_LOG_TRIVIAL(error) << GetName() << ": CreateEvent failed with error: " << err;
     if (_ReadEvent != nullptr) {
       CloseHandle(_ReadEvent);
       _ReadEvent = nullptr;
@@ -62,60 +57,48 @@ auto WinDivert::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   _ReadObjectHandle.emplace(_Executor, _ReadEvent);
   _WriteObjectHandle.emplace(_Executor, _WriteEvent);
 
-  BOOST_LOG_TRIVIAL(info) << "WinDivert: started, handle=" << _WinDivertHandle;
+  BOOST_LOG_TRIVIAL(info) << GetName() << ": Started successfully";
   co_return ErrorCode{};
 }
 
 auto WinDivert::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
-  BOOST_LOG_TRIVIAL(info) << "WinDivert: stopping";
-
-  if (!_InjectedPacketPipe.IsClosed()) {
-    _InjectedPacketPipe.GetConsumer().DiscardAndClose();
-  }
-
-  if (_WinDivertHandle != INVALID_HANDLE_VALUE) {
-
-    CancelIoEx(_WinDivertHandle, nullptr);
-  }
-
-  co_await _PipielineUsageCounter.WaitAll();
-
-  if (_ReadObjectHandle.has_value()) {
-    _ReadObjectHandle->close();
-    _ReadObjectHandle.reset();
-    _ReadEvent = nullptr;
-  }
-  if (_WriteObjectHandle.has_value()) {
-    _WriteObjectHandle->close();
-    _WriteObjectHandle.reset();
-    _WriteEvent = nullptr;
-  }
-
-  if (_ReadEvent != nullptr) {
-    CloseHandle(_ReadEvent);
-    _ReadEvent = nullptr;
-  }
-  if (_WriteEvent != nullptr) {
-    CloseHandle(_WriteEvent);
-    _WriteEvent = nullptr;
-  }
+  BOOST_LOG_TRIVIAL(info) << GetName() << ": Stopping...";
 
   if (_WinDivertHandle != INVALID_HANDLE_VALUE) {
     WinDivertClose(_WinDivertHandle);
     _WinDivertHandle = INVALID_HANDLE_VALUE;
   }
 
-  BOOST_LOG_TRIVIAL(info) << "WinDivert: stopped";
+  if (_ReadObjectHandle.has_value()) {
+    _ReadObjectHandle->cancel();
+    _ReadObjectHandle.reset();
+  }
+
+  if (_WriteObjectHandle.has_value()) {
+    _WriteObjectHandle->cancel();
+    _WriteObjectHandle.reset();
+  }
+
+  co_await _PipielineUsageCounter.WaitAll();
+
+  if (_ReadEvent != nullptr) {
+    CloseHandle(_ReadEvent);
+    _ReadEvent = nullptr;
+  }
+
+  if (_WriteEvent != nullptr) {
+    CloseHandle(_WriteEvent);
+    _WriteEvent = nullptr;
+  }
+
+  BOOST_LOG_TRIVIAL(info) << GetName() << ": Stopped successfully";
   co_return ErrorCode{};
 }
 
 auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<ErrorCode> {
-  if (cancel.IsTriggered()) {
-    co_return Error(AppErrorCategory::kOperationAborted);
-  }
-
   OVERLAPPED overlapped = {};
   overlapped.hEvent = _ReadEvent;
+  ResetEvent(_ReadEvent);
   Cancel::HandleTracker handleTracker(cancel, _WinDivertHandle, &overlapped);
 
   WINDIVERT_ADDRESS addr = {};
@@ -127,27 +110,6 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
       co_return Error(AppErrorCategory::kOperationAborted);
     }
 
-    if (_InjectedPacketPipe.GetConsumer().AwaitReady()) {
-      auto res = _InjectedPacketPipe.GetConsumer().AwaitValue();
-      if (res.has_value()) {
-        auto injected = std::move(res.value());
-        if (injected.Route == WinDivertRouteCallback::Result::Bypass) {
-          UINT sendLen = 0;
-          if (WinDivertSendEx(_WinDivertHandle, injected.Pkt.Data().data(), injected.Pkt.Data().size(), &sendLen, 0,
-                              &injected.Addr, sizeof(injected.Addr), nullptr) != TRUE) {
-            DWORD err = GetLastError();
-            BOOST_LOG_TRIVIAL(warning) << "WinDivert: bypass injected send failed: " << err;
-          }
-          continue;
-        } else if (injected.Route == WinDivertRouteCallback::Result::Discard) {
-          continue;
-        }
-        packet = std::move(injected.Pkt);
-        BOOST_LOG_TRIVIAL(trace) << GetName() << ": Read (injected) packet size=" << packet.Data().size();
-        co_return ErrorCode{};
-      }
-    }
-
     ResetEvent(_ReadEvent);
     addrLen = sizeof(addr);
     recvLen = 0;
@@ -157,54 +119,12 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
                         0, &addr, &addrLen, &overlapped) != TRUE) {
       DWORD err = GetLastError();
       if (err == ERROR_IO_PENDING) {
-        InjectedPacket injectedPacket;
-        auto [hasInjectedPacket, errWinDivert] = co_await Omni::Fiber::Select(
-            Omni::Fiber::SelectPair(_InjectedPacketPipe.GetConsumer(),
-                                    [&](std::expected<InjectedPacket, Omni::Fiber::PipeClosed> res) -> bool {
-                                      if (res.has_value()) {
-                                        injectedPacket = std::move(res.value());
-                                        return true;
-                                      } else {
-                                        return false;
-                                      }
-                                    }),
-            Omni::Fiber::SelectPair(
-                _ReadObjectHandle->async_wait(Omni::Fiber::AsioUseFiber),
-                Omni::Fiber::AsioApply([&](boost::system::error_code err) -> auto { return err; })));
-
-        if (hasInjectedPacket.has_value() && hasInjectedPacket.value()) {
+        auto [err2] = co_await _ReadObjectHandle->async_wait(Omni::Fiber::AsioUseFiber);
+        if (err2) {
           CancelIoEx(_WinDivertHandle, &overlapped);
           DWORD transferred = 0;
           GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, TRUE);
-
-          if (injectedPacket.Route == WinDivertRouteCallback::Result::Bypass) {
-            UINT sendLen = 0;
-            if (WinDivertSendEx(_WinDivertHandle, injectedPacket.Pkt.Data().data(), injectedPacket.Pkt.Data().size(),
-                                &sendLen, 0, &injectedPacket.Addr, sizeof(injectedPacket.Addr), nullptr) != TRUE) {
-              DWORD err = GetLastError();
-              BOOST_LOG_TRIVIAL(warning) << "WinDivert: bypass injected send failed: " << err;
-            }
-            continue;
-          } else if (injectedPacket.Route == WinDivertRouteCallback::Result::Discard) {
-            continue;
-          }
-          packet = std::move(injectedPacket.Pkt);
-          BOOST_LOG_TRIVIAL(trace) << GetName() << ": Read (injected) packet size=" << packet.Data().size();
-          co_return ErrorCode{};
-        }
-
-        if (errWinDivert.has_value() && errWinDivert.value()) {
-          CancelIoEx(_WinDivertHandle, &overlapped);
-          DWORD transferred = 0;
-          GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, TRUE);
-          co_return errWinDivert.value();
-        }
-
-        if (!hasInjectedPacket.has_value() && !errWinDivert.has_value()) {
-          CancelIoEx(_WinDivertHandle, &overlapped);
-          DWORD transferred = 0;
-          GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, TRUE);
-          co_return Error(AppErrorCategory::kOperationAborted);
+          co_return err2;
         }
 
         DWORD transferred = 0;
@@ -280,16 +200,6 @@ auto WinDivert::Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<
   }
 
   co_return ErrorCode{};
-}
-
-auto WinDivert::Inject(Packet&& packet, const WINDIVERT_ADDRESS& addr, WinDivertRouteCallback::Result route)
-    -> Omni::Fiber::Coroutine<void> {
-  BOOST_LOG_TRIVIAL(trace) << GetName() << ": Injecting packet size=" << packet.Data().size();
-  auto result = co_await _InjectedPacketPipe.GetProducer().Put(
-      InjectedPacket{.Pkt = std::move(packet), .Addr = addr, .Route = route});
-  if (!result.has_value()) {
-    BOOST_LOG_TRIVIAL(warning) << "WinDivert: failed to inject packet";
-  }
 }
 
 } // namespace gh

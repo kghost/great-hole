@@ -257,46 +257,7 @@ TEST(WinDivertTest, ReadBypassAndDiscard) {
   RunEventLoop(io);
 }
 
-TEST(WinDivertTest, ReadInjectedPacketPrioritized) {
-  boost::asio::io_context io;
-  Omni::Fiber::AsioExecutor executor(io.get_executor());
-  Omni::Fiber::Manager manager(executor);
 
-  MockRouteCallback callback;
-  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", 12, 34, callback);
-
-  auto& controller = test::GetFakeWinDivertController();
-  controller.Reset();
-
-  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto err = co_await winDivert->Start();
-    EXPECT_FALSE(err);
-    if (err) {
-      co_return;
-    }
-
-    // Inject a packet
-    Packet injectPacket;
-    std::string injectMsg = "InjectedPacket";
-    std::copy(injectMsg.begin(), injectMsg.end(), injectPacket._Data.begin() + injectPacket._Offset);
-    injectPacket._Length = injectMsg.size();
-
-    co_await winDivert->Inject(std::move(injectPacket), WINDIVERT_ADDRESS{}, WinDivertRouteCallback::Result::Normal);
-
-    Packet readPacket;
-    Cancel cancel;
-    err = co_await winDivert->Read(readPacket, cancel);
-    EXPECT_FALSE(err);
-
-    std::string readMsg(readPacket.Data().begin(), readPacket.Data().end());
-    EXPECT_EQ(readMsg, injectMsg);
-
-    co_await winDivert->Stop();
-    co_return;
-  });
-
-  RunEventLoop(io);
-}
 
 TEST(WinDivertTest, ReadCancelledByStop) {
   boost::asio::io_context io;

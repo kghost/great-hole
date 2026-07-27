@@ -60,7 +60,6 @@ sequenceDiagram
 Located in `src/interface/Interface.hpp`, this is a pure virtual C++ interface. It keeps the public boundary clean and independent of platform-specific structures or headers.
 
 ### 2.2. `PlatformImpl`
-Located in `src/windows/Interface.cpp`, this is the concrete Windows implementation. It inherits from `gh::Interface::PlatformInterface` and `gh::DeferredPacketInjector`.
+Located in `src/windows/Interface.cpp`, this is the concrete Windows implementation. It inherits from `gh::Interface::PlatformInterface`.
 - It implements the virtual interface functions.
-- It implements `gh::DeferredPacketInjector::Inject` to allow packet injection back into the data plane.
 - It instantiates and owns the `boost::asio::io_context` and runs the dedicated Asio runner thread.
