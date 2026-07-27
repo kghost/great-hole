@@ -47,8 +47,8 @@ public:
   // Logging Interface
   virtual void SetLogLevel(LogLevel level) = 0;
   virtual void SetProcessTreeTrackerLogLevel(LogLevel level) = 0;
+  virtual void SetFlowTrackerLogLevel(LogLevel level) = 0;
   virtual void SetPolicySelectorLogLevel(LogLevel level) = 0;
-  virtual void SetWinDivertFlowSnifferLogLevel(LogLevel level) = 0;
 };
 
 struct FlowConnection {

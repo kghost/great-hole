@@ -7,6 +7,7 @@
 #include <boost/asio.hpp>
 #include <boost/asio/ip/address_v4.hpp>
 #include <boost/asio/ip/address_v6.hpp>
+#include <boost/log/sources/record_ostream.hpp>
 #include <boost/log/trivial.hpp>
 
 #include <windows.h>
@@ -143,12 +144,19 @@ auto FlowTracker::GetPidForConnection(const ConnectionTracker::ConnectionKey& ke
     }
   }
 
+  BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
+      << "FlowTracker: Connection " << key << " not in flow table, querying system TCP/UDP tables";
   auto pid = QueryPidFromSystemTables(key);
   if (pid.has_value()) {
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
+        << "FlowTracker: System table query returned PID " << pid.value() << " for connection " << key;
     if (flowKey.has_value()) {
       _FlowToPid[flowKey.value()] = pid.value();
     }
     return pid;
+  } else {
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
+        << "FlowTracker: System table query failed to find PID for connection " << key;
   }
 
   return std::nullopt;

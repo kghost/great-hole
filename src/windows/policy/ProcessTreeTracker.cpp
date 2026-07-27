@@ -280,15 +280,20 @@ auto ProcessTreeTracker::GetAction(DWORD pid) -> std::optional<PolicyRule::Routi
     }
   }
 
-  // TODO: get ppid.
+  // TODO: Get PPID
   auto path = GetProcessPath(pid);
   if (!path.empty()) {
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
+        << "ProcessTreeTracker: OpenProcess returned PID " << pid << " -> " << path;
     const auto& node = AddProcess(pid, 0, path);
     if (node.Policy.has_value()) {
       return node.Policy.value().Action;
     } else {
       return _Registry.GetDefaultAction();
     }
+  } else {
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
+        << "ProcessTreeTracker: OpenProcess failed to query path for PID " << pid;
   }
 
   return std::nullopt;

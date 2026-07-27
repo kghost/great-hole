@@ -58,8 +58,8 @@ public:
   // Logging Interface
   void SetLogLevel(LogLevel level) override;
   void SetProcessTreeTrackerLogLevel(LogLevel level) override;
+  void SetFlowTrackerLogLevel(LogLevel level) override;
   void SetPolicySelectorLogLevel(LogLevel level) override;
-  void SetWinDivertFlowSnifferLogLevel(LogLevel level) override;
 
 private:
   void StartThread();
@@ -410,12 +410,12 @@ void PlatformImpl::SetPolicySelectorLogLevel(LogLevel level) {
   future.get();
 }
 
-void PlatformImpl::SetWinDivertFlowSnifferLogLevel(LogLevel level) {
+void PlatformImpl::SetFlowTrackerLogLevel(LogLevel level) {
   std::promise<void> promise;
   auto future = promise.get_future();
   _TaskQueue.Push(
       [this, &promise, level](const auto& /*policyEngine*/, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-        _LogConfig.SetComponentLogLevel("WinDivertFlowSniffer", level);
+        _LogConfig.SetComponentLogLevel("FlowTracker", level);
         promise.set_value();
         co_return;
       });

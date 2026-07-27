@@ -34,6 +34,7 @@ public:
 
 private:
   std::map<FlowKey, DWORD> _FlowToPid;
+  gh::base::ComponentLogger _Logger{boost::log::keywords::channel = "FlowTracker"};
 };
 
 } // namespace gh::policy
