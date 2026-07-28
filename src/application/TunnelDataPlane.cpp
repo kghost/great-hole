@@ -1,16 +1,21 @@
 #include "TunnelDataPlane.hpp"
 
 #include <boost/asio.hpp>
+#include <boost/asio/ip/address_v4.hpp>
+#include <boost/asio/ip/address_v6.hpp>
 #include <boost/log/trivial.hpp>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #ifndef _WIN32
 #include <unistd.h>
 #endif
 
+#include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
 #include "EndpointUdpDynMux.hpp"
 #include "ErrorCode.hpp"
@@ -30,16 +35,30 @@ using TunnelState = Interface::TunnelState;
 
 TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor,
                                  TunnelDataPlanePolicyResolverCallback& policyResolver,
-                                 Interface::DataPlaneCallbacks& callbacks)
+                                 Interface::DataPlaneCallbacks& callbacks, std::span<Interface::IpAddress> addresses,
+                                 int32_t mtu)
     : _Executor(std::move(executor)), _PolicyResolver(policyResolver), _Callbacks(callbacks),
-      _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor)) {}
+      _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor)) {
+#ifdef _WIN32
+  for (const auto& address : addresses) {
+    std::visit(Overload{[this](const Interface::Ip4Address& address) -> void {
+                          _NatContext._Ip4Addresses.emplace_back(address.Bytes);
+                        },
+                        [this](const Interface::Ip6Address& address) -> void {
+                          _NatContext._Ip6Addresses.emplace_back(address.Bytes);
+                        }},
+               address);
+  }
+  _NatContext._Mtu = mtu;
+#endif
+}
 
 TunnelDataPlane::~TunnelDataPlane() { assert(!_Running); }
 
 #ifndef _WIN32
 auto TunnelDataPlane::Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>
 #else
-auto TunnelDataPlane::Start(int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>
+auto TunnelDataPlane::Start(std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>
 #endif
 {
   if (_Running) {
@@ -127,18 +146,49 @@ auto TunnelDataPlane::GetTrafficStats(const std::shared_ptr<VpnClientMultiChanne
   return VpnClientMultiChannel::GetStats(session);
 }
 
-auto TunnelDataPlane::SelectConnectionMark(const ConnectionTracker::ConnectionKey& key)
-    -> std::shared_ptr<ConnectionMark> {
+auto TunnelDataPlane::Select(const ConnectionTracker::ConnectionKey& key) -> ConnectionTracker::Selector::Action {
   auto action = _PolicyResolver.ResolvePolicy(key);
   return std::visit(
-      Overload{[](const Interface::PolicyRule::ByPassRoute&) -> std::shared_ptr<VpnClientMultiChannel::Mark> {
-                 return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Bypass{});
+      Overload{[](const Interface::PolicyRule::ByPassRoute&) -> ConnectionTracker::Selector::Action {
+                 return Action(std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Bypass{}));
                },
-               [](const Interface::PolicyRule::EndpointRoute& route) -> std::shared_ptr<VpnClientMultiChannel::Mark> {
+               [&](const Interface::PolicyRule::EndpointRoute& route) -> ConnectionTracker::Selector::Action {
                  if (auto session = route.Endpoint.lock()) {
-                   return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::RouteVia{session});
+#ifndef _WIN32
+                   return Action(
+                       std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::RouteVia{session}));
+#else
+                   return std::visit(Overload{[&](const auto& key) -> auto {
+                                       if constexpr (std::is_same_v<decltype(key), ConnectionTracker::Ip4TcpKey> ||
+                                                     std::is_same_v<decltype(key), ConnectionTracker::Ip4UdpKey> ||
+                                                     std::is_same_v<decltype(key), ConnectionTracker::IcmpKey>) {
+                                         if (_NatContext._Ip4Addresses.empty()) {
+                                           return Action(std::make_unique<VpnClientMultiChannel::Mark>(
+                                               VpnClientMultiChannel::Mark::Discard{}));
+                                         } else {
+                                           return Action(std::make_unique<VpnClientMultiChannel::Mark>(
+                                                             VpnClientMultiChannel::Mark::RouteVia{session}),
+                                                         ConnectionTracker::Selector::Action::Snat4{
+                                                             .LocalAddress = _NatContext._Ip4Addresses[0],
+                                                             .LocalPort = std::nullopt});
+                                         }
+                                       } else {
+                                         if (_NatContext._Ip6Addresses.empty()) {
+                                           return Action(std::make_unique<VpnClientMultiChannel::Mark>(
+                                               VpnClientMultiChannel::Mark::Discard{}));
+                                         } else {
+                                           return Action(std::make_unique<VpnClientMultiChannel::Mark>(
+                                                             VpnClientMultiChannel::Mark::RouteVia{session}),
+                                                         ConnectionTracker::Selector::Action::Snat6{
+                                                             .LocalAddress = _NatContext._Ip6Addresses[0],
+                                                             .LocalPort = std::nullopt});
+                                         }
+                                       }
+                                     }},
+                                     key);
+#endif
                  } else {
-                   return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
+                   return Action(std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{}));
                  }
                }},
       action);

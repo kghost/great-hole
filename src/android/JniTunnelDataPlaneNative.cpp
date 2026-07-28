@@ -110,7 +110,7 @@ public:
   explicit JniSelector(JniSession& session) : _Session(session) {}
   ~JniSelector() override = default;
 
-  std::shared_ptr<ConnectionMark> SelectConnectionMark(const ConnectionTracker::ConnectionKey& key) override;
+  auto Select(const ConnectionTracker::ConnectionKey& key) -> Action override;
 
 private:
   std::shared_ptr<ConnectionMark> FindTunnel(int protocol, const boost::asio::ip::address& localAddr,
@@ -175,7 +175,7 @@ std::shared_ptr<ConnectionMark> JniSelector::FindTunnel(int protocol, const boos
   return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
 }
 
-std::shared_ptr<ConnectionMark> JniSelector::SelectConnectionMark(const ConnectionTracker::ConnectionKey& key) {
+auto JniSelector::Select(const ConnectionTracker::ConnectionKey& key) -> ConnectionTracker::Selector::Action {
   return std::visit(Overload{[this](const ConnectionTracker::Ip4TcpKey& k) {
                                return FindTunnel(6, k.LocalAddress, k.LocalPort, k.RemoteAddress, k.RemotePort);
                              },

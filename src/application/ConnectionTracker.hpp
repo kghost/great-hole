@@ -4,13 +4,16 @@
 #include <compare>
 #include <cstdint>
 #include <expected>
-#include <map>
 #include <memory>
+#include <optional>
 #include <ostream>
+#include <set>
+#include <type_traits>
 #include <utility>
 #include <variant>
 
 #include <boost/asio/io_context.hpp>
+#include <boost/asio/ip/address.hpp>
 #include <boost/asio/ip/address_v4.hpp>
 #include <boost/asio/ip/address_v6.hpp>
 
@@ -35,6 +38,11 @@ public:
 };
 
 class ConnectionTracker : public ServiceBase {
+private:
+  struct TcpState;
+  struct UdpState;
+  struct IcmpState;
+
 public:
   struct Ip4TcpKey {
     boost::asio::ip::address_v4 LocalAddress;
@@ -44,6 +52,8 @@ public:
 
     auto operator<=>(const Ip4TcpKey& other) const -> std::strong_ordering = default;
     auto operator==(const Ip4TcpKey&) const -> bool = default;
+
+    using State = TcpState;
   };
 
   struct Ip6TcpKey {
@@ -54,6 +64,8 @@ public:
 
     auto operator<=>(const Ip6TcpKey& other) const -> std::strong_ordering = default;
     auto operator==(const Ip6TcpKey&) const -> bool = default;
+
+    using State = TcpState;
   };
 
   struct Ip4UdpKey {
@@ -64,6 +76,8 @@ public:
 
     auto operator<=>(const Ip4UdpKey& other) const -> std::strong_ordering = default;
     auto operator==(const Ip4UdpKey&) const -> bool = default;
+
+    using State = UdpState;
   };
 
   struct Ip6UdpKey {
@@ -74,6 +88,8 @@ public:
 
     auto operator<=>(const Ip6UdpKey& other) const -> std::strong_ordering = default;
     auto operator==(const Ip6UdpKey&) const -> bool = default;
+
+    using State = UdpState;
   };
 
   struct IcmpKey {
@@ -83,6 +99,8 @@ public:
 
     auto operator<=>(const IcmpKey& other) const -> std::strong_ordering = default;
     auto operator==(const IcmpKey&) const -> bool = default;
+
+    using State = IcmpState;
   };
 
   struct Icmp6Key {
@@ -92,18 +110,35 @@ public:
 
     auto operator<=>(const Icmp6Key& other) const -> std::strong_ordering = default;
     auto operator==(const Icmp6Key&) const -> bool = default;
+
+    using State = IcmpState;
   };
 
   using ConnectionKey = std::variant<Ip4TcpKey, Ip6TcpKey, Ip4UdpKey, Ip6UdpKey, IcmpKey, Icmp6Key>;
 
-  // Selector determines connection routing:
-  // - Returns a std::shared_ptr<ConnectionMark> representing the routing decision.
-  //
-  // Explicit Guarantee:
-  // The Selector implementation must guarantee loop prevention by returning a 'Bypass'
-  // mark for all traffic destined for the active VPN server endpoints.
+  // Selector determines connection routing decision and SNAT configuration:
+  // - Returns a Selector::Action representing the routing decision.
   class Selector {
   public:
+    struct Action {
+      struct Snat4 {
+        boost::asio::ip::address_v4 LocalAddress;
+        std::optional<uint16_t> LocalPort;
+      };
+
+      struct Snat6 {
+        boost::asio::ip::address_v6 LocalAddress;
+        std::optional<uint16_t> LocalPort;
+      };
+
+      std::shared_ptr<ConnectionMark> Mark;
+      std::variant<std::monostate, Snat4, Snat6> Nat;
+
+      explicit Action(std::shared_ptr<ConnectionMark> mark) : Mark(std::move(mark)), Nat(std::monostate{}) {}
+      explicit Action(std::shared_ptr<ConnectionMark> mark, Snat4 snat) : Mark(std::move(mark)), Nat(std::move(snat)) {}
+      explicit Action(std::shared_ptr<ConnectionMark> mark, Snat6 snat) : Mark(std::move(mark)), Nat(std::move(snat)) {}
+    };
+
     explicit Selector() = default;
     virtual ~Selector() = default;
 
@@ -112,7 +147,7 @@ public:
     Selector(Selector&&) = delete;
     auto operator=(Selector&&) -> Selector& = delete;
 
-    virtual auto SelectConnectionMark(const ConnectionKey&) -> std::shared_ptr<ConnectionMark> = 0;
+    virtual auto Select(const ConnectionKey& key) -> Action = 0;
   };
 
   explicit ConnectionTracker(boost::asio::any_io_executor executor);
@@ -148,10 +183,10 @@ public:
 
   using Result = std::expected<std::shared_ptr<ConnectionMark>, ErrorCode>;
 
-  template <typename Direction> auto LookupAndUpdate(const Packet& packet, Selector& selector) -> Result;
+  template <typename Direction> auto LookupAndUpdate(Packet& packet, Selector& selector) -> Result;
 
 private:
-  struct ConnectionEntry {
+  struct ConnectionState {
     template <typename Self>
     auto Validate(this Self& self, std::chrono::time_point<std::chrono::steady_clock> now) -> bool {
       return !self.IsExpired(now) && self.ConnectionEntryMark->Validate();
@@ -167,7 +202,7 @@ private:
     static constexpr std::chrono::seconds ProneInterval = std::chrono::seconds(60);
   };
 
-  struct TcpEntry : public ConnectionEntry {
+  struct TcpState : public ConnectionState {
     struct TcpFlags {
       static constexpr uint8_t kFin = 0x01;
       static constexpr uint8_t kSyn = 0x02;
@@ -182,6 +217,8 @@ private:
       uint32_t SequenceNumber = 0;
       uint32_t AcknowledgementNumber = 0;
     };
+
+    using ExtraKeyType = TcpExtraKey;
 
     struct OneDirectionState {
       enum class State : uint8_t { kNone, kSynSent, kSynAcked, kFinSent, kFinAcked, kClosed } State = State::kNone;
@@ -259,9 +296,9 @@ private:
     } OutputDirection, InputDirection;
 
     template <typename Direction>
-    explicit TcpEntry(std::in_place_type_t<Direction> /*unused*/, auto&& mark,
+    explicit TcpState(std::in_place_type_t<Direction> /*unused*/, auto&& mark,
                       std::chrono::steady_clock::time_point lastActive, TcpExtraKey extra)
-        : ConnectionEntry{mark(), lastActive} {
+        : ConnectionState{mark(), lastActive} {
       UpdateState<Direction>(extra);
     }
 
@@ -286,24 +323,91 @@ private:
     }
   };
 
-  struct UdpEntry : public ConnectionEntry {
+  struct UdpState : public ConnectionState {
     template <typename Direction>
-    UdpEntry(std::in_place_type_t<Direction> /*unused*/, auto&& mark, std::chrono::steady_clock::time_point lastActive,
+    UdpState(std::in_place_type_t<Direction> /*unused*/, auto&& mark, std::chrono::steady_clock::time_point lastActive,
              Nothing /*unused*/)
-        : ConnectionEntry{mark(), lastActive} {}
+        : ConnectionState{mark(), lastActive} {}
     static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
     static auto GetTimeout() -> std::chrono::seconds { return Timeout; }
     template <typename Direction> void UpdateState(Nothing /*unused*/) {}
+    using ExtraKeyType = Nothing;
   };
 
-  struct IcmpConnEntry : public ConnectionEntry {
+  struct IcmpState : public ConnectionState {
     template <typename Direction>
-    IcmpConnEntry(std::in_place_type_t<Direction> /*unused*/, auto&& mark,
-                  std::chrono::steady_clock::time_point lastActive, Nothing /*unused*/)
-        : ConnectionEntry{mark(), lastActive} {}
+    IcmpState(std::in_place_type_t<Direction> /*unused*/, auto&& mark, std::chrono::steady_clock::time_point lastActive,
+              Nothing /*unused*/)
+        : ConnectionState{mark(), lastActive} {}
     static constexpr std::chrono::seconds Timeout = std::chrono::seconds(30);
     static auto GetTimeout() -> std::chrono::seconds { return Timeout; }
     template <typename Direction> void UpdateState(Nothing /*unused*/) {}
+    using ExtraKeyType = Nothing;
+  };
+
+  template <typename ConnectionKeyType> struct ConnectionEntry {
+    using KeyType = ConnectionKeyType;
+    static constexpr bool IsNat = false;
+    ConnectionKeyType Key;
+    typename ConnectionKeyType::State State;
+
+    [[nodiscard]] auto GetOriginalKey() const -> const ConnectionKeyType& { return Key; }
+    [[nodiscard]] auto GetReverseKey() const -> const ConnectionKeyType& { return Key; }
+  };
+
+  template <typename ConnectionKeyType> struct ConnectionNatEntry {
+    using KeyType = ConnectionKeyType;
+    static constexpr bool IsNat = true;
+    ConnectionKeyType Key;    // Original outbound key
+    ConnectionKeyType NatKey; // Translated (SNAT) key
+    typename ConnectionKeyType::State State;
+
+    [[nodiscard]] auto GetOriginalKey() const -> const ConnectionKeyType& { return Key; }
+    [[nodiscard]] auto GetReverseKey() const -> const ConnectionKeyType& { return NatKey; }
+  };
+
+  using TrackedConnectionEntry =
+      std::variant<ConnectionEntry<Ip4TcpKey>, ConnectionEntry<Ip6TcpKey>, ConnectionEntry<Ip4UdpKey>,
+                   ConnectionEntry<Ip6UdpKey>, ConnectionEntry<IcmpKey>, ConnectionEntry<Icmp6Key>,
+                   ConnectionNatEntry<Ip4TcpKey>, ConnectionNatEntry<Ip6TcpKey>, ConnectionNatEntry<Ip4UdpKey>,
+                   ConnectionNatEntry<Ip6UdpKey>, ConnectionNatEntry<IcmpKey>, ConnectionNatEntry<Icmp6Key>>;
+
+  using ConnectionEntryPtr = std::shared_ptr<TrackedConnectionEntry>;
+
+  static auto GetOutputKey(const TrackedConnectionEntry& entry) -> ConnectionKey {
+    return std::visit([](const auto& entry) -> ConnectionKey { return ConnectionKey{entry.GetOriginalKey()}; }, entry);
+  }
+
+  static auto GetInputKey(const TrackedConnectionEntry& entry) -> ConnectionKey {
+    return std::visit([](const auto& entry) -> ConnectionKey { return ConnectionKey{entry.GetReverseKey()}; }, entry);
+  }
+
+  struct CompareByOutputKey {
+    using is_transparent = void;
+
+    auto operator()(const ConnectionEntryPtr& lhs, const ConnectionEntryPtr& rhs) const -> bool {
+      return GetOutputKey(*lhs) < GetOutputKey(*rhs);
+    }
+    auto operator()(const ConnectionEntryPtr& lhs, const ConnectionKey& rhs) const -> bool {
+      return GetOutputKey(*lhs) < rhs;
+    }
+    auto operator()(const ConnectionKey& lhs, const ConnectionEntryPtr& rhs) const -> bool {
+      return lhs < GetOutputKey(*rhs);
+    }
+  };
+
+  struct CompareByInputKey {
+    using is_transparent = void;
+
+    auto operator()(const ConnectionEntryPtr& lhs, const ConnectionEntryPtr& rhs) const -> bool {
+      return GetInputKey(*lhs) < GetInputKey(*rhs);
+    }
+    auto operator()(const ConnectionEntryPtr& lhs, const ConnectionKey& rhs) const -> bool {
+      return GetInputKey(*lhs) < rhs;
+    }
+    auto operator()(const ConnectionKey& lhs, const ConnectionEntryPtr& rhs) const -> bool {
+      return lhs < GetInputKey(*rhs);
+    }
   };
 
   enum class PacketType : std::uint8_t {
@@ -312,15 +416,18 @@ private:
   };
 
   template <typename KeyDirection>
-  static auto ParseConnectionKey(std::span<const uint8_t> packet, PacketType type, auto&& function) -> Result;
+  static auto ParseConnectionKey(std::span<uint8_t> packet, PacketType type, auto&& function) -> Result;
+
+  template <typename Direction> static void ApplySnat(Packet& packet, const ConnectionKey& key);
+  template <typename ConnectionKeyType, typename Nat>
+  auto BuildNatKey(const ConnectionKeyType& orig, const Nat& snat) -> std::optional<ConnectionKeyType>;
+
+  template <typename Direction, typename EntryType>
+  void UpdateEntryState(EntryType& entry, const typename EntryType::KeyType::State::ExtraKeyType& extra);
 
   boost::asio::any_io_executor _Executor;
-  std::map<Ip4TcpKey, TcpEntry> _Ip4TcpTable;
-  std::map<Ip6TcpKey, TcpEntry> _Ip6TcpTable;
-  std::map<Ip4UdpKey, UdpEntry> _Ip4UdpTable;
-  std::map<Ip6UdpKey, UdpEntry> _Ip6UdpTable;
-  std::map<IcmpKey, IcmpConnEntry> _IcmpTable;
-  std::map<Icmp6Key, IcmpConnEntry> _Icmp6Table;
+  std::set<ConnectionEntryPtr, CompareByOutputKey> _OutputTable;
+  std::set<ConnectionEntryPtr, CompareByInputKey> _InputTable;
 };
 
 inline auto operator<<(std::ostream& stream, const ConnectionTracker::Ip4TcpKey& key) -> std::ostream& {

@@ -15,9 +15,7 @@ WinDivert::WinDivert(boost::asio::any_io_executor executor, std::string name, ui
     : _Executor(std::move(executor)), _Name(std::move(name)), _IfIdx(ifIdx), _IfSubIdx(ifSubIdx),
       _RouteCallback(callback) {}
 
-WinDivert::~WinDivert() {
-  assert(_WinDivertHandle == INVALID_HANDLE_VALUE);
-}
+WinDivert::~WinDivert() { assert(_WinDivertHandle == INVALID_HANDLE_VALUE); }
 
 auto WinDivert::GetName() const -> std::string {
   return std::format("WinDivert:{}:{}:{}[{}]", _Name, _IfIdx, _IfSubIdx, _WinDivertHandle);
@@ -142,6 +140,7 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
     auto route = _RouteCallback.WinDivertRoute(winPacket, addr);
     if (route == WinDivertRouteCallback::Result::Bypass) {
       UINT sendLen = 0;
+      // FIXME: WinDivertSendEx may block
       if (WinDivertSendEx(_WinDivertHandle, winPacket.Data().data(), winPacket.Data().size(), &sendLen, 0, &addr,
                           sizeof(addr), nullptr) != TRUE) {
         DWORD err = GetLastError();

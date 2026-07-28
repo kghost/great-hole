@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -25,6 +26,14 @@ namespace gh {
 class VpnClientMultiChannelSession;
 
 namespace Interface {
+
+struct Ip4Address {
+  std::array<uint8_t, 4> Bytes;
+};
+struct Ip6Address {
+  std::array<uint8_t, 16> Bytes;
+};
+using IpAddress = std::variant<Ip4Address, Ip6Address>;
 
 enum class LogLevel : std::uint8_t { Trace = 0, Debug = 1, Info = 2, Warning = 3, Error = 4, Fatal = 5, Off = 6 };
 enum class TunnelState : std::uint8_t { Starting = 0, Running = 1, Stopping = 2, Stopped = 3, Failed = 4 };
@@ -122,7 +131,8 @@ public:
   virtual auto StartEngine() -> std::error_code = 0;
   virtual auto StopEngine() -> std::error_code = 0;
 
-  virtual auto StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code = 0;
+  virtual auto StartVpn(std::span<IpAddress> addresses, int32_t mtu, std::span<uint8_t> encryption_key)
+      -> std::error_code = 0;
   virtual auto StopVpn() -> std::error_code = 0;
 
   static constexpr size_t kPskSize = 16;

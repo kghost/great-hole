@@ -11,6 +11,7 @@
 #include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
 #include "Packet.hpp"
+#include "PacketHeader.hpp"
 #include "TimeTravel.hpp"
 
 #include "CapturedPackets.hpp"
@@ -84,8 +85,8 @@ class MockSelector : public ConnectionTracker::Selector {
 public:
   explicit MockSelector(ConnectionMark& result) : Result(&result) {}
 
-  auto SelectConnectionMark(const ConnectionTracker::ConnectionKey&) -> std::shared_ptr<ConnectionMark> override {
-    return CloneResult();
+  auto Select(const ConnectionTracker::ConnectionKey&) -> Action override {
+    return ConnectionTracker::Selector::Action(CloneResult());
   }
 
   mutable ConnectionMark* Result = nullptr;
@@ -102,8 +103,8 @@ private:
 class ConstantSelector : public ConnectionTracker::Selector {
 public:
   explicit ConstantSelector(ConnectionMark& mark) : _Mark(mark) {}
-  auto SelectConnectionMark(const ConnectionTracker::ConnectionKey&) -> std::shared_ptr<ConnectionMark> override {
-    return std::make_unique<ReferenceMark>(_Mark);
+  auto Select(const ConnectionTracker::ConnectionKey&) -> Action override {
+    return ConnectionTracker::Selector::Action(std::make_unique<ReferenceMark>(_Mark));
   }
 
 private:
@@ -452,6 +453,86 @@ TEST(ConnectionTrackerTest, IcmpDestinationUnreachable) {
       EXPECT_TRUE(checkRes.has_value());
       EXPECT_EQ(GetMark(checkRes), &mark1);
     }
+
+    auto errStop = co_await tracker->Stop();
+    EXPECT_FALSE(errStop);
+
+    testPassed = true;
+    co_return;
+  });
+
+  io.restart();
+  io.run();
+  EXPECT_TRUE(testPassed);
+}
+
+class SnatSelector : public ConnectionTracker::Selector {
+public:
+  SnatSelector(ConnectionMark& mark, ConnectionTracker::Selector::Action::Snat4 snat)
+      : _Mark(mark), _Snat(std::move(snat)) {}
+
+  auto Select(const ConnectionTracker::ConnectionKey&) -> Action override {
+    return Action(std::make_unique<ReferenceMark>(_Mark), _Snat);
+  }
+
+private:
+  ConnectionMark& _Mark;
+  ConnectionTracker::Selector::Action::Snat4 _Snat;
+};
+
+TEST(ConnectionTrackerTest, SnatOutputAndInputIPv4) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    MockConnectionMark mark1("mark1");
+    SnatSelector snatSelector(mark1, ConnectionTracker::Selector::Action::Snat4{
+                                         .LocalAddress = boost::asio::ip::make_address_v4("10.0.0.1"), .LocalPort = 54321});
+    ConstantSelector dummySelector(mark1);
+
+    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
+    auto errStart = co_await tracker->Start();
+    EXPECT_FALSE(errStart);
+
+    auto pOut = CreatePacket(test::captured::Ip4TcpSyn);
+
+    // Outbound packet: SNAT should rewrite SrcIp to 10.0.0.1 and SrcPort to 54321
+    auto resOut = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(pOut, snatSelector);
+    EXPECT_TRUE(resOut.has_value());
+
+    auto outSpan = pOut.Data();
+    const auto* ip4Out = reinterpret_cast<const IPv4Header*>(outSpan.data());
+    EXPECT_EQ(boost::asio::ip::make_address_v4(ip4Out->GetSrcIp()), boost::asio::ip::make_address_v4("10.0.0.1"));
+    auto l4Out = outSpan.subspan(ip4Out->GetIhl() * 4);
+    const auto* tcpOut = reinterpret_cast<const TCPHeader*>(l4Out.data());
+    EXPECT_EQ(tcpOut->GetSrcPort(), 54321);
+
+    // Inbound reply packet: DestIp = 10.0.0.1, DestPort = 54321
+    // Build reply packet matching NAT key
+    auto pIn = CreatePacket(test::captured::Ip4TcpSyn);
+    auto inSpan = pIn.Data();
+    auto* ip4In = reinterpret_cast<IPv4Header*>(inSpan.data());
+    // Swap original src/dst to form incoming reply, set DestIp=10.0.0.1, DestPort=54321
+    uint32_t origSrc = ip4In->SrcIp;
+    uint32_t origDst = ip4In->DestIp;
+    ip4In->SrcIp = origDst;
+    ip4In->DestIp = ArchEndian(boost::asio::ip::make_address_v4("10.0.0.1").to_uint());
+    auto l4In = inSpan.subspan(ip4In->GetIhl() * 4);
+    auto* tcpIn = reinterpret_cast<TCPHeader*>(l4In.data());
+    uint16_t origSrcPortHost = tcpIn->GetSrcPort();
+    uint16_t origDstPortNet = tcpIn->DestPort;
+    tcpIn->SrcPort = origDstPortNet;
+    tcpIn->DestPort = ArchEndian(static_cast<uint16_t>(54321));
+
+    // Input lookup should de-NAT DestIp back to original local address and DestPort back to original local port
+    auto resIn = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(pIn, dummySelector);
+    EXPECT_TRUE(resIn.has_value());
+
+    EXPECT_EQ(ip4In->GetDestIp(), ArchEndian(origSrc));
+    EXPECT_EQ(tcpIn->GetDestPort(), origSrcPortHost);
 
     auto errStop = co_await tracker->Stop();
     EXPECT_FALSE(errStop);

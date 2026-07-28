@@ -34,7 +34,8 @@ public:
   auto operator=(PlatformImpl&&) -> PlatformImpl& = delete;
 
   auto StartEngine() -> std::error_code override;
-  auto StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code override;
+  auto StartVpn(std::span<IpAddress> addresses, int32_t mtu, std::span<uint8_t> encryption_key)
+      -> std::error_code override;
   auto StopEngine() -> std::error_code override;
   auto StopVpn() -> std::error_code override;
 
@@ -165,16 +166,16 @@ auto PlatformImpl::StopEngine() -> std::error_code {
   return future.get();
 }
 
-auto PlatformImpl::StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code {
+auto PlatformImpl::StartVpn(std::span<IpAddress> addresses, int32_t mtu, std::span<uint8_t> encryption_key)
+    -> std::error_code {
   std::promise<ErrorCode> promise;
   auto future = promise.get_future();
   std::vector<char> key(encryption_key.begin(), encryption_key.end());
-
-  _TaskQueue.Push([this, &promise, mtu, key = std::move(key)](const auto& policyEngine,
-                                                              auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
-    dataPlane =
-        std::make_unique<gh::TunnelDataPlane>(_IoContext.get_executor(), policyEngine->GetPolicySelector(), _Callbacks);
-    auto err = co_await dataPlane->Start(mtu, key);
+  _TaskQueue.Push([this, &promise, key = std::move(key), addresses,
+                   mtu](const auto& policyEngine, auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
+    dataPlane = std::make_unique<gh::TunnelDataPlane>(_IoContext.get_executor(), policyEngine->GetPolicySelector(),
+                                                      _Callbacks, addresses, mtu);
+    auto err = co_await dataPlane->Start(key);
     if (err) {
       promise.set_value(err);
       co_return;

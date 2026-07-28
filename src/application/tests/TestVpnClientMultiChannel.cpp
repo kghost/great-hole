@@ -203,7 +203,7 @@ class CallbackSelector : public ConnectionTracker::Selector {
 public:
   CallbackSelector(std::vector<CallbackArgs>& invocations) : _Invocations(invocations) {}
 
-  auto SelectConnectionMark(const ConnectionTracker::ConnectionKey& key) -> std::shared_ptr<ConnectionMark> override {
+  auto Select(const ConnectionTracker::ConnectionKey& key) -> Action override {
     std::visit(
         Overload{[this](const ConnectionTracker::Ip4TcpKey& k) {
                    _Invocations.push_back(
@@ -227,7 +227,8 @@ public:
                    _Invocations.push_back(CallbackArgs{k.LocalAddress, k.RemoteAddress, k.Id, k.Id, 58});
                  }},
         key);
-    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
+    return ConnectionTracker::Selector::Action(
+        std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{}));
   }
 
 private:
@@ -239,8 +240,8 @@ public:
   RoutingSelector(std::shared_ptr<VpnClientMultiChannelSession>& resolvedSession, int& selectorCalls)
       : _ResolvedSession(resolvedSession), _SelectorCalls(selectorCalls) {}
 
-  auto SelectConnectionMark(const ConnectionTracker::ConnectionKey&) -> std::shared_ptr<ConnectionMark> override {
-    return Handle();
+  auto Select(const ConnectionTracker::ConnectionKey&) -> Action override {
+    return ConnectionTracker::Selector::Action(Handle());
   }
 
 private:

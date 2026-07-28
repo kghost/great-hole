@@ -68,8 +68,7 @@ struct IPHeader {
   [[nodiscard]] auto GetVersion() const noexcept -> uint8_t { return (VerIhl >> 4) & 0x0F; }
   [[nodiscard]] auto GetIhl() const noexcept -> uint8_t { return VerIhl & 0x0F; }
 
-  template <typename Overload>
-  auto As(std::span<const uint8_t> self, bool truncated, Overload&& overload) const -> decltype(auto);
+  template <typename Overload> auto As(std::span<uint8_t> self, bool truncated, Overload&& overload) -> decltype(auto);
 };
 static_assert(std::is_trivially_copyable_v<IPHeader>);
 
@@ -103,14 +102,14 @@ struct IPv4Header {
   [[nodiscard]] auto GetFlags() const noexcept -> uint8_t { return (GetFlagsAndFragmentOffset() & 0xE000) >> 13; }
   [[nodiscard]] auto GetFragmentOffset() const noexcept -> uint16_t { return GetFlagsAndFragmentOffset() & 0x1FFF; }
 
-  auto As(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto) {
+  auto As(std::span<uint8_t> self, bool truncated, auto&& overload) -> decltype(auto) {
     auto valid = self.size() >= static_cast<size_t>(GetIhl()) * 4 && (truncated || self.size() == GetTotalLength());
     return valid ? overload(self, this)
                  : overload(self, std::format("Invalid IP Header: size = {}, ihl = {}, total_length = {}", self.size(),
                                               GetIhl(), GetTotalLength()));
   }
 
-  auto Next(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto);
+  auto Next(std::span<uint8_t> self, bool truncated, auto&& overload) -> decltype(auto);
 };
 static_assert(std::is_trivially_copyable_v<IPv4Header>);
 static_assert(sizeof(IPv4Header) == 20);
@@ -137,7 +136,7 @@ struct IPv6Header {
   [[nodiscard]] auto GetTrafficClass() const noexcept -> uint8_t { return (GetVTcFl() >> 20) & 0xFF; }
   [[nodiscard]] auto GetFlowLabel() const noexcept -> uint32_t { return GetVTcFl() & 0x000FFFFF; }
 
-  auto As(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto) {
+  auto As(std::span<uint8_t> self, bool truncated, auto&& overload) -> decltype(auto) {
     auto valid =
         self.size() >= sizeof(IPv6Header) && (truncated || self.size() == sizeof(IPv6Header) + GetPayloadLength());
     return valid ? overload(self, this)
@@ -145,9 +144,8 @@ struct IPv6Header {
                                               GetPayloadLength()));
   }
 
-  static auto Next(IPProtocol protocol, std::span<const uint8_t> next, bool truncated, auto&& overload)
-      -> decltype(auto);
-  auto Next(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto) {
+  static auto Next(IPProtocol protocol, std::span<uint8_t> next, bool truncated, auto&& overload) -> decltype(auto);
+  auto Next(std::span<uint8_t> self, bool truncated, auto&& overload) -> decltype(auto) {
     return Next(GetNextHeader(), self.template subspan<sizeof(IPv6Header)>(), truncated,
                 std::forward<decltype(overload)>(overload));
   }
@@ -189,7 +187,7 @@ struct TCPHeader {
   [[nodiscard]] auto IsEce() const noexcept -> bool { return (Flags & 0x40) != 0; }
   [[nodiscard]] auto IsCwr() const noexcept -> bool { return (Flags & 0x80) != 0; }
 
-  auto As(std::span<const uint8_t> self, bool /*truncated*/, auto&& overload) const -> decltype(auto) {
+  auto As(std::span<uint8_t> self, bool /*truncated*/, auto&& overload) -> decltype(auto) {
     auto valid = self.size() >= static_cast<size_t>(GetDataOffset()) * 4;
     return valid ? overload(self, this)
                  : overload(self, std::format("Invalid TCP Header: size = {}, data_offset = {}", self.size(),
@@ -214,7 +212,7 @@ struct UDPHeader {
   [[nodiscard]] auto GetLength() const noexcept -> uint16_t { return ArchEndian(Length); }
   [[nodiscard]] auto GetChecksum() const noexcept -> uint16_t { return ArchEndian(Checksum); }
 
-  auto As(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto) {
+  auto As(std::span<uint8_t> self, bool truncated, auto&& overload) -> decltype(auto) {
     auto valid = self.size() >= sizeof(UDPHeader) && (truncated || self.size() == GetLength());
     return valid ? overload(self, this)
                  : overload(self, std::format("Invalid UDP Header: size = {}, length = {}", self.size(), GetLength()));
@@ -300,7 +298,7 @@ struct ICMPv4Header {
   [[nodiscard]] auto GetEchoSequence() const noexcept -> uint16_t { return ArchEndian(Body.Echo.Sequence); }
   [[nodiscard]] auto GetGatewayIp() const noexcept -> uint32_t { return ArchEndian(Body.GatewayIp); }
 
-  auto As(std::span<const uint8_t> self, bool /*truncated*/, auto&& overload) const -> decltype(auto) {
+  auto As(std::span<uint8_t> self, bool /*truncated*/, auto&& overload) -> decltype(auto) {
     auto valid = self.size() >= sizeof(ICMPv4Header);
     return valid ? overload(self, this)
                  : overload(self, std::format("Invalid ICMPv4 Header: size = {}, expected = {}", self.size(),
@@ -394,7 +392,7 @@ struct ICMPv6Header {
   [[nodiscard]] auto GetMtu() const noexcept -> uint32_t { return ArchEndian(Body.Mtu); }
   [[nodiscard]] auto GetPointer() const noexcept -> uint32_t { return ArchEndian(Body.Pointer); }
 
-  auto As(std::span<const uint8_t> self, bool /*truncated*/, auto&& overload) const -> decltype(auto) {
+  auto As(std::span<uint8_t> self, bool /*truncated*/, auto&& overload) -> decltype(auto) {
     auto valid = self.size() >= sizeof(ICMPv6Header);
     return valid ? overload(self, this)
                  : overload(self, std::format("Invalid ICMPv6 Header: size = {}, expected = {}", self.size(),
@@ -418,14 +416,14 @@ struct IPv6HopByHopHeader {
   [[nodiscard]] auto GetHeaderExtLen() const noexcept -> uint8_t { return HeaderExtLen; }
   [[nodiscard]] auto GetReserved() const noexcept -> std::span<const uint8_t, 6> { return Reserved; }
 
-  auto As(std::span<const uint8_t> self, bool /*truncated*/, auto&& overload) const -> decltype(auto) {
+  auto As(std::span<uint8_t> self, bool /*truncated*/, auto&& overload) -> decltype(auto) {
     auto valid = self.size() >= sizeof(IPv6HopByHopHeader) + (static_cast<size_t>(GetHeaderExtLen()) * 8);
     return valid ? overload(self, this)
                  : overload(self, std::format("Invalid IPv6 HopByHop Header: size = {}, header_ext_len = {}",
                                               self.size(), GetHeaderExtLen()));
   }
 
-  auto Next(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto) {
+  auto Next(std::span<uint8_t> self, bool truncated, auto&& overload) -> decltype(auto) {
     return IPv6Header::Next(GetNextHeader(),
                             self.subspan(sizeof(IPv6HopByHopHeader) + (static_cast<size_t>(GetHeaderExtLen()) * 8)),
                             truncated, std::forward<decltype(overload)>(overload));
@@ -437,11 +435,11 @@ static_assert(sizeof(IPv6HopByHopHeader) == 8);
 // ============================================================================
 // IPHeader::As Implementation
 // ============================================================================
-auto IPHeader::As(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto) {
+auto IPHeader::As(std::span<uint8_t> self, bool truncated, auto&& overload) -> decltype(auto) {
   if (GetVersion() == 4 && self.size() >= sizeof(IPv4Header)) {
-    return reinterpret_cast<const IPv4Header*>(this)->As(self, truncated, overload);
+    return reinterpret_cast<IPv4Header*>(this)->As(self, truncated, overload);
   } else if (GetVersion() == 6 && self.size() >= sizeof(IPv6Header)) {
-    return reinterpret_cast<const IPv6Header*>(this)->As(self, truncated, overload);
+    return reinterpret_cast<IPv6Header*>(this)->As(self, truncated, overload);
   } else {
     return overload(self, std::format("Unknown IP version: {}", GetVersion()));
   }
@@ -450,14 +448,14 @@ auto IPHeader::As(std::span<const uint8_t> self, bool truncated, auto&& overload
 // ============================================================================
 // IPv4Header::Next Implementation
 // ============================================================================
-auto IPv4Header::Next(std::span<const uint8_t> self, bool truncated, auto&& overload) const -> decltype(auto) {
+auto IPv4Header::Next(std::span<uint8_t> self, bool truncated, auto&& overload) -> decltype(auto) {
   auto next = self.subspan(static_cast<size_t>(GetIhl()) * 4);
   if (GetProtocol() == IPProtocol::TCP && next.size() >= sizeof(TCPHeader)) {
-    return reinterpret_cast<const TCPHeader*>(next.data())->As(next, truncated, overload);
+    return reinterpret_cast<TCPHeader*>(next.data())->As(next, truncated, overload);
   } else if (GetProtocol() == IPProtocol::UDP && next.size() >= sizeof(UDPHeader)) {
-    return reinterpret_cast<const UDPHeader*>(next.data())->As(next, truncated, overload);
+    return reinterpret_cast<UDPHeader*>(next.data())->As(next, truncated, overload);
   } else if (GetProtocol() == IPProtocol::ICMPv4 && next.size() >= sizeof(ICMPv4Header)) {
-    return reinterpret_cast<const ICMPv4Header*>(next.data())->As(next, truncated, overload);
+    return reinterpret_cast<ICMPv4Header*>(next.data())->As(next, truncated, overload);
   } else {
     return overload(next, std::format("Unknown IPv4 payload type: {}", std::to_underlying(GetProtocol())));
   }
@@ -466,27 +464,26 @@ auto IPv4Header::Next(std::span<const uint8_t> self, bool truncated, auto&& over
 // ============================================================================
 // IPv6Header::Next Implementation
 // ============================================================================
-auto IPv6Header::Next(IPProtocol protocol, std::span<const uint8_t> next, bool truncated, auto&& overload)
-    -> decltype(auto) {
+auto IPv6Header::Next(IPProtocol protocol, std::span<uint8_t> next, bool truncated, auto&& overload) -> decltype(auto) {
   switch (protocol) {
   case IPProtocol::TCP:
     if (next.size() >= sizeof(TCPHeader)) {
-      return reinterpret_cast<const TCPHeader*>(next.data())->As(next, truncated, overload);
+      return reinterpret_cast<TCPHeader*>(next.data())->As(next, truncated, overload);
     }
     break;
   case IPProtocol::UDP:
     if (next.size() >= sizeof(UDPHeader)) {
-      return reinterpret_cast<const UDPHeader*>(next.data())->As(next, truncated, overload);
+      return reinterpret_cast<UDPHeader*>(next.data())->As(next, truncated, overload);
     }
     break;
   case IPProtocol::ICMPv6:
     if (next.size() >= sizeof(ICMPv6Header)) {
-      return reinterpret_cast<const ICMPv6Header*>(next.data())->As(next, truncated, overload);
+      return reinterpret_cast<ICMPv6Header*>(next.data())->As(next, truncated, overload);
     }
     break;
   case IPProtocol::HopByHop:
     if (next.size() >= sizeof(IPv6HopByHopHeader)) {
-      return reinterpret_cast<const IPv6HopByHopHeader*>(next.data())->As(next, truncated, overload);
+      return reinterpret_cast<IPv6HopByHopHeader*>(next.data())->As(next, truncated, overload);
     }
     break;
   case IPProtocol::IPv6Opts:
