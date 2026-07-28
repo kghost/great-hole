@@ -247,7 +247,7 @@ private:
   auto Handle() const -> std::shared_ptr<ConnectionMark> {
     _SelectorCalls++;
     if (_ResolvedSession) {
-      return std::make_unique<VpnClientMultiChannel::Mark>(_ResolvedSession);
+      return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::RouteVia{_ResolvedSession});
     }
     return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
   }

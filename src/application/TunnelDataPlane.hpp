@@ -20,17 +20,29 @@
 
 namespace gh {
 
-using DataPlaneCallbacks = Interface::DataPlaneCallbacks;
-
-class TunnelDataPlane : public VpnClientMultiChannel::SessionStateListener {
+class TunnelDataPlanePolicyResolverCallback {
 public:
+  explicit TunnelDataPlanePolicyResolverCallback() = default;
+  virtual ~TunnelDataPlanePolicyResolverCallback() = default;
+
+  TunnelDataPlanePolicyResolverCallback(const TunnelDataPlanePolicyResolverCallback&) = default;
+  TunnelDataPlanePolicyResolverCallback(TunnelDataPlanePolicyResolverCallback&&) = delete;
+  auto operator=(const TunnelDataPlanePolicyResolverCallback&) -> TunnelDataPlanePolicyResolverCallback& = default;
+  auto operator=(TunnelDataPlanePolicyResolverCallback&&) -> TunnelDataPlanePolicyResolverCallback& = delete;
+
+  [[nodiscard]] virtual auto ResolvePolicy(const ConnectionTracker::ConnectionKey& key)
+      -> Interface::PolicyRule::RoutingAction = 0;
+};
+
+class TunnelDataPlane : public VpnClientMultiChannel::SessionStateListener,
+                        public ConnectionTracker::Selector,
 #ifdef _WIN32
-  TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
-                  WinDivertRouteCallback& routeCallback, DataPlaneCallbacks& callbacks);
-#else
-  TunnelDataPlane(boost::asio::any_io_executor executor, ConnectionTracker::Selector& selector,
-                  DataPlaneCallbacks& callbacks);
+                        public WinDivertRouteCallback
 #endif
+{
+public:
+  TunnelDataPlane(boost::asio::any_io_executor executor, TunnelDataPlanePolicyResolverCallback& policyResolver,
+                  Interface::DataPlaneCallbacks& callbacks);
   ~TunnelDataPlane();
 
   void OnSessionStarting(const std::weak_ptr<VpnClientMultiChannelSession>& session) override;
@@ -46,9 +58,6 @@ public:
 
 #ifdef _WIN32
   auto Start(int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>;
-  [[nodiscard]] auto GetConnectionTracker() const -> const std::shared_ptr<ConnectionTracker>& {
-    return _ConnectionTracker;
-  }
 #else
   auto Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>;
   auto MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void>;
@@ -61,17 +70,18 @@ public:
   auto StartEndpoint(const std::weak_ptr<VpnClientMultiChannelSession>& weak) -> Omni::Fiber::Coroutine<void>;
   auto StopEndpoint(const std::weak_ptr<VpnClientMultiChannelSession>& weak) -> Omni::Fiber::Coroutine<void>;
 
+  auto SelectConnectionMark(const ConnectionTracker::ConnectionKey& key) -> std::shared_ptr<ConnectionMark> override;
+  auto WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> WinDivertRouteCallback::Result override;
+
+  [[nodiscard]] auto GetConnections() const -> std::vector<Interface::TrackedConnectionInfo>;
   static auto GetTrafficStats(const std::shared_ptr<VpnClientMultiChannelSession>& session)
       -> std::optional<VpnTrafficStats>;
 
 private:
   boost::asio::any_io_executor _Executor;
-  ConnectionTracker::Selector& _Selector;
-  DataPlaneCallbacks& _Callbacks;
-#ifdef _WIN32
+  TunnelDataPlanePolicyResolverCallback& _PolicyResolver;
+  Interface::DataPlaneCallbacks& _Callbacks;
   std::shared_ptr<ConnectionTracker> _ConnectionTracker;
-  std::shared_ptr<WinDivert> _WinDivert;
-#endif
   std::shared_ptr<VpnClientMultiChannel> _Client;
   bool _Running = false;
 };

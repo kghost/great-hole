@@ -39,13 +39,15 @@ public:
     struct ToBeSelected {};
     struct Bypass {};
     struct Discard {};
-    using ValueType =
-        std::variant<ToBeSelected, Bypass, Discard, std::weak_ptr<VpnClientMultiChannelSession>>;
+    struct RouteVia {
+      std::weak_ptr<VpnClientMultiChannelSession> Endpoint;
+    };
+    using ValueType = std::variant<ToBeSelected, Bypass, Discard, RouteVia>;
 
     explicit Mark() : _Value(ToBeSelected{}) {}
     explicit Mark(Bypass /*unused*/) : _Value(Bypass{}) {}
     explicit Mark(Discard /*unused*/) : _Value(Discard{}) {}
-    explicit Mark(std::weak_ptr<VpnClientMultiChannelSession> session) : _Value(std::move(session)) {}
+    explicit Mark(RouteVia routeVia) : _Value(std::move(routeVia)) {}
     ~Mark() override = default;
 
     Mark(const Mark&) = delete;
@@ -62,6 +64,7 @@ public:
     ValueType _Value;
   };
 
+  // TODO: remove this, use DataPlaneCallbacks directly.
   class SessionStateListener {
   public:
     explicit SessionStateListener() = default;

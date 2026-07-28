@@ -44,7 +44,7 @@ public:
 
   auto SelectConnectionMark(const ConnectionTracker::ConnectionKey& /*unused*/)
       -> std::shared_ptr<ConnectionMark> override {
-    return std::make_unique<VpnClientMultiChannel::Mark>(_Session);
+    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::RouteVia{_Session});
   }
 
 private:
@@ -55,9 +55,9 @@ auto VpnClientMultiChannel::Mark::GetDescription() const -> std::string {
   return std::visit(Overload{[](const ToBeSelected&) -> std::string { return "ToBeSelected"; },
                              [](const Bypass&) -> std::string { return "Bypass"; },
                              [](const Discard&) -> std::string { return "Discard"; },
-                             [](const Interface::VpnEndpoint& endpoint) -> std::string {
-                               if (auto session = endpoint.lock()) {
-                                 return session->GetDescription();
+                             [](const RouteVia& via) -> std::string {
+                               if (auto endpoint = via.Endpoint.lock()) {
+                                 return endpoint->GetDescription();
                                }
                                return "Expired Session";
                              }},
@@ -67,9 +67,9 @@ auto VpnClientMultiChannel::Mark::GetDescription() const -> std::string {
 auto VpnClientMultiChannel::Mark::Validate() const -> bool {
   return std::visit(Overload{[](const ToBeSelected&) -> bool { return false; },
                              [](const Bypass&) -> bool { return true; }, [](const Discard&) -> bool { return true; },
-                             [](const Interface::VpnEndpoint& endpoint) -> bool {
-                               if (auto session = endpoint.lock()) {
-                                 return session->State.IsState<VpnClientMultiChannelSession::State::kRunning>();
+                             [](const RouteVia& via) -> bool {
+                               if (auto endpoint = via.Endpoint.lock()) {
+                                 return endpoint->State.IsState<VpnClientMultiChannelSession::State::kRunning>();
                                }
                                return false;
                              }},
@@ -237,9 +237,9 @@ private:
               BOOST_LOG_TRIVIAL(debug) << GetName() << ": Packet marked Discard";
               co_return ErrorCode{};
             },
-            [&](const Interface::VpnEndpoint& endpoint) -> Omni::Fiber::Coroutine<ErrorCode> {
-              if (auto session = endpoint.lock()) {
-                co_await session->State.Action(Overload{
+            [&](const Mark::RouteVia& via) -> Omni::Fiber::Coroutine<ErrorCode> {
+              if (auto endpoint = via.Endpoint.lock()) {
+                co_await endpoint->State.Action(Overload{
                     [&](C<VpnClientMultiChannelSession::State::kNone>, auto& /*data*/) -> void {
                       BOOST_LOG_TRIVIAL(info) << GetName() << " RouteByMark: Session is not started, dropping packet";
                     },

@@ -172,12 +172,10 @@ auto PlatformImpl::StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> s
 
   _TaskQueue.Push([this, &promise, mtu, key = std::move(key)](const auto& policyEngine,
                                                               auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
-    dataPlane = std::make_unique<gh::TunnelDataPlane>(_IoContext.get_executor(), policyEngine->GetPolicySelector(),
-                                                      policyEngine->GetPolicySelector(), _Callbacks);
-    policyEngine->GetPolicySelector().SetConnectionTracker(dataPlane->GetConnectionTracker());
+    dataPlane =
+        std::make_unique<gh::TunnelDataPlane>(_IoContext.get_executor(), policyEngine->GetPolicySelector(), _Callbacks);
     auto err = co_await dataPlane->Start(mtu, key);
     if (err) {
-      policyEngine->GetPolicySelector().ClearConnectionTracker();
       promise.set_value(err);
       co_return;
     }
@@ -193,15 +191,12 @@ auto PlatformImpl::StopVpn() -> std::error_code {
   std::promise<ErrorCode> promise;
   auto future = promise.get_future();
 
-  _TaskQueue.Push([&promise](const auto& policyEngine, auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
+  _TaskQueue.Push([&promise](const auto& /*policyEngine*/, auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
     auto err = co_await dataPlane->Stop();
     if (err) {
       promise.set_value(err);
       co_return;
     }
-
-    policyEngine->GetPolicySelector().ClearConnectionTracker();
-
     dataPlane.reset();
 
     promise.set_value(ErrorCode{});
@@ -355,8 +350,8 @@ auto PlatformImpl::GetFlows() -> std::vector<FlowInfo> {
 auto PlatformImpl::GetConnections() -> std::vector<TrackedConnectionInfo> {
   std::promise<std::vector<TrackedConnectionInfo>> promise;
   auto future = promise.get_future();
-  _TaskQueue.Push([&promise](const auto& policyEngine, const auto& /*dataPlane*/) -> Omni::Fiber::Coroutine<void> {
-    auto connections = policyEngine->GetPolicySelector().GetConnections();
+  _TaskQueue.Push([&promise](const auto& /*policyEngine*/, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
+    auto connections = dataPlane->GetConnections();
     promise.set_value(std::move(connections));
     co_return;
   });
