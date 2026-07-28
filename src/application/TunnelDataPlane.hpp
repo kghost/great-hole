@@ -34,8 +34,7 @@ public:
       -> Interface::PolicyRule::RoutingAction = 0;
 };
 
-class TunnelDataPlane : public VpnClientMultiChannel::SessionStateListener,
-                        public ConnectionTracker::Selector,
+class TunnelDataPlane : public ConnectionTracker::Selector,
 #ifdef _WIN32
                         public WinDivertRouteCallback
 #endif
@@ -44,12 +43,6 @@ public:
   TunnelDataPlane(boost::asio::any_io_executor executor, TunnelDataPlanePolicyResolverCallback& policyResolver,
                   Interface::DataPlaneCallbacks& callbacks);
   ~TunnelDataPlane();
-
-  void OnSessionStarting(const std::weak_ptr<VpnClientMultiChannelSession>& session) override;
-  void OnSessionRunning(const std::weak_ptr<VpnClientMultiChannelSession>& session) override;
-  void OnSessionStopping(const std::weak_ptr<VpnClientMultiChannelSession>& session) override;
-  void OnSessionStopped(const std::weak_ptr<VpnClientMultiChannelSession>& session) override;
-  void OnSessionFailed(const std::weak_ptr<VpnClientMultiChannelSession>& session, const std::string& error) override;
 
   TunnelDataPlane(const TunnelDataPlane&) = delete;
   auto operator=(const TunnelDataPlane&) -> TunnelDataPlane& = delete;

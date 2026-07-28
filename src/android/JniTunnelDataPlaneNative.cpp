@@ -75,8 +75,8 @@ public:
 
   bool ProtectSocket(int fd);
   void OnVpnStateChanged(Interface::TunnelState state, const std::string& message) override;
-  void OnTunnelStateChanged(Interface::VpnEndpoint endpoint, Interface::TunnelState state,
-                            const std::string& error) override;
+  void OnEndpointStateChanged(Interface::VpnEndpoint endpoint, Interface::TunnelState state,
+                              const std::string& error) override;
   std::optional<VpnTrafficStats> GetTrafficStats(jlong endpointHandle);
 
   std::weak_ptr<VpnClientMultiChannelSession> FindSession(const VpnClientMultiChannelSession* ptr) const {
@@ -365,21 +365,21 @@ void JniSession::OnVpnStateChanged(Interface::TunnelState state, const std::stri
   }
 }
 
-void JniSession::OnTunnelStateChanged(Interface::VpnEndpoint endpoint, Interface::TunnelState state,
-                                      const std::string& error) {
+void JniSession::OnEndpointStateChanged(Interface::VpnEndpoint endpoint, Interface::TunnelState state,
+                                        const std::string& error) {
   if (!_Callbacks) {
     return;
   }
   JNIEnv* env = GetEnv();
   jstring errStr = !error.empty() ? env->NewStringUTF(error.c_str()) : nullptr;
   if (env->ExceptionCheck()) {
-    BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnTunnelStateChanged (NewStringUTF)";
+    BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnEndpointStateChanged (NewStringUTF)";
     env->ExceptionClear();
   }
   env->CallVoidMethod(_Callbacks, g_MidOnTunnelStateChanged, reinterpret_cast<jlong>(endpoint.lock().get()),
                       static_cast<jint>(std::to_underlying(state)), errStr);
   if (env->ExceptionCheck()) {
-    BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnTunnelStateChanged (onTunnelStateChanged)";
+    BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnEndpointStateChanged (onTunnelStateChanged)";
     env->ExceptionDescribe();
     env->ExceptionClear();
   }

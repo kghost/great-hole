@@ -56,8 +56,8 @@ auto TunnelDataPlane::Start(int mtu, std::vector<char> encryptionKey) -> Omni::F
 
   auto udpDynMux = std::make_shared<UdpDynMux>(_Executor);
   auto filter = std::make_shared<FilterXor>(std::move(encryptionKey));
-  _Client = std::make_shared<VpnClientMultiChannel>(_Executor, tun, udpDynMux, _ConnectionTracker, *this,
-                                                    std::vector<std::shared_ptr<Filter>>{filter}, *this);
+  _Client = std::make_shared<VpnClientMultiChannel>(_Executor, _Callbacks, tun, udpDynMux, _ConnectionTracker, *this,
+                                                    std::vector<std::shared_ptr<Filter>>{filter});
   auto err = co_await _Client->Start();
   if (err) {
     BOOST_LOG_TRIVIAL(error) << "Failed to start VpnClientMultiChannel: " << err.message();
@@ -125,27 +125,6 @@ auto TunnelDataPlane::StopEndpoint(const std::weak_ptr<VpnClientMultiChannelSess
 auto TunnelDataPlane::GetTrafficStats(const std::shared_ptr<VpnClientMultiChannelSession>& session)
     -> std::optional<VpnTrafficStats> {
   return VpnClientMultiChannel::GetStats(session);
-}
-
-void TunnelDataPlane::OnSessionStarting(const std::weak_ptr<VpnClientMultiChannelSession>& session) {
-  _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Starting, "");
-}
-
-void TunnelDataPlane::OnSessionRunning(const std::weak_ptr<VpnClientMultiChannelSession>& session) {
-  _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Running, "");
-}
-
-void TunnelDataPlane::OnSessionStopping(const std::weak_ptr<VpnClientMultiChannelSession>& session) {
-  _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Stopping, "");
-}
-
-void TunnelDataPlane::OnSessionStopped(const std::weak_ptr<VpnClientMultiChannelSession>& session) {
-  _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Stopped, "");
-}
-
-void TunnelDataPlane::OnSessionFailed(const std::weak_ptr<VpnClientMultiChannelSession>& session,
-                                      const std::string& error) {
-  _Callbacks.OnTunnelStateChanged(Interface::VpnEndpoint{session}, TunnelState::Failed, error);
 }
 
 auto TunnelDataPlane::SelectConnectionMark(const ConnectionTracker::ConnectionKey& key)

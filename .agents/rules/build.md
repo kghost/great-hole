@@ -27,7 +27,7 @@ When focusing on a specific problem or debugging, you are allowed to execute ind
 ctest --preset <test_preset_name> -R <test_name_regex>
 ```
 
-_(Example: `ctest --preset debug -R Pipeline`)_
+_(Example: `ctest --preset test-windows-ninja-debug-asan -R VpnClientMultiChannelTest`)_
 
 ---
 
@@ -35,85 +35,80 @@ _(Example: `ctest --preset debug -R Pipeline`)_
 
 The following workflow presets are configured in `CMakePresets.json`:
 
-### Host Debug (`debug`)
+### Host / Linux Workflows
 
-- **Description:** Configures (using `configure-debug` configure preset), builds (using `build-debug` build preset), and tests (using `test-debug` test preset) on the host environment using Clang.
-- **Workflow Command:**
-  ```bash
-  cmake --workflow --preset debug
-  ```
+- **Clang Debug (`clang-debug`)**
+  - **Description:** Configures, builds, and runs unit tests using Clang in Debug mode.
+  - **Command:** `cmake --workflow --preset clang-debug`
 
-### Host Debug (gcc-14) (`debug-gcc-14`)
+- **GCC 14 Debug (`gcc-14-debug`)**
+  - **Description:** Configures, builds, and runs unit tests using GCC 14 in Debug mode.
+  - **Command:** `cmake --workflow --preset gcc-14-debug`
 
-- **Description:** Configures (using `configure-debug-gcc-14` configure preset), builds (using `build-debug-gcc-14` build preset), and tests (using `test-debug-gcc-14` test preset) on the host environment using GCC 14.
-- **Workflow Command:**
-  ```bash
-  cmake --workflow --preset debug-gcc-14
-  ```
+- **GCC Snapshot Debug (`gcc-snapshot-debug`)**
+  - **Description:** Configures, builds, and runs unit tests using GCC Snapshot in Debug mode.
+  - **Command:** `cmake --workflow --preset gcc-snapshot-debug`
 
-### Host Debug (gcc-snapshot) (`debug-gcc-snapshot`)
+### Windows MSVC Workflows
 
-- **Description:** Configures (using `configure-debug-gcc-snapshot` configure preset), builds (using `build-debug-gcc-snapshot` build preset), and tests (using `test-debug-gcc-snapshot` test preset) using GCC Snapshot.
-- **Workflow Command:**
-  ```bash
-  cmake --workflow --preset debug-gcc-snapshot
-  ```
+- **Debug (`windows-msvc-debug`)**
+  - **Description:** Configures and builds using MSVC in Debug mode.
+  - **Command:** `cmake --workflow --preset windows-msvc-debug`
 
-### Windows Debug Ninja (`windows-debug-ninja`)
+- **Debug with ASAN (`windows-msvc-debug-asan`)**
+  - **Description:** Configures and builds using MSVC with AddressSanitizer in Debug mode.
+  - **Command:** `cmake --workflow --preset windows-msvc-debug-asan`
 
-- **Description:** Configures (using `configure-windows-debug-ninja` configure preset), builds (using `build-windows-debug-ninja` build preset), and tests (using `test-windows-debug-ninja` test preset) on Windows using Ninja.
-- **Workflow Command:**
-  ```bash
-  cmake --workflow --preset windows-debug-ninja
-  ```
+- **Release (`windows-msvc-release`)**
+  - **Description:** Configures and builds using MSVC in Release mode.
+  - **Command:** `cmake --workflow --preset windows-msvc-release`
 
-### Windows Debug MSVC (`windows-debug-msvc`)
+- **Release with ASAN (`windows-msvc-release-asan`)**
+  - **Description:** Configures and builds using MSVC with AddressSanitizer in Release mode.
+  - **Command:** `cmake --workflow --preset windows-msvc-release-asan`
 
-- **Description:** Configures (using `configure-windows-msvc` configure preset), builds (using `build-windows-debug-msvc` build preset) on Windows using MSVC.
-- **Workflow Command:**
-  ```bash
-  cmake --workflow --preset windows-debug-msvc
-  ```
+### Windows Ninja Workflows
 
-### Android arm64-v8a Debug (`android-arm64-v8a-debug`)
+- **Debug (`windows-ninja-debug`)**
+  - **Description:** Configures and builds using Ninja in Debug mode.
+  - **Command:** `cmake --workflow --preset windows-ninja-debug`
 
-- **Description:** Configures (using `configure-android-arm64-v8a-debug` configure preset) and builds (using `build-android-arm64-v8a-debug` build preset) the Android arm64-v8a JNI shared library in Debug mode.
-- **Workflow Command:**
-  ```bash
-  cmake --workflow --preset android-arm64-v8a-debug
-  ```
+- **Release (`windows-ninja-release`)**
+  - **Description:** Configures and builds using Ninja in Release mode.
+  - **Command:** `cmake --workflow --preset windows-ninja-release`
 
-### Android x86_64 Debug (`android-x86_64-debug`)
+- **Debug with ASAN (`windows-ninja-debug-asan`)**
+  - **Description:** Configures, builds, and runs unit tests using Ninja with AddressSanitizer in Debug mode.
+  - **Command:** `cmake --workflow --preset windows-ninja-debug-asan`
 
-- **Description:** Configures (using `configure-android-x86_64-debug` configure preset) and builds (using `build-android-x86_64-debug` build preset) the Android x86_64 JNI shared library in Debug mode.
-- **Workflow Command:**
-  ```bash
-  cmake --workflow --preset android-x86_64-debug
-  ```
+- **Release with ASAN (`windows-ninja-release-asan`)**
+  - **Description:** Configures, builds, and runs unit tests using Ninja with AddressSanitizer in Release mode.
+  - **Command:** `cmake --workflow --preset windows-ninja-release-asan`
 
-### Android arm64-v8a Release (`android-arm64-v8a-release`)
+### Android Cross-Compilation Workflows
 
-- **Description:** Configures (using `configure-android-arm64-v8a-release` configure preset) and builds (using `build-android-arm64-v8a-release` build preset) the Android arm64-v8a JNI shared library in Release mode.
-- **Workflow Command:**
-  ```bash
-  cmake --workflow --preset android-arm64-v8a-release
-  ```
+- **ARM64 Debug (`android-arm64-v8a-debug`)**
+  - **Description:** Configures and builds the Android arm64-v8a shared library in Debug mode.
+  - **Command:** `cmake --workflow --preset android-arm64-v8a-debug`
 
-### Android x86_64 Release (`android-x86_64-release`)
+- **ARM64 Release (`android-arm64-v8a-release`)**
+  - **Description:** Configures and builds the Android arm64-v8a shared library in Release mode.
+  - **Command:** `cmake --workflow --preset android-arm64-v8a-release`
 
-- **Description:** Configures (using `configure-android-x86_64-release` configure preset) and builds (using `build-android-x86_64-release` build preset) the Android x86_64 JNI shared library in Release mode.
-- **Workflow Command:**
-  ```bash
-  cmake --workflow --preset android-x86_64-release
-  ```
+- **x86_64 Debug (`android-x86_64-debug`)**
+  - **Description:** Configures and builds the Android x86_64 shared library in Debug mode.
+  - **Command:** `cmake --workflow --preset android-x86_64-debug`
+
+- **x86_64 Release (`android-x86_64-release`)**
+  - **Description:** Configures and builds the Android x86_64 shared library in Release mode.
+  - **Command:** `cmake --workflow --preset android-x86_64-release`
 
 ---
 
 ## 3. General Build Rules
 
 - **Do not modify `CMakePresets.json`** unless explicitly requested by the user or required to add a new build configuration/workflow.
-- **Clean builds:** If you need to clean or rebuild from scratch, delete the corresponding binary directory (e.g., `rm -rf build` for the `debug` preset) and re-run the workflow command.
-- **Build Outputs:** Always ensure your build output directory is ignored by Git (already covered in `.gitignore` for `build` and `build-*/`).
+- **Clean builds:** If you need to clean or rebuild from scratch, delete the corresponding binary directory (e.g., `rm -rf build-*` for the specific preset) and re-run the workflow command.
 - **Windows Build Environment:** For Windows builds, following powershell command may be needed to be run first to set the VS build environment:
   ```powershell
   Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process

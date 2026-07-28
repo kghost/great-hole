@@ -256,6 +256,31 @@ private:
   int& _SelectorCalls;
 };
 
+class MockDataPlaneCallbacks : public Interface::DataPlaneCallbacks {
+public:
+  struct EndpointEvent {
+    Interface::VpnEndpoint Endpoint;
+    Interface::TunnelState State;
+    std::string Error;
+  };
+  struct VpnEvent {
+    Interface::TunnelState State;
+    std::string Message;
+  };
+
+  std::vector<EndpointEvent> EndpointEvents;
+  std::vector<VpnEvent> VpnEvents;
+
+  void OnVpnStateChanged(Interface::TunnelState state, const std::string& message) override {
+    VpnEvents.push_back({state, message});
+  }
+
+  void OnEndpointStateChanged(Interface::VpnEndpoint endpoint, Interface::TunnelState state,
+                              const std::string& error) override {
+    EndpointEvents.push_back({endpoint, state, error});
+  }
+};
+
 } // namespace
 
 TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
@@ -268,11 +293,13 @@ TEST(VpnClientMultiChannelTest, PacketParsingAndCallbackInvocation) {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     std::vector<CallbackArgs> invocations;
     CallbackSelector selector(invocations);
+    MockDataPlaneCallbacks callbacks;
     auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
     auto mockTun = std::make_shared<MockEndpoint>();
     auto udpServer = std::make_shared<UdpDynMux>(
         io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-    auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker, selector,
+    auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), callbacks, mockTun, udpServer,
+                                                             tracker, selector,
                                                              std::vector<std::shared_ptr<Filter>>{});
     EXPECT_FALSE(co_await connTrack->Start());
 
@@ -383,11 +410,12 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
   std::shared_ptr<VpnClientMultiChannelSession> resolvedSession;
   int selectorCalls = 0;
 
+  MockDataPlaneCallbacks callbacks;
   RoutingSelector selector(resolvedSession, selectorCalls);
   auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
   auto mockTun = std::make_shared<MockEndpoint>();
-  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker, selector,
-                                                           std::vector<std::shared_ptr<Filter>>{});
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), callbacks, mockTun, udpServer, tracker,
+                                                           selector, std::vector<std::shared_ptr<Filter>>{});
 
   bool testPassed = false;
 
@@ -540,11 +568,12 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
   std::shared_ptr<VpnClientMultiChannelSession> resolvedSession;
   int selectorCalls = 0;
 
+  MockDataPlaneCallbacks callbacks;
   RoutingSelector selector(resolvedSession, selectorCalls);
   auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
   auto mockTun = std::make_shared<MockEndpoint>();
-  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker, selector,
-                                                           std::vector<std::shared_ptr<Filter>>{});
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), callbacks, mockTun, udpServer, tracker,
+                                                           selector, std::vector<std::shared_ptr<Filter>>{});
 
   bool testPassed = false;
 
@@ -638,6 +667,7 @@ TEST(VpnClientMultiChannelTest, MigrateTun) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    MockDataPlaneCallbacks callbacks;
     std::vector<CallbackArgs> invocations;
     CallbackSelector selector(invocations);
     auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
@@ -645,8 +675,8 @@ TEST(VpnClientMultiChannelTest, MigrateTun) {
     auto mockTun2 = std::make_shared<MockEndpoint>();
     auto udpServer = std::make_shared<UdpDynMux>(
         io.get_executor(), boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 0));
-    auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun1, udpServer, tracker, selector,
-                                                             std::vector<std::shared_ptr<Filter>>{});
+    auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), callbacks, mockTun1, udpServer,
+                                                             tracker, selector, std::vector<std::shared_ptr<Filter>>{});
     EXPECT_FALSE(co_await connTrack->Start());
 
     // 1. Send packet on mockTun1 and verify it gets processed.
@@ -722,11 +752,12 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
   std::shared_ptr<VpnClientMultiChannelSession> resolvedSession;
   int selectorCalls = 0;
 
+  MockDataPlaneCallbacks callbacks;
   RoutingSelector selector(resolvedSession, selectorCalls);
   auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
   auto mockTun = std::make_shared<MockEndpoint>();
-  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker, selector,
-                                                           std::vector<std::shared_ptr<Filter>>{});
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), callbacks, mockTun, udpServer, tracker,
+                                                           selector, std::vector<std::shared_ptr<Filter>>{});
 
   bool testPassed = false;
 
@@ -788,28 +819,6 @@ TEST(VpnClientMultiChannelTest, TrafficStatsWithRtt) {
   EXPECT_TRUE(testPassed);
 }
 
-class MockSessionStateListener : public VpnClientMultiChannel::SessionStateListener {
-public:
-  std::vector<std::string> Events;
-
-  void OnSessionStarting(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {
-    Events.push_back("Starting");
-  }
-  void OnSessionRunning(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {
-    Events.push_back("Running");
-  }
-  void OnSessionStopping(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {
-    Events.push_back("Stopping");
-  }
-  void OnSessionStopped(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {
-    Events.push_back("Stopped");
-  }
-  void OnSessionFailed(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/,
-                       const std::string& error) override {
-    Events.push_back("Failed: " + error);
-  }
-};
-
 TEST(VpnClientMultiChannelTest, SessionStateTransitions) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io.get_executor());
@@ -828,10 +837,10 @@ TEST(VpnClientMultiChannelTest, SessionStateTransitions) {
   RoutingSelector selector(resolvedSession, selectorCalls);
   auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
   auto mockTun = std::make_shared<MockEndpoint>();
-  MockSessionStateListener stateListener;
+  MockDataPlaneCallbacks callbacks;
 
-  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker, selector,
-                                                           std::vector<std::shared_ptr<Filter>>{}, stateListener);
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), callbacks, mockTun, udpServer, tracker,
+                                                           selector, std::vector<std::shared_ptr<Filter>>{});
 
   bool testPassed = false;
 
@@ -846,13 +855,13 @@ TEST(VpnClientMultiChannelTest, SessionStateTransitions) {
     auto session = sessionWeak.lock();
     EXPECT_NE(session, nullptr);
     EXPECT_TRUE(session->State.template IsState<VpnClientMultiChannelSession::State::kNone>());
-    EXPECT_TRUE(stateListener.Events.empty());
+    EXPECT_TRUE(callbacks.EndpointEvents.empty());
 
-    // Start channel - state transitions to kStarting and fires OnSessionStarting
+    // Start channel - state transitions to kStarting and fires OnEndpointStateChanged with Starting
     co_await connTrack->StartChannel(sessionWeak);
     EXPECT_TRUE(session->State.template IsState<VpnClientMultiChannelSession::State::kStarting>());
-    EXPECT_EQ(stateListener.Events.size(), 1);
-    EXPECT_EQ(stateListener.Events[0], "Starting");
+    EXPECT_EQ(callbacks.EndpointEvents.size(), 1);
+    EXPECT_EQ(callbacks.EndpointEvents[0].State, Interface::TunnelState::Starting);
 
     // Establish channel connection from client
     TestTarget clientTarget;
@@ -866,17 +875,17 @@ TEST(VpnClientMultiChannelTest, SessionStateTransitions) {
       co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
     } while (clientChannel->GetChannelState() != UdpDynMux::Channel::State::kRunning);
 
-    // After establishment, state transitions to kRunning and fires OnSessionRunning
+    // After establishment, state transitions to kRunning and fires OnEndpointStateChanged with Running
     EXPECT_TRUE(session->State.template IsState<VpnClientMultiChannelSession::State::kRunning>());
-    EXPECT_EQ(stateListener.Events.size(), 2);
-    EXPECT_EQ(stateListener.Events[1], "Running");
+    EXPECT_EQ(callbacks.EndpointEvents.size(), 2);
+    EXPECT_EQ(callbacks.EndpointEvents[1].State, Interface::TunnelState::Running);
 
-    // Stop channel - state transitions kRunning -> kStopping -> kNone and fires OnSessionStopping & OnSessionStopped
+    // Stop channel - state transitions kRunning -> kStopping -> kNone and fires OnEndpointStateChanged with Stopping & Stopped
     co_await connTrack->StopChannel(sessionWeak);
     EXPECT_TRUE(session->State.template IsState<VpnClientMultiChannelSession::State::kNone>());
-    EXPECT_EQ(stateListener.Events.size(), 4);
-    EXPECT_EQ(stateListener.Events[2], "Stopping");
-    EXPECT_EQ(stateListener.Events[3], "Stopped");
+    EXPECT_EQ(callbacks.EndpointEvents.size(), 4);
+    EXPECT_EQ(callbacks.EndpointEvents[2].State, Interface::TunnelState::Stopping);
+    EXPECT_EQ(callbacks.EndpointEvents[3].State, Interface::TunnelState::Stopped);
 
     connTrack->UnregisterChannel(sessionWeak);
 
@@ -915,10 +924,10 @@ TEST(VpnClientMultiChannelTest, SessionReconnectOnUnexpectedChannelClose) {
   RoutingSelector selector(resolvedSession, selectorCalls);
   auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
   auto mockTun = std::make_shared<MockEndpoint>();
-  MockSessionStateListener stateListener;
+  MockDataPlaneCallbacks callbacks;
 
-  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), mockTun, udpServer, tracker, selector,
-                                                           std::vector<std::shared_ptr<Filter>>{}, stateListener);
+  auto connTrack = std::make_shared<VpnClientMultiChannel>(io.get_executor(), callbacks, mockTun, udpServer, tracker,
+                                                           selector, std::vector<std::shared_ptr<Filter>>{});
 
   bool testPassed = false;
 
@@ -937,16 +946,16 @@ TEST(VpnClientMultiChannelTest, SessionReconnectOnUnexpectedChannelClose) {
     auto resolver = std::make_shared<ResolverStaticEndpoint>(udpServer->LocalEndpoint());
     auto clientChannel = co_await udpClient->CreateChannel(psk, clientTarget, resolver);
 
-    while (stateListener.Events.size() < 2) {
+    while (callbacks.EndpointEvents.size() < 2) {
       boost::asio::steady_timer waitTimer(io.get_executor());
       waitTimer.expires_after(std::chrono::milliseconds(10));
       co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
     }
 
     EXPECT_TRUE(session->State.template IsState<VpnClientMultiChannelSession::State::kRunning>());
-    EXPECT_EQ(stateListener.Events.size(), 2);
-    EXPECT_EQ(stateListener.Events[0], "Starting");
-    EXPECT_EQ(stateListener.Events[1], "Running");
+    EXPECT_EQ(callbacks.EndpointEvents.size(), 2);
+    EXPECT_EQ(callbacks.EndpointEvents[0].State, Interface::TunnelState::Starting);
+    EXPECT_EQ(callbacks.EndpointEvents[1].State, Interface::TunnelState::Running);
 
     // Close client channel unexpectedly (simulating network disconnect)
     co_await udpClient->RemoveChannel(clientChannel);
@@ -958,10 +967,10 @@ TEST(VpnClientMultiChannelTest, SessionReconnectOnUnexpectedChannelClose) {
       co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
     };
 
-    // Verify session state moved back to kStarting and OnSessionStarting fired again (ready for reconnect)
+    // Verify session state moved back to kStarting and OnEndpointStateChanged fired again with Starting (ready for reconnect)
     EXPECT_TRUE(session->State.template IsState<VpnClientMultiChannelSession::State::kStarting>());
-    EXPECT_EQ(stateListener.Events.size(), 3);
-    EXPECT_EQ(stateListener.Events[2], "Starting");
+    EXPECT_EQ(callbacks.EndpointEvents.size(), 3);
+    EXPECT_EQ(callbacks.EndpointEvents[2].State, Interface::TunnelState::Starting);
 
     // Clean up
     co_await connTrack->StopChannel(sessionWeak);

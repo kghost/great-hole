@@ -105,7 +105,7 @@ public:
   auto operator=(DataPlaneCallbacks&&) -> DataPlaneCallbacks& = delete;
 
   virtual void OnVpnStateChanged(TunnelState state, const std::string& message) = 0;
-  virtual void OnTunnelStateChanged(VpnEndpoint endpoint, TunnelState state, const std::string& error) = 0;
+  virtual void OnEndpointStateChanged(VpnEndpoint endpoint, TunnelState state, const std::string& error) = 0;
 };
 
 // Interface for the Tunnel Data Plane and Policy Engine

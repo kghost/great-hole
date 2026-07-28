@@ -91,18 +91,18 @@ Sessions are represented by `VpnClientMultiChannelSession`, which manages its st
 - The session `std::shared_ptr` is inserted into `_Sessions` (a `std::set` using `std::owner_less`).
 
 #### 2. Channel Start (`StartChannel`)
-- Calling `StartChannel` transitions state `kNone` -> `kStarting` via `ActionStart` and emits `OnSessionStarting` to `SessionStateListener`.
-- Creates a `UdpDynMux::Channel` targeting the remote endpoint. If channel creation fails, `OnSessionFailed` is emitted.
+- Calling `StartChannel` transitions state `kNone` -> `kStarting` via `ActionStart` and notifies `DataPlaneCallbacks` via `OnEndpointStateChanged` (`Starting`).
+- Creates a `UdpDynMux::Channel` targeting the remote endpoint. If channel creation fails, `OnEndpointStateChanged` (`Failed`) is emitted.
 
 #### 3. Channel Establishment (`OnChannelEstablished`)
 - When underlying channel negotiation completes, `OnChannelEstablished` transitions state `kStarting` -> `kRunning` via `ActionStarted`.
-- Initializes `ChannelSideEndpoint` and `SessionPipeline`, then emits `OnSessionRunning`.
+- Initializes `ChannelSideEndpoint` and `SessionPipeline`, then notifies `DataPlaneCallbacks` via `OnEndpointStateChanged` (`Running`).
 
 #### 4. Unexpected Disconnect (`OnChannelClosed` when `kRunning`)
-- If the network channel drops while in `kRunning`, `OnChannelClosed` tears down the pipeline and transitions state back to `kStarting` via `ActionStopped`, emitting `OnSessionStarting` to trigger auto-reconnection.
+- If the network channel drops while in `kRunning`, `OnChannelClosed` tears down the pipeline and transitions state back to `kStarting` via `ActionStopped`, notifying `DataPlaneCallbacks` via `OnEndpointStateChanged` (`Starting`) to trigger auto-reconnection.
 
 #### 5. Stop & Unregister (`StopChannel` / `UnregisterChannel`)
-- `StopChannel` transitions state `kRunning` -> `kStopping` via `ActionStop`, emitting `OnSessionStopping`.
-- Erases the channel from `UdpDynMux`, triggering `OnChannelClosed` which transitions `kStopping` -> `kNone` via `ActionStopped` and emits `OnSessionStopped`.
+- `StopChannel` transitions state `kRunning` -> `kStopping` via `ActionStop`, notifying `DataPlaneCallbacks` via `OnEndpointStateChanged` (`Stopping`).
+- Erases the channel from `UdpDynMux`, triggering `OnChannelClosed` which transitions `kStopping` -> `kNone` via `ActionStopped` and notifies `DataPlaneCallbacks` via `OnEndpointStateChanged` (`Stopped`).
 - `UnregisterChannel` requires state `kNone` and erases the session from `_Sessions`.
 

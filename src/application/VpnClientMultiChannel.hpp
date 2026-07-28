@@ -3,7 +3,6 @@
 #include <boost/asio.hpp>
 #include <boost/asio/any_io_executor.hpp>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <set>
 #include <string>
@@ -64,48 +63,10 @@ public:
     ValueType _Value;
   };
 
-  // TODO: remove this, use DataPlaneCallbacks directly.
-  class SessionStateListener {
-  public:
-    explicit SessionStateListener() = default;
-    virtual ~SessionStateListener() = default;
-
-    SessionStateListener(const SessionStateListener&) = delete;
-    auto operator=(const SessionStateListener&) -> SessionStateListener& = delete;
-    SessionStateListener(SessionStateListener&&) = delete;
-    auto operator=(SessionStateListener&&) -> SessionStateListener& = delete;
-
-    virtual void OnSessionStarting(const std::weak_ptr<VpnClientMultiChannelSession>& session) = 0;
-    virtual void OnSessionRunning(const std::weak_ptr<VpnClientMultiChannelSession>& session) = 0;
-    virtual void OnSessionStopping(const std::weak_ptr<VpnClientMultiChannelSession>& session) = 0;
-    virtual void OnSessionStopped(const std::weak_ptr<VpnClientMultiChannelSession>& session) = 0;
-    virtual void OnSessionFailed(const std::weak_ptr<VpnClientMultiChannelSession>& session,
-                                 const std::string& error) = 0;
-  };
-
-  class NoopSessionStateListener : public SessionStateListener {
-  public:
-    explicit NoopSessionStateListener() = default;
-    ~NoopSessionStateListener() override = default;
-
-    NoopSessionStateListener(const NoopSessionStateListener&) = delete;
-    auto operator=(const NoopSessionStateListener&) -> NoopSessionStateListener& = delete;
-    NoopSessionStateListener(NoopSessionStateListener&&) = delete;
-    auto operator=(NoopSessionStateListener&&) -> NoopSessionStateListener& = delete;
-
-    void OnSessionStarting(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
-    void OnSessionRunning(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
-    void OnSessionStopping(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
-    void OnSessionStopped(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/) override {}
-    void OnSessionFailed(const std::weak_ptr<VpnClientMultiChannelSession>& /*session*/,
-                         const std::string& /*error*/) override {}
-  };
-  static NoopSessionStateListener _NoopSessionStateListener;
-
-  VpnClientMultiChannel(boost::asio::any_io_executor executor, std::shared_ptr<Endpoint> tun,
-                        std::shared_ptr<UdpDynMux> udpDynMux, std::shared_ptr<ConnectionTracker> tracker,
-                        ConnectionTracker::Selector& selector, std::vector<std::shared_ptr<Filter>> filters,
-                        SessionStateListener& listener = _NoopSessionStateListener);
+  VpnClientMultiChannel(boost::asio::any_io_executor executor, Interface::DataPlaneCallbacks& callbacks,
+                        std::shared_ptr<Endpoint> tun, std::shared_ptr<UdpDynMux> udpDynMux,
+                        std::shared_ptr<ConnectionTracker> tracker, ConnectionTracker::Selector& selector,
+                        std::vector<std::shared_ptr<Filter>> filters);
   ~VpnClientMultiChannel() override;
 
   VpnClientMultiChannel(const VpnClientMultiChannel&) = delete;
@@ -136,6 +97,8 @@ protected:
 
 private:
   boost::asio::any_io_executor _Executor;
+  Interface::DataPlaneCallbacks& _Callbacks;
+
   std::shared_ptr<Endpoint> _Tun;
   std::shared_ptr<UdpDynMux> _UdpDynMux;
   std::shared_ptr<ConnectionTracker> _ConnectionTracker;
@@ -146,7 +109,6 @@ private:
 
   std::set<std::shared_ptr<VpnClientMultiChannelSession>, std::owner_less<>> _Sessions;
   Omni::Fiber::RemoteCall _ChannelCall;
-  std::reference_wrapper<SessionStateListener> _StateListener;
 };
 
 class VpnClientMultiChannelSession : public UdpDynMux::ChannelNotificationTarget,

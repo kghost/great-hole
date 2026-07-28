@@ -3,16 +3,15 @@
 #include <algorithm>
 #include <array>
 #include <format>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <set>
 #include <string>
 #include <utility>
+#include <variant>
 
 #include <boost/asio.hpp>
 #include <boost/asio/any_io_executor.hpp>
-#include <variant>
 
 #include "Cancel.hpp"
 #include "ConnectionTracker.hpp"
@@ -273,16 +272,14 @@ auto VpnClientMultiChannel::ChannelSideEndpoint::Write(Packet& packet, Cancel& c
   co_return ErrorCode{};
 }
 
-VpnClientMultiChannel::NoopSessionStateListener VpnClientMultiChannel::_NoopSessionStateListener;
-
-VpnClientMultiChannel::VpnClientMultiChannel(boost::asio::any_io_executor executor, std::shared_ptr<Endpoint> tun,
+VpnClientMultiChannel::VpnClientMultiChannel(boost::asio::any_io_executor executor,
+                                             Interface::DataPlaneCallbacks& callbacks, std::shared_ptr<Endpoint> tun,
                                              std::shared_ptr<UdpDynMux> udpDynMux,
                                              std::shared_ptr<ConnectionTracker> tracker,
                                              ConnectionTracker::Selector& selector,
-                                             std::vector<std::shared_ptr<Filter>> filters,
-                                             SessionStateListener& listener)
-    : _Executor(std::move(executor)), _Tun(std::move(tun)), _UdpDynMux(std::move(udpDynMux)),
-      _ConnectionTracker(std::move(tracker)), _Filters(std::move(filters)), _StateListener(listener) {
+                                             std::vector<std::shared_ptr<Filter>> filters)
+    : _Executor(std::move(executor)), _Callbacks(callbacks), _Tun(std::move(tun)), _UdpDynMux(std::move(udpDynMux)),
+      _ConnectionTracker(std::move(tracker)), _Filters(std::move(filters)) {
   _TunSide = std::make_shared<TunSideEndpoint>(*this, *_ConnectionTracker, selector);
   _UdpDynMux->SetChannelNotification(*this);
 }
@@ -386,13 +383,13 @@ auto VpnClientMultiChannel::StartChannel(const std::weak_ptr<VpnClientMultiChann
   co_await session->State.Action(Overload{
       [&](C<VpnClientMultiChannelSession::State::kNone>, auto& /*data*/) ->
       typename decltype(session->State)::CoroutineActionResult<VpnClientMultiChannelSession::State::kNone> {
-        _StateListener.get().OnSessionStarting(session);
+        _Callbacks.OnEndpointStateChanged(session, Interface::TunnelState::Starting, "");
         auto channel = co_await _UdpDynMux->CreateChannel(session->psk, *session,
                                                           FindResolverEndpoint(session->address, *_UdpDynMux));
         if (channel) {
           co_return VpnClientMultiChannelSession::ActionStart{.Channel = std::move(channel)};
         } else {
-          _StateListener.get().OnSessionFailed(session, "Failed to create channel");
+          _Callbacks.OnEndpointStateChanged(session, Interface::TunnelState::Failed, "Failed to create channel");
           co_return std::monostate{};
         }
       },
@@ -427,7 +424,7 @@ auto VpnClientMultiChannel::StopChannel(const std::weak_ptr<VpnClientMultiChanne
   });
 
   if (needStop) {
-    _StateListener.get().OnSessionStopping(session);
+    _Callbacks.OnEndpointStateChanged(session, Interface::TunnelState::Stopping, "");
     // Because RemoveChannel calls OnChannelClosed callback, which modifies state, we can not call it inside state
     // action, otherwise it will deadlock. Instead we do it here.
     if (session->State.IsState<VpnClientMultiChannelSession::State::kStopping>()) {
@@ -480,7 +477,8 @@ auto VpnClientMultiChannel::OnChannelEstablished(UdpDynMux::ChannelNotificationT
         if (errChannel) {
           BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel side for " << data.Channel->GetName();
           co_await channelSide->Stop();
-          _StateListener.get().OnSessionFailed(session, "Failed to start channel side: " + errChannel.message());
+          _Callbacks.OnEndpointStateChanged(session, Interface::TunnelState::Failed,
+                                            "Failed to start channel side: " + errChannel.message());
           co_return std::monostate{};
         }
 
@@ -489,10 +487,11 @@ auto VpnClientMultiChannel::OnChannelEstablished(UdpDynMux::ChannelNotificationT
         if (err) {
           BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel pipeline for " << data.Channel->GetName();
           co_await sessionPipeline->Stop();
-          _StateListener.get().OnSessionFailed(session, "Failed to start channel pipeline: " + err.message());
+          _Callbacks.OnEndpointStateChanged(session, Interface::TunnelState::Failed,
+                                            "Failed to start channel pipeline: " + err.message());
           co_return std::monostate{};
         }
-        _StateListener.get().OnSessionRunning(session);
+        _Callbacks.OnEndpointStateChanged(session, Interface::TunnelState::Running, "");
         co_return VpnClientMultiChannelSession::ActionStarted{
             .Channel = data.Channel, .ChannelSide = channelSide, .SessionPipeline = sessionPipeline};
       },
@@ -512,14 +511,14 @@ auto VpnClientMultiChannel::OnChannelClosed(UdpDynMux::ChannelNotificationTarget
           auto& data) -> Omni::Fiber::Coroutine<VpnClientMultiChannelSession::ActionStopped> {
         co_await data.SessionPipeline->Stop();
         co_await data.ChannelSide->Stop();
-        _StateListener.get().OnSessionStarting(session);
+        _Callbacks.OnEndpointStateChanged(session, Interface::TunnelState::Starting, "");
         co_return VpnClientMultiChannelSession::ActionStopped{.Channel = data.Channel};
       },
       [&](C<VpnClientMultiChannelSession::State::kStopping>,
           auto& data) -> Omni::Fiber::Coroutine<VpnClientMultiChannelSession::ActionStopped> {
         co_await data.SessionPipeline->Stop();
         co_await data.ChannelSide->Stop();
-        _StateListener.get().OnSessionStopped(session);
+        _Callbacks.OnEndpointStateChanged(session, Interface::TunnelState::Stopped, "");
         co_return VpnClientMultiChannelSession::ActionStopped{.Channel = data.Channel};
       },
   });
