@@ -143,6 +143,8 @@ public:
   virtual void StartEndpoint(VpnEndpoint endpoint) = 0;
   virtual void StopEndpoint(VpnEndpoint endpoint) = 0;
 
+  virtual auto GetTrafficStats(VpnEndpoint endpoint) -> std::optional<VpnTrafficStats> = 0;
+
   // Policy Interface
   virtual void ClearPathRegistry() = 0;
   virtual void AddPathPolicy(const std::string& path, const PolicyRule& policy) = 0;

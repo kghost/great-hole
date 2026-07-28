@@ -141,9 +141,9 @@ auto TunnelDataPlane::StopEndpoint(const std::weak_ptr<VpnClientMultiChannelSess
   co_return co_await _Client->StopChannel(weak);
 }
 
-auto TunnelDataPlane::GetTrafficStats(const std::shared_ptr<VpnClientMultiChannelSession>& session)
+auto TunnelDataPlane::GetTrafficStats(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
     -> std::optional<VpnTrafficStats> {
-  return VpnClientMultiChannel::GetStats(session);
+  return VpnClientMultiChannel::GetStats(weak);
 }
 
 auto TunnelDataPlane::Select(const ConnectionTracker::ConnectionKey& key) -> ConnectionTracker::Selector::Action {

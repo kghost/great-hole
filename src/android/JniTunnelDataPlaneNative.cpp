@@ -395,11 +395,7 @@ std::optional<VpnTrafficStats> JniSession::GetTrafficStats(jlong endpointHandle)
   PostTask([this, &promise, endpointHandle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
     auto* ptr = reinterpret_cast<VpnClientMultiChannelSession*>(endpointHandle);
     auto session = FindSession(ptr);
-    if (auto sharedSession = session.lock()) {
-      promise.set_value(dp.GetTrafficStats(sharedSession));
-    } else {
-      promise.set_value(std::nullopt);
-    }
+    promise.set_value(dp.GetTrafficStats(session));
     co_return;
   });
 

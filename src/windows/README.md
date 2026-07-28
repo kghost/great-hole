@@ -33,6 +33,9 @@ public:
 
   virtual auto AddEndpoint(const std::array<uint8_t, 16>& psk, const std::string& address) -> VpnEndpoint = 0;
   virtual void RemoveEndpoint(VpnEndpoint endpoint) = 0;
+  virtual void StartEndpoint(VpnEndpoint endpoint) = 0;
+  virtual void StopEndpoint(VpnEndpoint endpoint) = 0;
+  virtual auto GetTrafficStats(VpnEndpoint endpoint) -> std::optional<VpnTrafficStats> = 0;
 
   // Policy Interface
   virtual void ClearPathRegistry() = 0;

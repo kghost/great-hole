@@ -69,7 +69,7 @@ public:
   auto WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> WinDivertRouteCallback::Result override;
 
   [[nodiscard]] auto GetConnections() const -> std::vector<Interface::TrackedConnectionInfo>;
-  static auto GetTrafficStats(const std::shared_ptr<VpnClientMultiChannelSession>& session)
+  static auto GetTrafficStats(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
       -> std::optional<VpnTrafficStats>;
 
 private:

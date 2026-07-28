@@ -44,6 +44,7 @@ public:
 
   void StartEndpoint(VpnEndpoint endpoint) override;
   void StopEndpoint(VpnEndpoint endpoint) override;
+  auto GetTrafficStats(VpnEndpoint endpoint) -> std::optional<VpnTrafficStats> override;
 
   // Policy Interface
   void ClearPathRegistry() override;
@@ -260,6 +261,23 @@ void PlatformImpl::StopEndpoint(VpnEndpoint endpoint) {
       });
 
   future.get();
+}
+
+auto PlatformImpl::GetTrafficStats(VpnEndpoint endpoint) -> std::optional<VpnTrafficStats> {
+  std::promise<std::optional<VpnTrafficStats>> promise;
+  auto future = promise.get_future();
+
+  _TaskQueue.Push(
+      [&promise, endpoint](const auto& /*policyEngine*/, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
+        if (dataPlane) {
+          promise.set_value(dataPlane->GetTrafficStats(endpoint));
+        } else {
+          promise.set_value(std::nullopt);
+        }
+        co_return;
+      });
+
+  return future.get();
 }
 
 void PlatformImpl::ClearPathRegistry() {
