@@ -69,12 +69,16 @@ auto WinDivert::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
 
   if (_ReadObjectHandle.has_value()) {
     _ReadObjectHandle->cancel();
+    _ReadObjectHandle->close();
     _ReadObjectHandle.reset();
+    _ReadEvent = nullptr;
   }
 
   if (_WriteObjectHandle.has_value()) {
     _WriteObjectHandle->cancel();
+    _WriteObjectHandle->close();
     _WriteObjectHandle.reset();
+    _WriteEvent = nullptr;
   }
 
   co_await _PipielineUsageCounter.WaitAll();
