@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -158,10 +159,11 @@ auto TunnelDataPlane::Select(const ConnectionTracker::ConnectionKey& key) -> Con
                    return Action(
                        std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::RouteVia{session}));
 #else
-                   return std::visit(Overload{[&](const auto& key) -> auto {
-                                       if constexpr (std::is_same_v<decltype(key), ConnectionTracker::Ip4TcpKey> ||
-                                                     std::is_same_v<decltype(key), ConnectionTracker::Ip4UdpKey> ||
-                                                     std::is_same_v<decltype(key), ConnectionTracker::IcmpKey>) {
+                   return std::visit(Overload{[&](const auto& key) -> Action {
+                                       using KeyType = std::decay_t<decltype(key)>;
+                                       if constexpr (std::is_same_v<KeyType, ConnectionTracker::Ip4TcpKey> ||
+                                                     std::is_same_v<KeyType, ConnectionTracker::Ip4UdpKey> ||
+                                                     std::is_same_v<KeyType, ConnectionTracker::IcmpKey>) {
                                          if (_NatContext._Ip4Addresses.empty()) {
                                            return Action(std::make_unique<VpnClientMultiChannel::Mark>(
                                                VpnClientMultiChannel::Mark::Discard{}));
@@ -172,7 +174,9 @@ auto TunnelDataPlane::Select(const ConnectionTracker::ConnectionKey& key) -> Con
                                                              .LocalAddress = _NatContext._Ip4Addresses[0],
                                                              .LocalPort = std::nullopt});
                                          }
-                                       } else {
+                                       } else if constexpr (std::is_same_v<KeyType, ConnectionTracker::Ip6TcpKey> ||
+                                                            std::is_same_v<KeyType, ConnectionTracker::Ip6UdpKey> ||
+                                                            std::is_same_v<KeyType, ConnectionTracker::Icmp6Key>) {
                                          if (_NatContext._Ip6Addresses.empty()) {
                                            return Action(std::make_unique<VpnClientMultiChannel::Mark>(
                                                VpnClientMultiChannel::Mark::Discard{}));
@@ -183,6 +187,9 @@ auto TunnelDataPlane::Select(const ConnectionTracker::ConnectionKey& key) -> Con
                                                              .LocalAddress = _NatContext._Ip6Addresses[0],
                                                              .LocalPort = std::nullopt});
                                          }
+                                       } else {
+                                         static_assert(false);
+                                         std::unreachable();
                                        }
                                      }},
                                      key);

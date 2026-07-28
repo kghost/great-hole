@@ -243,7 +243,7 @@ auto ConnectionTracker::BuildNatKey(const ConnectionKeyType& orig, const Nat& na
       } else if constexpr (requires { result.Id; }) {
         result.Id = candidate.value_or(orig.Id);
       } else {
-        assert(false);
+        static_assert(false);
         std::unreachable();
       }
 
@@ -300,6 +300,8 @@ auto ConnectionTracker::LookupAndUpdate(Packet& packet, ConnectionTracker::Selec
             } else {
               ApplySnat<Direction>(packet, ConnectionKey(entry.Key));
             }
+          } else {
+            static_assert(std::decay_t<decltype(entry)>::IsNat == false);
           }
         };
 
