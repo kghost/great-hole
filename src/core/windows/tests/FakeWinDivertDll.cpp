@@ -292,6 +292,11 @@ __declspec(dllexport) void WinDivertHelperHtonIPv6Address(const UINT* inAddr, UI
   }
 }
 
+__declspec(dllexport) auto WinDivertHelperCalcChecksums(VOID* pPacket, UINT packetLen, WINDIVERT_ADDRESS* pAddr,
+                                                        UINT64 flags) -> BOOL {
+  return TRUE;
+}
+
 __declspec(dllexport) auto GetFakeWinDivertControllerPtr() -> gh::test::FakeWinDivertController* {
   return &gh::test::g_Controller;
 }

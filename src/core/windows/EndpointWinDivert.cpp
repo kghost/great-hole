@@ -179,8 +179,7 @@ auto WinDivert::Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<
   addr.Layer = WINDIVERT_LAYER_NETWORK;
   addr.Outbound = 0;
   addr.Impostor = 1;
-  // TODO: find right ifIdx
-  addr.Network.IfIdx = 13;           // NOLINT(cppcoreguidelines-pro-type-union-access)
+  addr.Network.IfIdx = _IfIdx;       // NOLINT(cppcoreguidelines-pro-type-union-access)
   addr.Network.SubIfIdx = _IfSubIdx; // NOLINT(cppcoreguidelines-pro-type-union-access)
 
   UINT sendLen = 0;
