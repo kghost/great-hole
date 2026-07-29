@@ -257,8 +257,6 @@ TEST(WinDivertTest, ReadBypassAndDiscard) {
   RunEventLoop(io);
 }
 
-
-
 TEST(WinDivertTest, ReadCancelledByStop) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io.get_executor());

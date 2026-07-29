@@ -3,6 +3,7 @@
 #include <boost/log/trivial.hpp>
 #include <format>
 #include <utility>
+
 #include <windivert.h>
 
 #include "Asio.hpp"
@@ -145,8 +146,8 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
     if (route == WinDivertRouteCallback::Result::Bypass) {
       UINT sendLen = 0;
       // FIXME: WinDivertSendEx may block
-      if (WinDivertSendEx(_WinDivertHandle, winPacket.Data().data(), winPacket.Data().size(), &sendLen, 0, &addr,
-                          sizeof(addr), nullptr) != TRUE) {
+      if (WinDivertSendEx(_WinDivertHandle, winPacket.Data().data(), static_cast<UINT>(winPacket.Data().size()),
+                          &sendLen, 0, &addr, sizeof(addr), nullptr) != TRUE) {
         DWORD err = GetLastError();
         BOOST_LOG_TRIVIAL(warning) << "WinDivert: bypass send failed: " << err;
       }
@@ -155,6 +156,7 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
       BOOST_LOG_TRIVIAL(trace) << GetName() << ": Read packet size=" << winPacket.Data().size() << " Discarded";
       continue;
     } else {
+      WinDivertHelperCalcChecksums(winPacket.Data().data(), static_cast<UINT>(winPacket.DataSize()), &addr, 0);
       packet = std::move(winPacket);
       co_return ErrorCode{};
     }
@@ -174,15 +176,16 @@ auto WinDivert::Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<
   Cancel::HandleTracker handleTracker(cancel, _WinDivertHandle, &overlapped);
 
   WINDIVERT_ADDRESS addr = {};
-  addr.Outbound = 0;
   addr.Layer = WINDIVERT_LAYER_NETWORK;
-  addr.Network.IfIdx = _IfIdx;       // NOLINT(cppcoreguidelines-pro-type-union-access)
+  addr.Outbound = 0;
+  addr.Impostor = 1;
+  // TODO: find right ifIdx
+  addr.Network.IfIdx = 13;           // NOLINT(cppcoreguidelines-pro-type-union-access)
   addr.Network.SubIfIdx = _IfSubIdx; // NOLINT(cppcoreguidelines-pro-type-union-access)
 
   UINT sendLen = 0;
-
-  if (WinDivertSendEx(_WinDivertHandle, packet.Data().data(), packet.Data().size(), &sendLen, 0, &addr, sizeof(addr),
-                      &overlapped) != TRUE) {
+  if (WinDivertSendEx(_WinDivertHandle, packet.Data().data(), static_cast<UINT>(packet.Data().size()), &sendLen, 0,
+                      &addr, sizeof(addr), &overlapped) != TRUE) {
     DWORD err = GetLastError();
     if (err == ERROR_IO_PENDING) {
       auto [err2] = co_await _WriteObjectHandle->async_wait(Omni::Fiber::AsioUseFiber);

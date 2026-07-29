@@ -1,9 +1,11 @@
 #pragma once
 
-#include <boost/asio.hpp>
 #include <cstdint>
 #include <optional>
 #include <string>
+
+#include <boost/asio.hpp>
+
 #include <windivert.h>
 #include <windows.h>
 

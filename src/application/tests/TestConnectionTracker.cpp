@@ -480,6 +480,77 @@ private:
   ConnectionTracker::Selector::Action::Snat4 _Snat;
 };
 
+static auto ChecksumOfWords(std::span<const uint16_t> words, std::span<const uint8_t> oddTail = {}) -> uint16_t {
+  uint32_t sum = 0;
+  for (uint16_t w : words) {
+    sum += w;
+  }
+  if (!oddTail.empty()) {
+    sum += static_cast<uint16_t>(oddTail[0]);
+  }
+  while (sum >> 16) {
+    sum = (sum & 0xFFFF) + (sum >> 16);
+  }
+  return static_cast<uint16_t>(sum);
+}
+
+static auto ValidateIp4HeaderChecksum(const IPv4Header* ip4) -> bool {
+  auto span = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(ip4), ip4->GetIhl() * 4);
+  auto wordSpan = std::span<const uint16_t>(reinterpret_cast<const uint16_t*>(span.data()), span.size() / 2);
+  return ChecksumOfWords(wordSpan) == 0xFFFF;
+}
+
+static auto ValidateTcp4Checksum(const IPv4Header* ip4, const TCPHeader* tcp, std::span<const uint8_t> payload) -> bool {
+  std::vector<uint16_t> words;
+  const auto* srcPtr = reinterpret_cast<const uint16_t*>(&ip4->SrcIp);
+  words.push_back(srcPtr[0]); words.push_back(srcPtr[1]);
+  const auto* dstPtr = reinterpret_cast<const uint16_t*>(&ip4->DestIp);
+  words.push_back(dstPtr[0]); words.push_back(dstPtr[1]);
+  words.push_back(ArchEndian(static_cast<uint16_t>(IPProtocol::TCP)));
+  uint16_t tcpLen = static_cast<uint16_t>(ip4->GetTotalLength() - ip4->GetIhl() * 4);
+  words.push_back(ArchEndian(tcpLen));
+
+  auto tcpSpan = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(tcp), tcp->GetDataOffset() * 4);
+  auto tcpWordSpan = std::span<const uint16_t>(reinterpret_cast<const uint16_t*>(tcpSpan.data()), tcpSpan.size() / 2);
+  for (uint16_t w : tcpWordSpan) {
+    words.push_back(w);
+  }
+
+  auto payloadWordSpan = std::span<const uint16_t>(reinterpret_cast<const uint16_t*>(payload.data()), payload.size() / 2);
+  auto oddTail = payload.subspan(payload.size() / 2 * 2);
+  for (uint16_t w : payloadWordSpan) {
+    words.push_back(w);
+  }
+  return ChecksumOfWords(words, oddTail) == 0xFFFF;
+}
+
+static auto ValidateTcp6Checksum(const IPv6Header* ip6, const TCPHeader* tcp, std::span<const uint8_t> payload) -> bool {
+  std::vector<uint16_t> words;
+  const auto* srcPtr = reinterpret_cast<const uint16_t*>(ip6->SrcIp.data());
+  for (int i = 0; i < 8; ++i) words.push_back(srcPtr[i]);
+  const auto* dstPtr = reinterpret_cast<const uint16_t*>(ip6->DestIp.data());
+  for (int i = 0; i < 8; ++i) words.push_back(dstPtr[i]);
+  uint32_t len = ArchEndian(ip6->GetPayloadLength());
+  const auto* lenPtr = reinterpret_cast<const uint16_t*>(&len);
+  words.push_back(lenPtr[0]); words.push_back(lenPtr[1]);
+  uint32_t nxt = ArchEndian(static_cast<uint32_t>(IPProtocol::TCP));
+  const auto* nxtPtr = reinterpret_cast<const uint16_t*>(&nxt);
+  words.push_back(nxtPtr[0]); words.push_back(nxtPtr[1]);
+
+  auto tcpSpan = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(tcp), tcp->GetDataOffset() * 4);
+  auto tcpWordSpan = std::span<const uint16_t>(reinterpret_cast<const uint16_t*>(tcpSpan.data()), tcpSpan.size() / 2);
+  for (uint16_t w : tcpWordSpan) {
+    words.push_back(w);
+  }
+
+  auto payloadWordSpan = std::span<const uint16_t>(reinterpret_cast<const uint16_t*>(payload.data()), payload.size() / 2);
+  auto oddTail = payload.subspan(payload.size() / 2 * 2);
+  for (uint16_t w : payloadWordSpan) {
+    words.push_back(w);
+  }
+  return ChecksumOfWords(words, oddTail) == 0xFFFF;
+}
+
 TEST(ConnectionTrackerTest, SnatOutputAndInputIPv4) {
   boost::asio::io_context io;
   Omni::Fiber::AsioExecutor executor(io.get_executor());
@@ -498,6 +569,27 @@ TEST(ConnectionTrackerTest, SnatOutputAndInputIPv4) {
     EXPECT_FALSE(errStart);
 
     auto pOut = CreatePacket(test::captured::Ip4TcpSyn);
+    const auto* ip4Orig = reinterpret_cast<const IPv4Header*>(pOut.Data().data());
+    auto l4Orig = pOut.Data().subspan(ip4Orig->GetIhl() * 4);
+    auto* tcpOrig = reinterpret_cast<TCPHeader*>(l4Orig.data());
+
+    // Initialize valid initial TCP checksum on test packet before SNAT
+    tcpOrig->Checksum = 0;
+    tcpOrig->Checksum = ~ChecksumOfWords(
+        [&] {
+          std::vector<uint16_t> words;
+          const auto* srcPtr = reinterpret_cast<const uint16_t*>(&ip4Orig->SrcIp);
+          words.push_back(srcPtr[0]); words.push_back(srcPtr[1]);
+          const auto* dstPtr = reinterpret_cast<const uint16_t*>(&ip4Orig->DestIp);
+          words.push_back(dstPtr[0]); words.push_back(dstPtr[1]);
+          words.push_back(ArchEndian(static_cast<uint16_t>(IPProtocol::TCP)));
+          uint16_t tcpLen = static_cast<uint16_t>(ip4Orig->GetTotalLength() - ip4Orig->GetIhl() * 4);
+          words.push_back(ArchEndian(tcpLen));
+          auto tcpSpan = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(tcpOrig), tcpOrig->GetDataOffset() * 4);
+          auto tcpWordSpan = std::span<const uint16_t>(reinterpret_cast<const uint16_t*>(tcpSpan.data()), tcpSpan.size() / 2);
+          for (uint16_t w : tcpWordSpan) words.push_back(w);
+          return words;
+        }());
 
     // Outbound packet: SNAT should rewrite SrcIp to 10.0.0.1 and SrcPort to 54321
     auto resOut = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(pOut, snatSelector);
@@ -509,6 +601,9 @@ TEST(ConnectionTrackerTest, SnatOutputAndInputIPv4) {
     auto l4Out = outSpan.subspan(ip4Out->GetIhl() * 4);
     const auto* tcpOut = reinterpret_cast<const TCPHeader*>(l4Out.data());
     EXPECT_EQ(tcpOut->GetSrcPort(), 54321);
+
+    EXPECT_TRUE(ValidateIp4HeaderChecksum(ip4Out));
+    EXPECT_TRUE(ValidateTcp4Checksum(ip4Out, tcpOut, l4Out.subspan(tcpOut->GetDataOffset() * 4)));
 
     // Inbound reply packet: DestIp = 10.0.0.1, DestPort = 54321
     // Build reply packet matching NAT key
@@ -527,12 +622,118 @@ TEST(ConnectionTrackerTest, SnatOutputAndInputIPv4) {
     tcpIn->SrcPort = origDstPortNet;
     tcpIn->DestPort = ArchEndian(static_cast<uint16_t>(54321));
 
+    // Recalculate initial checksums for incoming reply packet before NAT
+    ip4In->Checksum = 0;
+    tcpIn->Checksum = 0;
+    uint16_t ip4InSum = ~ChecksumOfWords(std::span<const uint16_t>(reinterpret_cast<const uint16_t*>(ip4In), ip4In->GetIhl() * 2));
+    ip4In->Checksum = ip4InSum;
+    tcpIn->Checksum = ~ChecksumOfWords(
+        [&] {
+          std::vector<uint16_t> words;
+          const auto* srcPtr = reinterpret_cast<const uint16_t*>(&ip4In->SrcIp);
+          words.push_back(srcPtr[0]); words.push_back(srcPtr[1]);
+          const auto* dstPtr = reinterpret_cast<const uint16_t*>(&ip4In->DestIp);
+          words.push_back(dstPtr[0]); words.push_back(dstPtr[1]);
+          words.push_back(ArchEndian(static_cast<uint16_t>(IPProtocol::TCP)));
+          uint16_t tcpLen = static_cast<uint16_t>(ip4In->GetTotalLength() - ip4In->GetIhl() * 4);
+          words.push_back(ArchEndian(tcpLen));
+          auto tcpSpan = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(tcpIn), tcpIn->GetDataOffset() * 4);
+          auto tcpWordSpan = std::span<const uint16_t>(reinterpret_cast<const uint16_t*>(tcpSpan.data()), tcpSpan.size() / 2);
+          for (uint16_t w : tcpWordSpan) words.push_back(w);
+          return words;
+        }());
+
     // Input lookup should de-NAT DestIp back to original local address and DestPort back to original local port
     auto resIn = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionInput>(pIn, dummySelector);
     EXPECT_TRUE(resIn.has_value());
 
     EXPECT_EQ(ip4In->GetDestIp(), ArchEndian(origSrc));
     EXPECT_EQ(tcpIn->GetDestPort(), origSrcPortHost);
+
+    EXPECT_TRUE(ValidateIp4HeaderChecksum(ip4In));
+    EXPECT_TRUE(ValidateTcp4Checksum(ip4In, tcpIn, l4In.subspan(tcpIn->GetDataOffset() * 4)));
+
+    auto errStop = co_await tracker->Stop();
+    EXPECT_FALSE(errStop);
+
+    testPassed = true;
+    co_return;
+  });
+
+  io.restart();
+  io.run();
+  EXPECT_TRUE(testPassed);
+}
+
+class Snat6Selector : public ConnectionTracker::Selector {
+public:
+  Snat6Selector(ConnectionMark& mark, ConnectionTracker::Selector::Action::Snat6 snat)
+      : _Mark(mark), _Snat(std::move(snat)) {}
+
+  auto Select(const ConnectionTracker::ConnectionKey&) -> Action override {
+    return Action(std::make_unique<ReferenceMark>(_Mark), _Snat);
+  }
+
+private:
+  ConnectionMark& _Mark;
+  ConnectionTracker::Selector::Action::Snat6 _Snat;
+};
+
+TEST(ConnectionTrackerTest, SnatOutputAndInputIPv6) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    MockConnectionMark mark1("mark1");
+    Snat6Selector snatSelector(mark1, ConnectionTracker::Selector::Action::Snat6{
+                                          .LocalAddress = boost::asio::ip::make_address_v6("2001:db8::1"), .LocalPort = 54321});
+    ConstantSelector dummySelector(mark1);
+
+    auto tracker = std::make_shared<ConnectionTracker>(io.get_executor());
+    auto errStart = co_await tracker->Start();
+    EXPECT_FALSE(errStart);
+
+    auto pOut = CreatePacket(test::captured::Ip6TcpSyn);
+    const auto* ip6Orig = reinterpret_cast<const IPv6Header*>(pOut.Data().data());
+    auto l4Orig = pOut.Data().subspan(sizeof(IPv6Header));
+    auto* tcpOrig = reinterpret_cast<TCPHeader*>(l4Orig.data());
+
+    // Initialize valid initial TCP checksum on test packet before SNAT
+    tcpOrig->Checksum = 0;
+    tcpOrig->Checksum = ~ChecksumOfWords(
+        [&] {
+          std::vector<uint16_t> words;
+          const auto* srcPtr = reinterpret_cast<const uint16_t*>(ip6Orig->SrcIp.data());
+          for (int i = 0; i < 8; ++i) words.push_back(srcPtr[i]);
+          const auto* dstPtr = reinterpret_cast<const uint16_t*>(ip6Orig->DestIp.data());
+          for (int i = 0; i < 8; ++i) words.push_back(dstPtr[i]);
+          uint32_t len = ArchEndian(ip6Orig->GetPayloadLength());
+          const auto* lenPtr = reinterpret_cast<const uint16_t*>(&len);
+          words.push_back(lenPtr[0]); words.push_back(lenPtr[1]);
+          uint32_t nxt = ArchEndian(static_cast<uint32_t>(IPProtocol::TCP));
+          const auto* nxtPtr = reinterpret_cast<const uint16_t*>(&nxt);
+          words.push_back(nxtPtr[0]); words.push_back(nxtPtr[1]);
+          auto tcpSpan = std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(tcpOrig), tcpOrig->GetDataOffset() * 4);
+          auto tcpWordSpan = std::span<const uint16_t>(reinterpret_cast<const uint16_t*>(tcpSpan.data()), tcpSpan.size() / 2);
+          for (uint16_t w : tcpWordSpan) words.push_back(w);
+          return words;
+        }());
+
+    // Outbound packet: SNAT should rewrite SrcIp to 2001:db8::1 and SrcPort to 54321
+    auto resOut = tracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(pOut, snatSelector);
+    EXPECT_TRUE(resOut.has_value());
+
+    auto outSpan = pOut.Data();
+    const auto* ip6Out = reinterpret_cast<const IPv6Header*>(outSpan.data());
+    EXPECT_EQ(boost::asio::ip::make_address_v6(ip6Out->SrcIp), boost::asio::ip::make_address_v6("2001:db8::1"));
+    auto l4Out = outSpan.subspan(sizeof(IPv6Header));
+    const auto* tcpOut = reinterpret_cast<const TCPHeader*>(l4Out.data());
+    EXPECT_EQ(tcpOut->GetSrcPort(), 54321);
+
+    EXPECT_TRUE(ValidateTcp6Checksum(ip6Out, tcpOut, l4Out.subspan(tcpOut->GetDataOffset() * 4)));
 
     auto errStop = co_await tracker->Stop();
     EXPECT_FALSE(errStop);

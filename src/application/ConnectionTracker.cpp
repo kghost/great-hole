@@ -32,14 +32,14 @@ namespace {
 auto UpdateField16(uint16_t& oldField, uint16_t newField) -> uint32_t {
   auto old = oldField;
   oldField = newField;
-  return ~old + newField;
+  return static_cast<uint16_t>(~old) + newField;
 }
 
 auto UpdateField32(uint32_t& oldField, uint32_t newField) -> uint32_t {
   auto oldData = std::bit_cast<std::array<uint16_t, 2>>(oldField);
   auto newData = std::bit_cast<std::array<uint16_t, 2>>(newField);
   oldField = newField;
-  return ~(oldData[0]) + newData[0] + ~(oldData[1]) + newData[1];
+  return static_cast<uint16_t>(~oldData[0]) + newData[0] + static_cast<uint16_t>(~oldData[1]) + newData[1];
 }
 
 // NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
@@ -49,7 +49,7 @@ auto UpdateField128(std::array<uint8_t, 16>& oldField, const std::array<uint8_t,
   oldField = newField;
   uint32_t sum = 0;
   for (const auto [oldV, newV] : std::views::zip(oldData, newData)) {
-    sum += ~oldV + newV;
+    sum += static_cast<uint16_t>(~oldV) + newV;
   }
   return sum;
 }
