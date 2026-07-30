@@ -457,7 +457,7 @@ TEST(VpnClientMultiChannelTest, BidirectionalRoutingAndTimeoutPruning) {
       boost::asio::steady_timer waitTimer(io.get_executor());
       waitTimer.expires_after(std::chrono::milliseconds(10));
       co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
-    } while (clientChannel->GetChannelState() != UdpDynMux::Channel::State::kRunning);
+    } while (!sharedSession->State.template IsState<VpnClientMultiChannelSession::State::kRunning>());
 
     Cancel cancelObj;
 
@@ -611,7 +611,7 @@ TEST(VpnClientMultiChannelTest, SendPacketWithEstablishedConntrackToUnregistered
       boost::asio::steady_timer waitTimer(io.get_executor());
       waitTimer.expires_after(std::chrono::milliseconds(10));
       co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
-    } while (clientChannel->GetChannelState() != UdpDynMux::Channel::State::kRunning);
+    } while (!sharedSession->State.template IsState<VpnClientMultiChannelSession::State::kRunning>());
 
     Cancel cancelObj;
 
@@ -874,7 +874,7 @@ TEST(VpnClientMultiChannelTest, SessionStateTransitions) {
       boost::asio::steady_timer waitTimer(io.get_executor());
       waitTimer.expires_after(std::chrono::milliseconds(10));
       co_await waitTimer.async_wait(Omni::Fiber::AsioUseFiber);
-    } while (clientChannel->GetChannelState() != UdpDynMux::Channel::State::kRunning);
+    } while (!session->State.template IsState<VpnClientMultiChannelSession::State::kRunning>());
 
     // After establishment, state transitions to kRunning and fires OnEndpointStateChanged with Running
     EXPECT_TRUE(session->State.template IsState<VpnClientMultiChannelSession::State::kRunning>());
