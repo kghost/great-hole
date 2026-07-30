@@ -143,7 +143,7 @@ auto TunnelDataPlane::StopEndpoint(const std::weak_ptr<VpnClientMultiChannelSess
 }
 
 auto TunnelDataPlane::GetTrafficStats(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
-    -> std::optional<VpnTrafficStats> {
+    -> std::optional<Interface::VpnTrafficStats> {
   return VpnClientMultiChannel::GetStats(weak);
 }
 

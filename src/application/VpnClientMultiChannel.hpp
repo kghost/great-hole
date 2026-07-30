@@ -24,8 +24,6 @@
 
 namespace gh {
 
-using VpnTrafficStats = Interface::VpnTrafficStats;
-
 class VpnClientMultiChannelSession;
 
 class VpnClientMultiChannel : public ServiceBase, public UdpDynMux::ChannelNotification {
@@ -85,7 +83,8 @@ public:
 
   auto MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni::Fiber::Coroutine<ErrorCode>;
 
-  static auto GetStats(const std::weak_ptr<VpnClientMultiChannelSession>& weak) -> std::optional<VpnTrafficStats>;
+  static auto GetStats(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
+      -> std::optional<Interface::VpnTrafficStats>;
 
   auto OnChannelEstablished(UdpDynMux::ChannelNotificationTarget& target) -> Omni::Fiber::Coroutine<void> override;
   auto OnChannelClosed(UdpDynMux::ChannelNotificationTarget& target) -> Omni::Fiber::Coroutine<void> override;

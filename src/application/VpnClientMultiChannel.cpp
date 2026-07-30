@@ -566,14 +566,34 @@ auto VpnClientMultiChannel::MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni
 }
 
 auto VpnClientMultiChannel::GetStats(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
-    -> std::optional<VpnTrafficStats> {
+    -> std::optional<Interface::VpnTrafficStats> {
   if (auto session = weak.lock(); session) {
+    Interface::TunnelState state = Interface::TunnelState::Stopped;
+    switch (session->State.GetState()) {
+    case VpnClientMultiChannelSession::State::kNone:
+      state = Interface::TunnelState::Stopped;
+      break;
+    case VpnClientMultiChannelSession::State::kStarting:
+      state = Interface::TunnelState::Starting;
+      break;
+    case VpnClientMultiChannelSession::State::kStartInterrupted:
+      state = Interface::TunnelState::Stopping;
+      break;
+    case VpnClientMultiChannelSession::State::kRunning:
+      state = Interface::TunnelState::Running;
+      break;
+    case VpnClientMultiChannelSession::State::kStopping:
+      state = Interface::TunnelState::Stopping;
+      break;
+    }
     if (session->State.IsState<VpnClientMultiChannelSession::State::kRunning>()) {
       auto& data = session->State.GetData<VpnClientMultiChannelSession::State::kRunning>();
-      return VpnTrafficStats{data.SessionPipeline->GetTrafficStats(), data.Channel->GetRoundTripTime().count()};
+      return Interface::VpnTrafficStats{data.SessionPipeline->GetTrafficStats(), state,
+                                        data.Channel->GetRoundTripTime().count()};
     } else if (session->State.IsState<VpnClientMultiChannelSession::State::kStopping>()) {
       auto& data = session->State.GetData<VpnClientMultiChannelSession::State::kStopping>();
-      return VpnTrafficStats{data.SessionPipeline->GetTrafficStats(), data.Channel->GetRoundTripTime().count()};
+      return Interface::VpnTrafficStats{data.SessionPipeline->GetTrafficStats(), state,
+                                        data.Channel->GetRoundTripTime().count()};
     }
   }
   return std::nullopt;

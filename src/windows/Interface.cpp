@@ -269,11 +269,7 @@ auto PlatformImpl::GetTrafficStats(VpnEndpoint endpoint) -> std::optional<VpnTra
 
   _TaskQueue.Push(
       [&promise, endpoint](const auto& /*policyEngine*/, const auto& dataPlane) -> Omni::Fiber::Coroutine<void> {
-        if (dataPlane) {
-          promise.set_value(dataPlane->GetTrafficStats(endpoint));
-        } else {
-          promise.set_value(std::nullopt);
-        }
+        promise.set_value(dataPlane->GetTrafficStats(endpoint));
         co_return;
       });
 

@@ -70,7 +70,7 @@ public:
 
   [[nodiscard]] auto GetConnections() const -> std::vector<Interface::TrackedConnectionInfo>;
   static auto GetTrafficStats(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
-      -> std::optional<VpnTrafficStats>;
+      -> std::optional<Interface::VpnTrafficStats>;
 
 private:
   boost::asio::any_io_executor _Executor;

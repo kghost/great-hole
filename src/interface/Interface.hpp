@@ -57,10 +57,11 @@ struct TrafficStats {
 };
 
 struct VpnTrafficStats : public TrafficStats {
-  VpnTrafficStats() = default;
-  explicit VpnTrafficStats(const TrafficStats& stats, int64_t rttMs = -1) : TrafficStats(stats), RttMs(rttMs) {}
+  explicit VpnTrafficStats(const TrafficStats& stats, TunnelState state, int64_t rttMs)
+      : TrafficStats(stats), State(state), RttMs(rttMs) {}
 
-  int64_t RttMs{-1};
+  TunnelState State;
+  int64_t RttMs;
 };
 
 struct FlowConnection {
