@@ -24,13 +24,14 @@ public:
   auto operator=(WinDivertRouteCallback&&) -> WinDivertRouteCallback& = delete;
 
   enum class Result : std::uint8_t { Bypass, Discard, Normal };
-  virtual auto WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> Result = 0;
+  using InterfaceIndex = uint32_t;
+  virtual auto WinDivertRouteOutbound(Packet& packet) -> Result = 0;
+  virtual auto WinDivertRouteInbound(Packet& packet) -> std::optional<InterfaceIndex> = 0;
 };
 
 class WinDivert : public Endpoint {
 public:
-  WinDivert(boost::asio::any_io_executor executor, std::string name, uint32_t ifIdx, uint32_t ifSubIdx,
-            WinDivertRouteCallback& callback);
+  WinDivert(boost::asio::any_io_executor executor, std::string name, WinDivertRouteCallback& callback);
   ~WinDivert() override;
 
   WinDivert(const WinDivert&) = delete;
@@ -49,8 +50,6 @@ protected:
 private:
   boost::asio::any_io_executor _Executor;
   const std::string _Name;
-  const uint32_t _IfIdx;
-  const uint32_t _IfSubIdx;
   WinDivertRouteCallback& _RouteCallback;
 
   HANDLE _WinDivertHandle = INVALID_HANDLE_VALUE;

@@ -8,19 +8,16 @@
 
 #include "Asio.hpp"
 #include "Coroutine.hpp"
+#include "ErrorCode.hpp"
 
 namespace gh {
 
-WinDivert::WinDivert(boost::asio::any_io_executor executor, std::string name, uint32_t ifIdx, uint32_t ifSubIdx,
-                     WinDivertRouteCallback& callback)
-    : _Executor(std::move(executor)), _Name(std::move(name)), _IfIdx(ifIdx), _IfSubIdx(ifSubIdx),
-      _RouteCallback(callback) {}
+WinDivert::WinDivert(boost::asio::any_io_executor executor, std::string name, WinDivertRouteCallback& callback)
+    : _Executor(std::move(executor)), _Name(std::move(name)), _RouteCallback(callback) {}
 
 WinDivert::~WinDivert() { assert(_WinDivertHandle == INVALID_HANDLE_VALUE); }
 
-auto WinDivert::GetName() const -> std::string {
-  return std::format("WinDivert:{}:{}:{}[{}]", _Name, _IfIdx, _IfSubIdx, _WinDivertHandle);
-}
+auto WinDivert::GetName() const -> std::string { return std::format("WinDivert:{}[{}]", _Name, _WinDivertHandle); }
 
 auto WinDivert::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   _WinDivertHandle = WinDivertOpen("outbound and !impostor and !loopback and (ip or ipv6)", WINDIVERT_LAYER_NETWORK,
@@ -142,7 +139,7 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
     }
 
     winPacket._Length = recvLen;
-    auto route = _RouteCallback.WinDivertRoute(winPacket, addr);
+    auto route = _RouteCallback.WinDivertRouteOutbound(winPacket);
     if (route == WinDivertRouteCallback::Result::Bypass) {
       UINT sendLen = 0;
       // FIXME: WinDivertSendEx may block
@@ -153,7 +150,7 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
       }
       continue;
     } else if (route == WinDivertRouteCallback::Result::Discard) {
-      BOOST_LOG_TRIVIAL(trace) << GetName() << ": Read packet size=" << winPacket.Data().size() << " Discarded";
+      BOOST_LOG_TRIVIAL(info) << GetName() << ": Read packet size=" << winPacket.Data().size() << " Discarded";
       continue;
     } else {
       WinDivertHelperCalcChecksums(winPacket.Data().data(), static_cast<UINT>(winPacket.DataSize()), &addr, 0);
@@ -168,19 +165,23 @@ auto WinDivert::Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<
     co_return Error(AppErrorCategory::kOperationAborted);
   }
 
-  BOOST_LOG_TRIVIAL(trace) << GetName() << ": Write packet size=" << packet.Data().size();
-
   OVERLAPPED overlapped = {};
   overlapped.hEvent = _WriteEvent;
   ResetEvent(_WriteEvent);
   Cancel::HandleTracker handleTracker(cancel, _WinDivertHandle, &overlapped);
 
+  auto interfaceIndex = _RouteCallback.WinDivertRouteInbound(packet);
+  if (!interfaceIndex.has_value()) {
+    BOOST_LOG_TRIVIAL(warning) << GetName() << ": Cannot route packet inbound, discarded";
+    co_return Error(AppMinorErrorCategory::kSourceIpMismatch);
+  }
+
   WINDIVERT_ADDRESS addr = {};
   addr.Layer = WINDIVERT_LAYER_NETWORK;
   addr.Outbound = 0;
   addr.Impostor = 1;
-  addr.Network.IfIdx = _IfIdx;       // NOLINT(cppcoreguidelines-pro-type-union-access)
-  addr.Network.SubIfIdx = _IfSubIdx; // NOLINT(cppcoreguidelines-pro-type-union-access)
+  addr.Network.IfIdx = interfaceIndex.value(); // NOLINT(cppcoreguidelines-pro-type-union-access)
+  addr.Network.SubIfIdx = 0;                   // NOLINT(cppcoreguidelines-pro-type-union-access)
 
   UINT sendLen = 0;
   if (WinDivertSendEx(_WinDivertHandle, packet.Data().data(), static_cast<UINT>(packet.Data().size()), &sendLen, 0,

@@ -1,8 +1,3 @@
-add_subdirectory(utils)
-add_subdirectory(flow)
-add_subdirectory(policy)
-add_subdirectory(network)
-
 foreach(suffix "" "-asan")
   if(suffix STREQUAL "-asan" AND SKIP_ASAN)
     continue()
@@ -11,20 +6,22 @@ foreach(suffix "" "-asan")
     continue()
   endif()
 
-  set(target "great-hole-windows${suffix}")
+  set(target "great-hole-windows-network${suffix}")
 
-  add_library(${target} SHARED
-    Interface.cpp
+  set(net_sources
+    InterfaceMonitor.cpp
   )
-  target_compile_definitions(${target} PRIVATE GREAT_HOLE_WINDOWS_BUILD_DLL)
+
+  add_library(${target} STATIC ${net_sources})
   target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
   target_link_libraries(${target} PUBLIC
     Boost::log
     omni-fiber${suffix}
     great-hole-core${suffix}
     great-hole-application${suffix}
-    great-hole-windows-policy${suffix}
-    great-hole-windows-network${suffix}
+    great-hole-windows-utils${suffix}
+    iphlpapi
+    ws2_32
   )
 
   if(suffix STREQUAL "-asan")
@@ -32,3 +29,9 @@ foreach(suffix "" "-asan")
     target_link_options(${target} PRIVATE -fsanitize=address)
   endif()
 endforeach()
+
+if(BUILD_TESTING)
+  add_subdirectory(tests)
+endif()
+
+add_subdirectory(tools)

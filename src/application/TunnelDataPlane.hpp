@@ -22,6 +22,27 @@
 
 namespace gh {
 
+#ifdef _WIN32
+class WindowsLocalAddressMonitor {
+public:
+  explicit WindowsLocalAddressMonitor() = default;
+  virtual ~WindowsLocalAddressMonitor() = default;
+
+  WindowsLocalAddressMonitor(const WindowsLocalAddressMonitor&) = delete;
+  WindowsLocalAddressMonitor(WindowsLocalAddressMonitor&&) = delete;
+  auto operator=(const WindowsLocalAddressMonitor&) -> WindowsLocalAddressMonitor& = delete;
+  auto operator=(WindowsLocalAddressMonitor&&) -> WindowsLocalAddressMonitor& = delete;
+
+  using Address = std::variant<boost::asio::ip::address_v4, boost::asio::ip::address_v6>;
+  struct IpAddressInfo {
+    uint8_t PrefixLength;
+    WinDivertRouteCallback::InterfaceIndex InterfaceIndex;
+  };
+
+  [[nodiscard]] virtual auto GetAddressInfo(const Address& address) const -> std::optional<IpAddressInfo> = 0;
+};
+#endif
+
 class TunnelDataPlanePolicyResolverCallback {
 public:
   explicit TunnelDataPlanePolicyResolverCallback() = default;
@@ -42,8 +63,14 @@ class TunnelDataPlane : public ConnectionTracker::Selector,
 #endif
 {
 public:
+#ifdef _WIN32
+  TunnelDataPlane(boost::asio::any_io_executor executor, TunnelDataPlanePolicyResolverCallback& policyResolver,
+                  Interface::DataPlaneCallbacks& callbacks, std::span<Interface::IpAddress> addresses, int32_t mtu,
+                  WindowsLocalAddressMonitor& windowsLocalAddressMonitor);
+#else
   TunnelDataPlane(boost::asio::any_io_executor executor, TunnelDataPlanePolicyResolverCallback& policyResolver,
                   Interface::DataPlaneCallbacks& callbacks, std::span<Interface::IpAddress> addresses, int32_t mtu);
+#endif
   ~TunnelDataPlane();
 
   TunnelDataPlane(const TunnelDataPlane&) = delete;
@@ -66,7 +93,8 @@ public:
   auto StopEndpoint(const std::weak_ptr<VpnClientMultiChannelSession>& weak) -> Omni::Fiber::Coroutine<void>;
 
   auto Select(const ConnectionTracker::ConnectionKey& key) -> ConnectionTracker::Selector::Action override;
-  auto WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> WinDivertRouteCallback::Result override;
+  auto WinDivertRouteOutbound(Packet& packet) -> WinDivertRouteCallback::Result override;
+  auto WinDivertRouteInbound(Packet& packet) -> std::optional<uint32_t> override;
 
   [[nodiscard]] auto GetConnections() const -> std::vector<Interface::TrackedConnectionInfo>;
   static auto GetTrafficStats(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
@@ -78,6 +106,7 @@ private:
   Interface::DataPlaneCallbacks& _Callbacks;
   std::shared_ptr<ConnectionTracker> _ConnectionTracker;
 #ifdef _WIN32
+  WindowsLocalAddressMonitor& _WindowsLocalAddressMonitor;
   struct NatContext {
     std::vector<boost::asio::ip::address_v4> _Ip4Addresses;
     std::vector<boost::asio::ip::address_v6> _Ip6Addresses;

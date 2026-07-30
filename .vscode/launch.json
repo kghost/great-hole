@@ -53,6 +53,14 @@
             "args": [
                 "${cmake.testArgs}"
             ]
-        }
+        },
+        {
+            "name": "(cppvsdbg) Launch exe",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build-windows-ninja-debug-asan/src/windows/network/tools/net-interface-dump-asan.exe",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        },
     ]
 }

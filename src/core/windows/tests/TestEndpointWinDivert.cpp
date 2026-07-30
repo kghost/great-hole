@@ -1,10 +1,9 @@
-#include <algorithm>
 #include <memory>
-#include <string>
 #include <vector>
 
-#include <boost/asio.hpp>
 #include <gtest/gtest.h>
+
+#include <boost/asio.hpp>
 
 #include "Asio.hpp"
 #include "Cancel.hpp"
@@ -24,7 +23,9 @@ namespace {
 class MockRouteCallback : public WinDivertRouteCallback {
 public:
   Result RouteResultVal = Result::Normal;
-  auto WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> Result override {
+  std::optional<InterfaceIndex> InboundIfIdxVal{12};
+
+  auto WinDivertRouteOutbound(Packet& packet) -> Result override {
     std::string content(reinterpret_cast<const char*>(packet.Data().data()), packet._Length);
     if (content.find("Bypassed") != std::string::npos) {
       return Result::Bypass;
@@ -34,6 +35,8 @@ public:
     }
     return RouteResultVal;
   }
+
+  auto WinDivertRouteInbound(Packet& packet) -> std::optional<InterfaceIndex> override { return InboundIfIdxVal; }
 };
 
 void RunEventLoop(boost::asio::io_context& io) {
@@ -49,7 +52,7 @@ TEST(WinDivertTest, StartStopOpenClose) {
   Omni::Fiber::Manager manager(executor);
 
   MockRouteCallback callback;
-  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", 12, 34, callback);
+  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", callback);
 
   auto& controller = test::GetFakeWinDivertController();
   controller.Reset();
@@ -89,7 +92,7 @@ TEST(WinDivertTest, WritePacket) {
   Omni::Fiber::Manager manager(executor);
 
   MockRouteCallback callback;
-  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", 12, 34, callback);
+  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", callback);
 
   auto& controller = test::GetFakeWinDivertController();
   controller.Reset();
@@ -124,7 +127,7 @@ TEST(WinDivertTest, WritePacket) {
     std::string sentMsg(sentData.begin(), sentData.end());
     EXPECT_EQ(sentMsg, testMsg);
     EXPECT_EQ(sentAddr.Network.IfIdx, 12);
-    EXPECT_EQ(sentAddr.Network.SubIfIdx, 34);
+    EXPECT_EQ(sentAddr.Network.SubIfIdx, 0);
 
     co_await winDivert->Stop();
     co_return;
@@ -141,7 +144,7 @@ TEST(WinDivertTest, ReadNormalPacket) {
   MockRouteCallback callback;
   callback.RouteResultVal = WinDivertRouteCallback::Result::Normal;
 
-  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", 12, 34, callback);
+  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", callback);
 
   auto& controller = test::GetFakeWinDivertController();
   controller.Reset();
@@ -189,7 +192,7 @@ TEST(WinDivertTest, ReadBypassAndDiscard) {
   Omni::Fiber::Manager manager(executor);
 
   MockRouteCallback callback;
-  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", 12, 34, callback);
+  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", callback);
 
   auto& controller = test::GetFakeWinDivertController();
   controller.Reset();
@@ -263,7 +266,7 @@ TEST(WinDivertTest, ReadCancelledByStop) {
   Omni::Fiber::Manager manager(executor);
 
   MockRouteCallback callback;
-  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", 12, 34, callback);
+  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", callback);
 
   auto& controller = test::GetFakeWinDivertController();
   controller.Reset();
@@ -309,7 +312,7 @@ TEST(WinDivertTest, ReadCancelledByCancelObject) {
   Omni::Fiber::Manager manager(executor);
 
   MockRouteCallback callback;
-  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", 12, 34, callback);
+  auto winDivert = std::make_shared<WinDivert>(io.get_executor(), "test_divert", callback);
 
   auto& controller = test::GetFakeWinDivertController();
   controller.Reset();

@@ -1,8 +1,10 @@
 #include "TunnelDataPlane.hpp"
+#include "PacketHeader.hpp"
 
 #include <boost/asio.hpp>
 #include <boost/asio/ip/address_v4.hpp>
 #include <boost/asio/ip/address_v6.hpp>
+#include <boost/asio/ip/network_v4.hpp>
 #include <boost/log/trivial.hpp>
 #include <memory>
 #include <optional>
@@ -34,13 +36,14 @@ namespace gh {
 
 using TunnelState = Interface::TunnelState;
 
+#ifdef _WIN32
 TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor,
                                  TunnelDataPlanePolicyResolverCallback& policyResolver,
                                  Interface::DataPlaneCallbacks& callbacks, std::span<Interface::IpAddress> addresses,
-                                 int32_t mtu)
+                                 int32_t mtu, WindowsLocalAddressMonitor& windowsLocalAddressMonitor)
     : _Executor(std::move(executor)), _PolicyResolver(policyResolver), _Callbacks(callbacks),
-      _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor)) {
-#ifdef _WIN32
+      _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor)),
+      _WindowsLocalAddressMonitor(windowsLocalAddressMonitor) {
   for (const auto& address : addresses) {
     std::visit(Overload{[this](const Interface::Ip4Address& address) -> void {
                           _NatContext._Ip4Addresses.emplace_back(address.Bytes);
@@ -51,8 +54,16 @@ TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor,
                address);
   }
   _NatContext._Mtu = mtu;
-#endif
 }
+
+#else
+TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor,
+                                 TunnelDataPlanePolicyResolverCallback& policyResolver,
+                                 Interface::DataPlaneCallbacks& callbacks, std::span<Interface::IpAddress> addresses,
+                                 int32_t mtu)
+    : _Executor(std::move(executor)), _PolicyResolver(policyResolver), _Callbacks(callbacks),
+      _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor)) {}
+#endif
 
 TunnelDataPlane::~TunnelDataPlane() { assert(!_Running); }
 
@@ -69,7 +80,7 @@ auto TunnelDataPlane::Start(std::vector<char> encryptionKey) -> Omni::Fiber::Cor
   _Callbacks.OnVpnStateChanged(TunnelState::Starting, "VPN starting");
 
 #ifdef _WIN32
-  auto tun = std::make_shared<WinDivert>(_Executor, "WinDivert", 0, 0, *this);
+  auto tun = std::make_shared<WinDivert>(_Executor, "WinDivert", *this);
 #else
   auto tun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
 #endif
@@ -202,15 +213,72 @@ auto TunnelDataPlane::Select(const ConnectionTracker::ConnectionKey& key) -> Con
 }
 
 #ifdef _WIN32
-auto TunnelDataPlane::WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& addr) -> WinDivertRouteCallback::Result {
-  if (addr.Loopback || !addr.Outbound) {
-    return WinDivertRouteCallback::Result::Normal;
+namespace {
+struct PacketAddressV4 {
+  using NetworkType = boost::asio::ip::network_v4;
+  boost::asio::ip::address_v4 Src;
+  boost::asio::ip::address_v4 Dest;
+};
+struct PacketAddressV6 {
+  using NetworkType = boost::asio::ip::network_v6;
+  boost::asio::ip::address_v6 Src;
+  boost::asio::ip::address_v6 Dest;
+};
+
+template <typename T>
+concept PacketAddressTypes = (std::same_as<T, PacketAddressV4> || std::same_as<T, PacketAddressV6>);
+
+auto GetPacketIpAddress(Packet& packet) -> auto {
+  using Result = std::variant<std::monostate, PacketAddressV4, PacketAddressV6>;
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+  return reinterpret_cast<IPHeader*>(packet.Data().data())
+      ->As(packet.Data(), false,
+           Overload{[](std::span<uint8_t> /*ip4span*/, IPv4Header* ip4) -> Result {
+                      return PacketAddressV4{.Src = boost::asio::ip::make_address_v4(ip4->GetSrcIp()),
+                                             .Dest = boost::asio::ip::make_address_v4(ip4->GetDestIp())};
+                    },
+                    [](std::span<uint8_t> /*ip6span*/, IPv6Header* ip6) -> Result {
+                      return PacketAddressV6{.Src = boost::asio::ip::make_address_v6(ip6->SrcIp),
+                                             .Dest = boost::asio::ip::make_address_v6(ip6->DestIp)};
+                    },
+                    [](std::span<uint8_t> /*span*/, std::string err) -> Result {
+                      BOOST_LOG_TRIVIAL(info) << "GetPacketIpAddress: " << err;
+                      return std::monostate{};
+                    }});
+}
+template <PacketAddressTypes AddressType> auto InSameSubnet(const AddressType& address, int prefix) -> bool {
+  using NetworkType = typename AddressType::NetworkType;
+  return NetworkType(address.Src, prefix).canonical().address() ==
+         NetworkType(address.Dest, prefix).canonical().address();
+}
+} // namespace
+
+auto TunnelDataPlane::WinDivertRouteOutbound(Packet& packet) -> WinDivertRouteCallback::Result {
+  auto pass = std::visit(Overload{
+                             [](std::monostate /*unused*/) -> bool { return true; },
+                             [&]<PacketAddressTypes T>(const T& address) -> bool {
+                               auto addressInfo = _WindowsLocalAddressMonitor.GetAddressInfo(address.Src);
+                               if (!addressInfo.has_value()) {
+                                 return true; // Bypass packet which is not originating from our host
+                               }
+
+                               // TODO: Bypass packets to local network, maybe need an option switch
+                               // if (InSameSubnet(address, addressInfo.value().PrefixLength)) {
+                               //   // TODO: may exclude DNS
+                               //   return true; // Bypass packets to local network
+                               // }
+
+                               return false;
+                             },
+                         },
+                         GetPacketIpAddress(packet));
+  if (pass) {
+    return WinDivertRouteCallback::Result::Bypass;
   }
-  assert(_ConnectionTracker);
+
   auto result = _ConnectionTracker->LookupAndUpdate<ConnectionTracker::ConnectionDirectionOutput>(packet, *this);
   if (result.has_value()) {
     auto mark = std::dynamic_pointer_cast<VpnClientMultiChannel::Mark>(result.value());
-
     return std::visit(Overload{
                           [](VpnClientMultiChannel::Mark::ToBeSelected) -> gh::WinDivertRouteCallback::Result {
                             assert(false && "should not reach here");
@@ -233,6 +301,17 @@ auto TunnelDataPlane::WinDivertRoute(Packet& packet, const WINDIVERT_ADDRESS& ad
     BOOST_LOG_TRIVIAL(warning) << "WinDivert: LookupAndUpdate bypass failed: " << result.error().message();
     return WinDivertRouteCallback::Result::Normal;
   }
+}
+
+auto TunnelDataPlane::WinDivertRouteInbound(Packet& packet) -> std::optional<InterfaceIndex> {
+  return std::visit(Overload{
+                        [](std::monostate /*unused*/) -> std::optional<InterfaceIndex> { return std::nullopt; },
+                        [&]<PacketAddressTypes T>(const T& address) -> std::optional<InterfaceIndex> {
+                          return _WindowsLocalAddressMonitor.GetAddressInfo(address.Dest)
+                              .transform([](const auto& info) -> InterfaceIndex { return info.InterfaceIndex; });
+                        },
+                    },
+                    GetPacketIpAddress(packet));
 }
 #endif
 
