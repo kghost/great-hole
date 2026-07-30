@@ -262,11 +262,24 @@ auto TunnelDataPlane::WinDivertRouteOutbound(Packet& packet) -> WinDivertRouteCa
                                  return true; // Bypass packet which is not originating from our host
                                }
 
-                               // TODO: Bypass packets to local network, maybe need an option switch
-                               // if (InSameSubnet(address, addressInfo.value().PrefixLength)) {
-                               //   // TODO: may exclude DNS
-                               //   return true; // Bypass packets to local network
-                               // }
+                               if (address.Dest.is_loopback()) {
+                                 return true; // Bypass packets to loopback addresses
+                               }
+
+                               if (address.Dest.is_multicast()) {
+                                 return true; // Bypass packets to multicast addresses
+                               }
+
+                               if constexpr (std::is_same_v<T, PacketAddressV6>) {
+                                 if (address.Dest.is_link_local()) {
+                                   return true; // Bypass packets to link local addresses
+                                 }
+                               }
+
+                               if (InSameSubnet(address, addressInfo.value().PrefixLength)) {
+                                 // TODO: may exclude DNS
+                                 return true; // Bypass packets to local network
+                               }
 
                                return false;
                              },
