@@ -22,102 +22,40 @@ namespace gh::policy {
 
 namespace {
 
-struct QueryParametersV4 {
-  static constexpr auto AddressFamaly = AF_INET;
-  using AddressType = boost::asio::ip::address_v4;
-  static constexpr auto GetLocalAddress = [](const auto& row) -> AddressType {
-    return AddressType(ntohl(row.dwLocalAddr));
-  };
-};
-struct QueryParametersV6 {
-  static constexpr auto AddressFamaly = AF_INET6;
-  using AddressType = boost::asio::ip::address_v6;
-  static constexpr auto GetLocalAddress = [](const auto& row) -> AddressType {
-    return AddressType(std::to_array(row.ucLocalAddr));
-  };
-};
-struct QueryParametersTcp {
-  static constexpr auto GetTable =
-      [](auto&&... args) -> decltype(GetExtendedTcpTable(std::forward<decltype(args)>(args)...)) {
-    return GetExtendedTcpTable(std::forward<decltype(args)>(args)...);
-  };
-  static constexpr auto TableClass = TCP_TABLE_OWNER_PID_ALL;
-};
-struct QueryParametersUdp {
-  static constexpr auto GetTable =
-      [](auto&&... args) -> decltype(GetExtendedUdpTable(std::forward<decltype(args)>(args)...)) {
-    return GetExtendedUdpTable(std::forward<decltype(args)>(args)...);
-  };
-  static constexpr auto TableClass = UDP_TABLE_OWNER_PID;
-};
-
-struct QueryParametersTcp4 : public QueryParametersV4, public QueryParametersTcp {
-  using TableType = MIB_TCPTABLE_OWNER_PID;
-};
-struct QueryParametersTcp6 : public QueryParametersV6, public QueryParametersTcp {
-  using TableType = MIB_TCP6TABLE_OWNER_PID;
-};
-struct QueryParametersUdp4 : public QueryParametersV4, public QueryParametersUdp {
-  using TableType = MIB_UDPTABLE_OWNER_PID;
-};
-struct QueryParametersUdp6 : public QueryParametersV6, public QueryParametersUdp {
-  using TableType = MIB_UDP6TABLE_OWNER_PID;
-};
-
-template <typename QueryParameters>
-auto QueryTablePid(uint16_t localPort, const typename QueryParameters::AddressType& localAddr) -> std::optional<DWORD> {
-  DWORD size = 0;
-  QueryParameters::GetTable(nullptr, &size, FALSE, QueryParameters::AddressFamaly, QueryParameters::TableClass, 0);
-  if (size == 0) {
-    return std::nullopt;
-  }
-  std::vector<uint8_t> buffer(size);
-  if (QueryParameters::GetTable(buffer.data(), &size, FALSE, QueryParameters::AddressFamaly,
-                                QueryParameters::TableClass, 0) != NO_ERROR) {
-    return std::nullopt;
-  }
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-  const auto* table = reinterpret_cast<const QueryParameters::TableType*>(buffer.data());
-  std::optional<DWORD> wildcardPid;
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
-  for (const auto& row : std::span(table->table, table->dwNumEntries)) {
-    uint16_t rowPort = ntohs(static_cast<uint16_t>(row.dwLocalPort));
-    if (rowPort != localPort) {
-      continue;
-    }
-    auto rowAddr = QueryParameters::GetLocalAddress(row);
-    if (rowAddr == localAddr) {
-      return row.dwOwningPid;
-    }
-    if (rowAddr.is_unspecified()) {
-      wildcardPid = row.dwOwningPid;
-    }
-  }
-  return wildcardPid;
-}
-
 auto QueryPidFromSystemTables(const ConnectionTracker::ConnectionKey& key) -> std::optional<DWORD> {
+  auto findPidInTable = [](auto&& gen, const auto& localAddr, uint16_t localPort) -> std::optional<DWORD> {
+    std::optional<DWORD> wildcardPid;
+    for (const auto& [addr, port, pid] : gen) {
+      if (port != localPort) {
+        continue;
+      }
+      if (addr == localAddr) {
+        return pid;
+      }
+      if (addr.is_unspecified()) {
+        wildcardPid = pid;
+      }
+    }
+    return wildcardPid;
+  };
+
   return std::visit(
       Overload{
-          [](const ConnectionTracker::Ip4TcpKey& key) -> std::optional<DWORD> {
-            return QueryTablePid<QueryParametersTcp4>(key.LocalPort, key.LocalAddress)
-                .or_else([&key]() -> std::optional<DWORD> {
-                  return QueryTablePid<QueryParametersTcp6>(
-                      key.LocalPort, boost::asio::ip::make_address_v6(boost::asio::ip::v4_mapped, key.LocalAddress));
-                });
+          [&](const ConnectionTracker::Ip4TcpKey& key) -> std::optional<DWORD> {
+            return findPidInTable(WinDivertFlowSniffer::QueryTablePid<WinDivertFlowSniffer::QueryParametersTcp4>(),
+                                  key.LocalAddress, key.LocalPort);
           },
-          [](const ConnectionTracker::Ip6TcpKey& key) -> std::optional<DWORD> {
-            return QueryTablePid<QueryParametersTcp6>(key.LocalPort, key.LocalAddress);
+          [&](const ConnectionTracker::Ip6TcpKey& key) -> std::optional<DWORD> {
+            return findPidInTable(WinDivertFlowSniffer::QueryTablePid<WinDivertFlowSniffer::QueryParametersTcp6>(),
+                                  key.LocalAddress, key.LocalPort);
           },
-          [](const ConnectionTracker::Ip4UdpKey& key) -> std::optional<DWORD> {
-            return QueryTablePid<QueryParametersUdp4>(key.LocalPort, key.LocalAddress)
-                .or_else([&key]() -> std::optional<DWORD> {
-                  return QueryTablePid<QueryParametersUdp6>(
-                      key.LocalPort, boost::asio::ip::make_address_v6(boost::asio::ip::v4_mapped, key.LocalAddress));
-                });
+          [&](const ConnectionTracker::Ip4UdpKey& key) -> std::optional<DWORD> {
+            return findPidInTable(WinDivertFlowSniffer::QueryTablePid<WinDivertFlowSniffer::QueryParametersUdp4>(),
+                                  key.LocalAddress, key.LocalPort);
           },
-          [](const ConnectionTracker::Ip6UdpKey& key) -> std::optional<DWORD> {
-            return QueryTablePid<QueryParametersUdp6>(key.LocalPort, key.LocalAddress);
+          [&](const ConnectionTracker::Ip6UdpKey& key) -> std::optional<DWORD> {
+            return findPidInTable(WinDivertFlowSniffer::QueryTablePid<WinDivertFlowSniffer::QueryParametersUdp6>(),
+                                  key.LocalAddress, key.LocalPort);
           },
           [](const ConnectionTracker::IcmpKey&) -> std::optional<DWORD> { return std::nullopt; },
           [](const ConnectionTracker::Icmp6Key&) -> std::optional<DWORD> { return std::nullopt; },

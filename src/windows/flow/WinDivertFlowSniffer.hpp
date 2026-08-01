@@ -1,12 +1,30 @@
 #pragma once
 
+#include <array>
+#include <optional>
+#include <span>
+#include <tuple>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#if defined(__has_include) && __has_include(<generator>)
+#include <generator>
+#else
+#include "Utils/Generator.hpp"
+#endif
+
 #include <boost/asio.hpp>
 #include <boost/asio/ip/address_v4.hpp>
+#include <boost/asio/ip/address_v6.hpp>
 #include <boost/asio/windows/object_handle.hpp>
-#include <optional>
 
-#include <variant>
 #include <windows.h>
+
+#include <winsock2.h>
+
+#include <iphlpapi.h>
+#include <ws2tcpip.h>
 
 #include "Logger.hpp"
 #include "ServiceBase.hpp"
@@ -72,6 +90,78 @@ public:
   auto operator=(WinDivertFlowSniffer&&) -> WinDivertFlowSniffer& = delete;
 
   auto GetName() const -> std::string override { return "WinDivertFlowSniffer"; }
+
+  struct QueryParametersV4 {
+    static constexpr auto AddressFamaly = AF_INET;
+    using AddressType = boost::asio::ip::address_v4;
+    static constexpr auto GetLocalAddress = [](const auto& row) -> AddressType {
+      return AddressType(ntohl(row.dwLocalAddr));
+    };
+  };
+  struct QueryParametersV6 {
+    static constexpr auto AddressFamaly = AF_INET6;
+    using AddressType = boost::asio::ip::address_v6;
+    static constexpr auto GetLocalAddress = [](const auto& row) -> AddressType {
+      return AddressType(std::to_array(row.ucLocalAddr));
+    };
+  };
+  struct QueryParametersTcp {
+    static constexpr auto GetTable =
+        [](auto&&... args) -> decltype(GetExtendedTcpTable(std::forward<decltype(args)>(args)...)) {
+      return GetExtendedTcpTable(std::forward<decltype(args)>(args)...);
+    };
+    static constexpr auto TableClass = TCP_TABLE_OWNER_PID_ALL;
+  };
+  struct QueryParametersUdp {
+    static constexpr auto GetTable =
+        [](auto&&... args) -> decltype(GetExtendedUdpTable(std::forward<decltype(args)>(args)...)) {
+      return GetExtendedUdpTable(std::forward<decltype(args)>(args)...);
+    };
+    static constexpr auto TableClass = UDP_TABLE_OWNER_PID;
+  };
+
+  struct QueryParametersTcp4 : public QueryParametersV4, public QueryParametersTcp {
+    using TableType = MIB_TCPTABLE_OWNER_PID;
+    static constexpr auto ResultProtocol = WinDivertFlowSnifferCallback::Protocol::Ipv4Tcp;
+    using KeyType = WinDivertFlowSnifferCallback::FlowIp4Key;
+  };
+  struct QueryParametersTcp6 : public QueryParametersV6, public QueryParametersTcp {
+    using TableType = MIB_TCP6TABLE_OWNER_PID;
+    static constexpr auto ResultProtocol = WinDivertFlowSnifferCallback::Protocol::Ipv6Tcp;
+    using KeyType = WinDivertFlowSnifferCallback::FlowIp6Key;
+  };
+  struct QueryParametersUdp4 : public QueryParametersV4, public QueryParametersUdp {
+    using TableType = MIB_UDPTABLE_OWNER_PID;
+    static constexpr auto ResultProtocol = WinDivertFlowSnifferCallback::Protocol::Ipv4Udp;
+    using KeyType = WinDivertFlowSnifferCallback::FlowIp4Key;
+  };
+  struct QueryParametersUdp6 : public QueryParametersV6, public QueryParametersUdp {
+    using TableType = MIB_UDP6TABLE_OWNER_PID;
+    static constexpr auto ResultProtocol = WinDivertFlowSnifferCallback::Protocol::Ipv6Udp;
+    using KeyType = WinDivertFlowSnifferCallback::FlowIp6Key;
+  };
+
+  template <typename QueryParameters>
+  static auto QueryTablePid() -> std::generator<std::tuple<typename QueryParameters::AddressType, uint16_t, DWORD>> {
+    DWORD size = 0;
+    QueryParameters::GetTable(nullptr, &size, FALSE, QueryParameters::AddressFamaly, QueryParameters::TableClass, 0);
+    if (size == 0) {
+      co_return;
+    }
+    std::vector<uint8_t> buffer(size);
+    if (QueryParameters::GetTable(buffer.data(), &size, FALSE, QueryParameters::AddressFamaly,
+                                  QueryParameters::TableClass, 0) != NO_ERROR) {
+      co_return;
+    }
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    const auto* table = reinterpret_cast<const QueryParameters::TableType*>(buffer.data());
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
+    for (const auto& row : std::span(table->table, table->dwNumEntries)) {
+      uint16_t rowPort = ntohs(static_cast<uint16_t>(row.dwLocalPort));
+      auto rowAddr = QueryParameters::GetLocalAddress(row);
+      co_yield std::make_tuple(rowAddr, rowPort, row.dwOwningPid);
+    }
+  }
 
 protected:
   auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
