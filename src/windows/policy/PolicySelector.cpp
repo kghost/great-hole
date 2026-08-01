@@ -17,20 +17,26 @@ PolicySelector::PolicySelector(boost::asio::any_io_executor& executor, PolicyReg
 
 auto PolicySelector::ResolvePolicy(const ConnectionTracker::ConnectionKey& key)
     -> Interface::PolicyRule::RoutingAction {
-  auto pid = _FlowTracker.GetPidForConnection(key);
-  if (pid.has_value()) {
-    auto action = _TreeTracker->GetAction(pid.value());
+  auto process = _FlowTracker.GetProcessForConnection(key);
+  if (process.has_value()) {
+    auto action = _TreeTracker->GetAction(process.value());
     if (action.has_value()) {
       BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
-          << "ResolvePolicy: key=" << key << " pid=" << pid.value()
+          << "ResolvePolicy: key=" << key << " process=" << process.value()
           << " resolved to action=" << PolicyActionToString(action.value());
       return action.value();
+    } else {
+      BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
+          << "ResolvePolicy: key=" << key << " process=" << process.value() << " - no action found, defaulting to "
+          << PolicyActionToString(Interface::PolicyRule::ByPassRoute{});
+      return Interface::PolicyRule::ByPassRoute{};
     }
+  } else {
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
+        << "ResolvePolicy: key=" << key << " - no process found, defaulting to "
+        << PolicyActionToString(Interface::PolicyRule::ByPassRoute{});
+    return Interface::PolicyRule::ByPassRoute{};
   }
-
-  BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
-      << "ResolvePolicy: key=" << key << " - no PID/action found, defaulting to bypass mark";
-  return Interface::PolicyRule::ByPassRoute{};
 }
 
 } // namespace gh::policy

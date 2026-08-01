@@ -9,11 +9,15 @@ foreach(suffix "" "-asan")
   set(target "great-hole-windows-utils${suffix}")
 
   set(sources
+    Process.cpp
     Strings.cpp
   )
 
   add_library(${target} STATIC ${sources})
   target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(${target} PUBLIC
+    great-hole-interface${suffix}
+  )
 
   if(suffix STREQUAL "-asan")
     target_compile_options(${target} PRIVATE -fsanitize=address)

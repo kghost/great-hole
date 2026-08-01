@@ -90,17 +90,17 @@ The `ProcessTreeTracker` maintains the active Windows process tree and evaluates
 - **Race-Free Initialization Order**:
   1. Queries all running ETW sessions using `QueryAllTracesW` and calls `ControlTraceW` to stop any orphaned sessions starting with `DesktopHoleProcessTrace_` (e.g. from previous crashed/unterminated runs). This prevents ETW session slot exhaustion (error `1450` / `ERROR_NO_SYSTEM_RESOURCES`).
   2. Starts the ETW real-time session (`StartTraceW` and `EnableTraceEx2`) on the main startup thread. This ensures that the kernel starts buffering process creation/destruction events in the session's queue immediately.
-  3. Captures a snapshot of currently running processes using `CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)` to build the initial `PID -> ProcessNode` map.
+  3. Captures a snapshot of currently running processes using `EnumProcesses` to build the initial `ProcessSequence -> ProcessNode` map via `GetProcessSequence` (`NtQueryInformationProcess` info class 92).
   4. Spawns a background thread running the ETW consumer session to call `OpenTraceW` and `ProcessTrace` and consume the buffered events.
   - This order eliminates the gap where process events starting in-between snapshot creation and ETW activation would be lost. Since the ETW session buffers events starting from step 1, any processes that started during the snapshot are processed in chronological order. Duplicate start events are safely ignored using `try_emplace`.
 - **ETW Monitoring & On-Demand Fallback**:
   - Subscribes to the `Microsoft-Windows-Kernel-Process` provider (GUID `{22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716}`).
-  - **Process Start (Event ID 1)**: Adds a new node containing the process path, PID, and parent PID.
-  - **Process Stop (Event ID 2)**: Purges the node.
-  - **On-Demand Query**: If `GetAction(pid)` is called for a process not yet in `_ProcessMap`, `ProcessTreeTracker` queries the process image path via `OpenProcess` (`PROCESS_QUERY_LIMITED_INFORMATION` / `QueryFullProcessImageNameW`), adds it to `_ProcessMap`, and evaluates policy on demand.
+  - **Process Start (Event ID 1)**: Adds a new node containing the process path, `ProcessSequence`, parent `ProcessSequence`, and `ProcessId`.
+  - **Process Stop (Event ID 2)**: Purges the node by sequence.
+  - **On-Demand Query**: If `GetAction(pid)` is called for a process not yet in `_ProcessIdMap`, `ProcessTreeTracker` inspects the process (and parent ancestor chain if missing) via `WithProcessHandle` (`OpenProcess`), builds the parent ancestor chain, adds them to `_ProcessMap` and `_ProcessIdMap`, and evaluates policies on demand.
 - **PID Recycling Protection**:
   - > [!IMPORTANT]
-    > PIDs are recycled rapidly by Windows. To prevent policy leaks or mis-association, the node is deleted immediately upon receipt of Event ID 2, invalidating any cached policy evaluations for that PID.
+    > PIDs are recycled rapidly by Windows. Nodes in `_ProcessMap` are keyed by 64-bit monotonically increasing `ProcessSequence` numbers. A secondary map `_ProcessIdMap` (`std::map<Interface::ProcessId, std::reference_wrapper<ProcessNode>>`) maintains the current active mapping from PID to `ProcessNode`. `AddProcess` updates `_ProcessIdMap` via `insert_or_assign`, and `RemoveProcess` conditionally erases from `_ProcessIdMap` only if the mapping matches the sequence being removed.
 
 ### 3.3. Policy Registry (`gh::policy::PolicyRegistry`)
 The `PolicyRegistry` stores user-defined rules.
@@ -167,26 +167,28 @@ struct PolicyRule {
 };
 
 struct ProcessNode {
-    DWORD ProcessId;
-    DWORD ParentProcessId;
-    std::string ExecutablePath;
+    Interface::ProcessSequence ProcessSequence{0};
+    std::optional<Interface::ProcessSequence> ParentProcessSequence{0};
+    Interface::ProcessId ProcessId{0};
+    std::optional<std::string> ExecutablePath;
     std::optional<PolicyRule> Policy;
-    std::set<DWORD> Children;
+    std::set<Interface::ProcessSequence> Children;
 };
 
 class ProcessTreeTracker : public ServiceBase {
 public:
     explicit ProcessTreeTracker(boost::asio::any_io_executor executor, PolicyRegistry& registry);
-    ~ProcessTreeTracker() override;
+    ~ProcessTreeTracker() override = default;
 
     auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
     auto DoWork() -> Omni::Fiber::Coroutine<void> override;
     auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
-    auto RegisterPidPolicy(DWORD pid, const PolicyRule& rule) -> bool;
-    auto AddProcess(DWORD pid, DWORD parentPid, const std::string& path) -> const ProcessNode&;
-    void RemoveProcess(DWORD pid);
-    auto GetAction(DWORD pid) -> std::optional<PolicyRule::RoutingAction>;
+    auto RegisterProcessPolicy(Interface::ProcessSequence process, const PolicyRule& rule) -> bool;
+    auto AddProcess(Interface::ProcessSequence process, Interface::ProcessSequence parentSeq, Interface::ProcessId pid,
+                    std::optional<std::string> path) -> const ProcessNode&;
+    void RemoveProcess(Interface::ProcessSequence process);
+    auto GetAction(Interface::ProcessId process) -> std::optional<PolicyRule::RoutingAction>;
     auto GetProcessTree() const -> std::vector<Interface::ProcessInfo>;
 
 private:
@@ -195,10 +197,10 @@ private:
     void HandleEtwEvent(PEVENT_RECORD record);
 
     boost::asio::any_io_executor _Executor;
-    std::map<DWORD, ProcessNode> _ProcessMap;
+    std::map<Interface::ProcessSequence, ProcessNode> _ProcessMap;
+    std::map<Interface::ProcessId, std::reference_wrapper<ProcessNode>> _ProcessIdMap;
     TRACEHANDLE _EtwSessionHandle = 0;
     std::thread _EtwThread;
-    std::atomic<bool> _Running{false};
 };
 
 struct FlowRecord {

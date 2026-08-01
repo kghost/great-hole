@@ -16,24 +16,26 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
+#include "Interface.hpp"
 #include "Utils/Overload.hpp"
 
 namespace gh::policy {
 
 namespace {
 
-auto QueryPidFromSystemTables(const ConnectionTracker::ConnectionKey& key) -> std::optional<DWORD> {
-  auto findPidInTable = [](auto&& gen, const auto& localAddr, uint16_t localPort) -> std::optional<DWORD> {
+auto QueryProcessFromSystemTables(const ConnectionTracker::ConnectionKey& key) -> std::optional<Interface::ProcessId> {
+  auto findProcessInTable = [](auto&& gen, const auto& localAddr,
+                               uint16_t localPort) -> std::optional<Interface::ProcessId> {
     std::optional<DWORD> wildcardPid;
-    for (const auto& [addr, port, pid] : gen) {
+    for (const auto& [addr, port, process] : gen) {
       if (port != localPort) {
         continue;
       }
       if (addr == localAddr) {
-        return pid;
+        return process;
       }
       if (addr.is_unspecified()) {
-        wildcardPid = pid;
+        wildcardPid = process;
       }
     }
     return wildcardPid;
@@ -41,84 +43,85 @@ auto QueryPidFromSystemTables(const ConnectionTracker::ConnectionKey& key) -> st
 
   return std::visit(
       Overload{
-          [&](const ConnectionTracker::Ip4TcpKey& key) -> std::optional<DWORD> {
-            return findPidInTable(WinDivertFlowSniffer::QueryTablePid<WinDivertFlowSniffer::QueryParametersTcp4>(),
-                                  key.LocalAddress, key.LocalPort);
+          [&](const ConnectionTracker::Ip4TcpKey& key) -> std::optional<Interface::ProcessId> {
+            return findProcessInTable(WinDivertFlowSniffer::QueryTablePid<WinDivertFlowSniffer::QueryParametersTcp4>(),
+                                      key.LocalAddress, key.LocalPort);
           },
-          [&](const ConnectionTracker::Ip6TcpKey& key) -> std::optional<DWORD> {
-            return findPidInTable(WinDivertFlowSniffer::QueryTablePid<WinDivertFlowSniffer::QueryParametersTcp6>(),
-                                  key.LocalAddress, key.LocalPort);
+          [&](const ConnectionTracker::Ip6TcpKey& key) -> std::optional<Interface::ProcessId> {
+            return findProcessInTable(WinDivertFlowSniffer::QueryTablePid<WinDivertFlowSniffer::QueryParametersTcp6>(),
+                                      key.LocalAddress, key.LocalPort);
           },
-          [&](const ConnectionTracker::Ip4UdpKey& key) -> std::optional<DWORD> {
-            return findPidInTable(WinDivertFlowSniffer::QueryTablePid<WinDivertFlowSniffer::QueryParametersUdp4>(),
-                                  key.LocalAddress, key.LocalPort);
+          [&](const ConnectionTracker::Ip4UdpKey& key) -> std::optional<Interface::ProcessId> {
+            return findProcessInTable(WinDivertFlowSniffer::QueryTablePid<WinDivertFlowSniffer::QueryParametersUdp4>(),
+                                      key.LocalAddress, key.LocalPort);
           },
-          [&](const ConnectionTracker::Ip6UdpKey& key) -> std::optional<DWORD> {
-            return findPidInTable(WinDivertFlowSniffer::QueryTablePid<WinDivertFlowSniffer::QueryParametersUdp6>(),
-                                  key.LocalAddress, key.LocalPort);
+          [&](const ConnectionTracker::Ip6UdpKey& key) -> std::optional<Interface::ProcessId> {
+            return findProcessInTable(WinDivertFlowSniffer::QueryTablePid<WinDivertFlowSniffer::QueryParametersUdp6>(),
+                                      key.LocalAddress, key.LocalPort);
           },
-          [](const ConnectionTracker::IcmpKey&) -> std::optional<DWORD> { return std::nullopt; },
-          [](const ConnectionTracker::Icmp6Key&) -> std::optional<DWORD> { return std::nullopt; },
+          [](const ConnectionTracker::IcmpKey&) -> std::optional<Interface::ProcessId> { return std::nullopt; },
+          [](const ConnectionTracker::Icmp6Key&) -> std::optional<Interface::ProcessId> { return std::nullopt; },
       },
       key);
 }
 
 } // namespace
 
-auto FlowTracker::GetPidForConnection(const ConnectionTracker::ConnectionKey& key) -> std::optional<DWORD> {
+auto FlowTracker::GetProcessForConnection(const ConnectionTracker::ConnectionKey& key)
+    -> std::optional<Interface::ProcessId> {
   auto flowKey = ToFlowExactKey(key);
   if (flowKey.has_value()) {
-    auto iterator = _FlowToPid.find(flowKey.value());
-    if (iterator != _FlowToPid.end()) {
+    auto iterator = _FlowToProcess.find(flowKey.value());
+    if (iterator != _FlowToProcess.end()) {
       return iterator->second;
     }
   }
 
   auto flowWildcardKey = ToFlowWildcardKey(key);
   if (flowWildcardKey.has_value()) {
-    auto iterator = _FlowToPid.find(flowWildcardKey.value());
-    if (iterator != _FlowToPid.end()) {
+    auto iterator = _FlowToProcess.find(flowWildcardKey.value());
+    if (iterator != _FlowToProcess.end()) {
       return iterator->second;
     }
   }
 
   BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
       << "FlowTracker: Connection " << key << " not in flow table, querying system TCP/UDP tables";
-  auto pid = QueryPidFromSystemTables(key);
-  if (pid.has_value()) {
+  auto process = QueryProcessFromSystemTables(key);
+  if (process.has_value()) {
     BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
-        << "FlowTracker: System table query returned PID " << pid.value() << " for connection " << key;
+        << "FlowTracker: System table query returned PID " << process.value() << " for connection " << key;
     if (flowKey.has_value()) {
-      _FlowToPid[flowKey.value()] = pid.value();
+      _FlowToProcess[flowKey.value()] = process.value();
     }
-    return pid;
+    return process;
   } else {
     BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
-        << "FlowTracker: System table query failed to find PID for connection " << key;
+        << "FlowTracker: System table query failed to find process sequence for connection " << key;
   }
 
   return std::nullopt;
 }
 
-auto FlowTracker::OnFlowEstablished(const FlowKey& key, uint32_t pid) -> Omni::Fiber::Coroutine<void> {
-  _FlowToPid[key] = pid;
+auto FlowTracker::OnFlowEstablished(const FlowKey& key, Interface::ProcessId process) -> Omni::Fiber::Coroutine<void> {
+  _FlowToProcess[key] = process;
   co_return;
 }
 
 auto FlowTracker::OnFlowDeleted(const FlowKey& key) -> Omni::Fiber::Coroutine<void> {
-  _FlowToPid.erase(key);
+  _FlowToProcess.erase(key);
   co_return;
 }
 
 auto FlowTracker::GetFlows() const -> std::vector<Interface::FlowInfo> {
   std::vector<Interface::FlowInfo> flows;
-  flows.reserve(_FlowToPid.size());
-  for (const auto& [key, pid] : _FlowToPid) {
+  flows.reserve(_FlowToProcess.size());
+  for (const auto& [key, process] : _FlowToProcess) {
     std::visit(Overload{[&](const auto& key) -> void {
                  flows.push_back({.Protocol = ProtocolToString(key.Proto),
                                   .LocalAddress = key.LocalAddress.to_string(),
                                   .LocalPort = key.LocalPort,
-                                  .ProcessId = pid});
+                                  .Process = process});
                }},
                key);
   }

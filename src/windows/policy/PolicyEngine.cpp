@@ -4,6 +4,7 @@
 #include <memory>
 #include <utility>
 
+#include "Process.hpp"
 #include "Strings.hpp"
 
 namespace gh::policy {
@@ -53,8 +54,8 @@ void PolicyEngine::AddPathPolicy(const std::string& path, const PolicyRule& poli
 
 void PolicyEngine::RemovePathPolicy(const std::string& path) { _Registry.RemovePathRule(path); }
 
-void PolicyEngine::AddPidPolicy(DWORD pid, const PolicyRule& policy) {
-  _Selector.GetProcessTreeTracker().RegisterPidPolicy(pid, policy);
+void PolicyEngine::AddProcessPolicy(Interface::ProcessSequence process, const PolicyRule& policy) {
+  _Selector.GetProcessTreeTracker().RegisterProcessPolicy(process, policy);
 }
 
 void PolicyEngine::SetDefaultPolicy(const PolicyRule& policy) { _Registry.SetDefaultAction(policy.Action); }
@@ -75,8 +76,24 @@ auto PolicyEngine::LaunchWithPolicy(const std::string& commandLine, const Policy
     return 0;
   }
 
-  _Selector.GetProcessTreeTracker().AddProcess(processInfo.dwProcessId, GetCurrentProcessId(), commandLine);
-  _Selector.GetProcessTreeTracker().RegisterPidPolicy(processInfo.dwProcessId, policy);
+  auto process = GetProcessSequence(processInfo.hProcess);
+  if (!process.has_value()) {
+    BOOST_LOG_TRIVIAL(error) << "PolicyEngine::LaunchWithPolicy: Failed to get process sequence number for PID "
+                             << processInfo.dwProcessId;
+    if (TerminateProcess(processInfo.hProcess, -1) == FALSE) {
+      BOOST_LOG_TRIVIAL(error) << "PolicyEngine::LaunchWithPolicy: TerminateProcess failed for PID "
+                               << processInfo.dwProcessId;
+    }
+    CloseHandle(processInfo.hThread);
+    CloseHandle(processInfo.hProcess);
+    return 0;
+  }
+
+  auto parent = GetProcessSequence(GetCurrentProcessId());
+  assert(parent.has_value());
+  const auto& node = _Selector.GetProcessTreeTracker().AddProcess(process.value(), parent.value(),
+                                                                  processInfo.dwProcessId, commandLine);
+  _Selector.GetProcessTreeTracker().RegisterProcessPolicy(node.ProcessSequence, policy);
 
   ResumeThread(processInfo.hThread);
 

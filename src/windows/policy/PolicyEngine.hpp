@@ -29,7 +29,7 @@ public:
   void ClearPathRegistry();
   void AddPathPolicy(const std::string& path, const PolicyRule& policy);
   void RemovePathPolicy(const std::string& path);
-  void AddPidPolicy(DWORD pid, const PolicyRule& policy);
+  void AddProcessPolicy(Interface::ProcessSequence process, const PolicyRule& policy);
   void SetDefaultPolicy(const PolicyRule& policy);
   auto LaunchWithPolicy(const std::string& commandLine, const PolicyRule& policy) -> uint32_t;
 

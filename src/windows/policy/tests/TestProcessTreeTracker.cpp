@@ -5,7 +5,12 @@
 #include <boost/asio.hpp>
 #include <gtest/gtest.h>
 
+#include <evntcons.h>
+#include <evntrace.h>
+#include <windows.h>
+
 #include "PolicyRegistry.hpp"
+#include "Process.hpp"
 #include "ProcessTreeTracker.hpp"
 #include "VpnClientMultiChannel.hpp"
 
@@ -23,6 +28,10 @@ protected:
   void RunPending() {
     ioContext.restart();
     ioContext.poll();
+  }
+
+  void CallHandleEtwEvent(PEVENT_RECORD record) {
+    tracker.HandleEtwEvent(record);
   }
 
   void SetUp() override {
@@ -51,20 +60,20 @@ TEST_F(TestProcessTreeTracker, ProcessTreeInheritance) {
   PolicyRule subtreeRule{.Action = PolicyRule::EndpointRoute{session99}, .Scope = PolicyScope::ProcessSubtree};
   reg.AddPathRule("C:\\VSCode\\code.exe", subtreeRule);
 
-  tracker.AddProcess(1000, 0, "C:\\VSCode\\code.exe");
-  auto action1000 = tracker.GetAction(1000);
+  const auto& p1000 = tracker.AddProcess(1000, 0, 1000, "C:\\VSCode\\code.exe");
+  auto action1000 = tracker.GetAction(p1000.ProcessId);
   ASSERT_TRUE(action1000.has_value());
   EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(action1000.value()));
   EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(action1000.value()).Endpoint.lock(), session99);
 
-  tracker.AddProcess(1001, 1000, "C:\\Windows\\System32\\cmd.exe");
-  auto action1001 = tracker.GetAction(1001);
+  const auto& p1001 = tracker.AddProcess(1001, 1000, 1001, "C:\\Windows\\System32\\cmd.exe");
+  auto action1001 = tracker.GetAction(p1001.ProcessId);
   ASSERT_TRUE(action1001.has_value());
   EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(action1001.value()));
   EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(action1001.value()).Endpoint.lock(), session99);
 
-  tracker.AddProcess(1002, 1001, "C:\\Git\\bin\\git.exe");
-  auto action1002 = tracker.GetAction(1002);
+  const auto& p1002 = tracker.AddProcess(1002, 1001, 1002, "C:\\Git\\bin\\git.exe");
+  auto action1002 = tracker.GetAction(p1002.ProcessId);
   ASSERT_TRUE(action1002.has_value());
   EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(action1002.value()));
   EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(action1002.value()).Endpoint.lock(), session99);
@@ -76,12 +85,12 @@ TEST_F(TestProcessTreeTracker, ProcessTreeSingleProcessScopeNoInheritance) {
   PolicyRule singleRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::SingleProcess};
   reg.AddPathRule("C:\\App\\app.exe", singleRule);
 
-  tracker.AddProcess(2000, 0, "C:\\App\\app.exe");
-  auto action2000 = tracker.GetAction(2000);
+  const auto& p2000 = tracker.AddProcess(2000, 0, 2000, "C:\\App\\app.exe");
+  auto action2000 = tracker.GetAction(p2000.ProcessId);
   ASSERT_TRUE(action2000.has_value());
   EXPECT_TRUE(std::holds_alternative<PolicyRule::ByPassRoute>(action2000.value()));
 
-  tracker.AddProcess(2001, 2000, "C:\\Windows\\System32\\cmd.exe");
+  tracker.AddProcess(2001, 2000, 2001, "C:\\Windows\\System32\\cmd.exe");
   EXPECT_FALSE(HasPolicy(2001));
 }
 
@@ -93,20 +102,20 @@ TEST_F(TestProcessTreeTracker, SubtreeParentExitedButNewDescendantSpawns) {
   reg.AddPathRule("C:\\App\\parent.exe", subtreeRule);
 
   // 1. Parent starts (PID 4000)
-  tracker.AddProcess(4000, 0, "C:\\App\\parent.exe");
+  const auto& p4000 = tracker.AddProcess(4000, 0, 4000, "C:\\App\\parent.exe");
 
   // 2. Parent spawns Child 1 (PID 4001)
-  tracker.AddProcess(4001, 4000, "C:\\App\\child1.exe");
-  auto action4001 = tracker.GetAction(4001);
+  const auto& p4001 = tracker.AddProcess(4001, 4000, 4001, "C:\\App\\child1.exe");
+  auto action4001 = tracker.GetAction(p4001.ProcessId);
   ASSERT_TRUE(action4001.has_value());
   EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(action4001.value()));
 
   // 3. Parent exits (PID 4000 is removed)
-  tracker.RemoveProcess(4000);
+  tracker.RemoveProcess(p4000.ProcessSequence);
 
   // 4. Child 1 spawns Child 2 (PID 4002) after parent exited
-  tracker.AddProcess(4002, 4001, "C:\\App\\child2.exe");
-  auto action4002 = tracker.GetAction(4002);
+  const auto& p4002 = tracker.AddProcess(4002, 4001, 4002, "C:\\App\\child2.exe");
+  auto action4002 = tracker.GetAction(p4002.ProcessId);
   ASSERT_TRUE(action4002.has_value());
   EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(action4002.value()));
   EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(action4002.value()).Endpoint.lock(), session42);
@@ -114,9 +123,9 @@ TEST_F(TestProcessTreeTracker, SubtreeParentExitedButNewDescendantSpawns) {
 
 TEST_F(TestProcessTreeTracker, ProcessTreePolicyCascading) {
   // 1. Setup mock processes with parent-child links: A(1000) -> B(1001) -> C(1002)
-  tracker.AddProcess(1000, 0, "C:\\App\\parent.exe");
-  tracker.AddProcess(1001, 1000, "C:\\App\\child.exe");
-  tracker.AddProcess(1002, 1001, "C:\\App\\grandchild.exe");
+  const auto& p1000 = tracker.AddProcess(1000, 0, 1000, "C:\\App\\parent.exe");
+  const auto& p1001 = tracker.AddProcess(1001, 1000, 1001, "C:\\App\\child.exe");
+  const auto& p1002 = tracker.AddProcess(1002, 1001, 1002, "C:\\App\\grandchild.exe");
 
   EXPECT_FALSE(HasPolicy(1000));
   EXPECT_FALSE(HasPolicy(1001));
@@ -125,13 +134,13 @@ TEST_F(TestProcessTreeTracker, ProcessTreePolicyCascading) {
   // 2. Register subtree policy on parent A
   auto session88 = std::make_shared<VpnClientMultiChannelSession>(UdpDynMux::PskType{}, "dummy");
   PolicyRule subtreeRule{.Action = PolicyRule::EndpointRoute{session88}, .Scope = PolicyScope::ProcessSubtree};
-  tracker.RegisterPidPolicy(1000, subtreeRule);
+  tracker.RegisterProcessPolicy(p1000.ProcessSequence, subtreeRule);
   RunPending();
 
   // Verify all inherited the policy because of cascading
-  auto actionA = tracker.GetAction(1000);
-  auto actionB = tracker.GetAction(1001);
-  auto actionC = tracker.GetAction(1002);
+  auto actionA = tracker.GetAction(p1000.ProcessId);
+  auto actionB = tracker.GetAction(p1001.ProcessId);
+  auto actionC = tracker.GetAction(p1002.ProcessId);
 
   ASSERT_TRUE(actionA.has_value());
   EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(actionA.value()));
@@ -146,36 +155,13 @@ TEST_F(TestProcessTreeTracker, ProcessTreePolicyCascading) {
   EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(actionC.value()).Endpoint.lock(), session88);
 }
 
-TEST_F(TestProcessTreeTracker, ProcessTreeReparentingOnExit) {
-  // 1. Setup mock processes: A(5000) -> B(5001) -> C(5002)
-  tracker.AddProcess(5000, 0, "C:\\App\\grandparent.exe");
-  tracker.AddProcess(5001, 5000, "C:\\App\\parent.exe");
-  tracker.AddProcess(5002, 5001, "C:\\App\\child.exe");
-
-  // 2. Parent B (5001) exits
-  tracker.RemoveProcess(5001);
-
-  // 3. Simulate PID reuse: a new unrelated process takes over B's PID (5001)
-  // and has a subtree policy
-  tracker.AddProcess(5001, 0, "C:\\App\\unrelated.exe");
-  auto session77 = std::make_shared<VpnClientMultiChannelSession>(UdpDynMux::PskType{}, "dummy");
-  PolicyRule unrelatedSubtree{.Action = PolicyRule::EndpointRoute{session77}, .Scope = PolicyScope::ProcessSubtree};
-  tracker.RegisterPidPolicy(5001, unrelatedSubtree);
-
-  // 4. Force re-evaluation of Child C (5002)
-  tracker.TestReEvaluatePolicy(5002);
-
-  // Verify Child C is unaffected by the new process reusing PID 5001 (reparented to 0)
-  EXPECT_FALSE(HasPolicy(5002));
-}
-
 TEST_F(TestProcessTreeTracker, ExposeProcessTree) {
-  tracker.AddProcess(6000, 0, "C:\\App\\grandparent.exe");
-  tracker.AddProcess(6001, 6000, "C:\\App\\parent.exe");
+  const auto& node6000 = tracker.AddProcess(6000, 0, 6000, "C:\\App\\grandparent.exe");
+  const auto& node6001 = tracker.AddProcess(6001, 6000, 6001, "C:\\App\\parent.exe");
 
   auto session = std::make_shared<VpnClientMultiChannelSession>(UdpDynMux::PskType{}, "dummy");
   PolicyRule rule{.Action = PolicyRule::EndpointRoute{session}, .Scope = PolicyScope::ProcessSubtree};
-  tracker.RegisterPidPolicy(6000, rule);
+  tracker.RegisterProcessPolicy(node6000.ProcessSequence, rule);
 
   auto tree = tracker.GetProcessTree();
   ASSERT_EQ(tree.size(), 2);
@@ -185,13 +171,15 @@ TEST_F(TestProcessTreeTracker, ExposeProcessTree) {
   for (const auto& entry : tree) {
     if (entry.ProcessId == 6000) {
       found6000 = true;
-      EXPECT_EQ(entry.ParentProcessId, 0);
+      EXPECT_EQ(entry.Process, node6000.ProcessSequence);
+      EXPECT_EQ(entry.ParentProcess, 0);
       ASSERT_TRUE(entry.Policy.has_value());
       EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(entry.Policy->Action));
       EXPECT_EQ(entry.Policy->Scope, PolicyScope::ProcessSubtree);
     } else if (entry.ProcessId == 6001) {
       found6001 = true;
-      EXPECT_EQ(entry.ParentProcessId, 6000);
+      EXPECT_EQ(entry.Process, node6001.ProcessSequence);
+      EXPECT_EQ(entry.ParentProcess, node6000.ProcessSequence);
       ASSERT_TRUE(entry.Policy.has_value());
       EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(entry.Policy->Action));
       EXPECT_EQ(entry.Policy->Scope, PolicyScope::ProcessSubtree);
@@ -203,7 +191,67 @@ TEST_F(TestProcessTreeTracker, ExposeProcessTree) {
 
 TEST_F(TestProcessTreeTracker, QueryActionForLiveProcessByOpenProcess) {
   DWORD currentPid = GetCurrentProcessId();
-  // GetAction for unmapped PID will query GetProcessPath via OpenProcess
+  HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, currentPid);
+  ASSERT_NE(hProcess, nullptr);
+  auto pathOpt = gh::GetProcessPath(hProcess);
+  CloseHandle(hProcess);
+  ASSERT_TRUE(pathOpt.has_value());
+
+  PolicyRule rule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::SingleProcess};
+  registry.AddPathRule(pathOpt.value(), rule);
+
   auto action = tracker.GetAction(currentPid);
   ASSERT_TRUE(action.has_value());
 }
+
+TEST_F(TestProcessTreeTracker, HandleEtwEventParseImagePath) {
+  PolicyRule rule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::SingleProcess};
+  registry.AddPathRule("C:\\TestApp\\test.exe", rule);
+
+  std::vector<uint8_t> payload;
+
+  auto appendU32 = [&](uint32_t val) {
+    auto p = reinterpret_cast<const uint8_t*>(&val);
+    payload.insert(payload.end(), p, p + sizeof(val));
+  };
+  auto appendU64 = [&](uint64_t val) {
+    auto p = reinterpret_cast<const uint8_t*>(&val);
+    payload.insert(payload.end(), p, p + sizeof(val));
+  };
+
+  appendU32(5000);   // ProcessID
+  appendU64(50000);  // ProcessSequenceNumber
+  appendU64(100000); // CreateTime
+  appendU32(1000);   // ParentProcessID
+  appendU64(10000);  // ParentProcessSequenceNumber
+  appendU32(1);      // SessionID
+  appendU32(0);      // Flags
+  appendU32(2);      // ProcessTokenElevationType
+  appendU32(1);      // ProcessTokenIsElevated
+
+  // MandatoryLabel SID (12 bytes: Rev=1, SubAuthorityCount=1, IdentifierAuthority={0,0,0,0,0,16}, SubAuthority[0]=8192)
+  payload.push_back(1); // Revision
+  payload.push_back(1); // SubAuthorityCount
+  payload.insert(payload.end(), {0, 0, 0, 0, 0, 16});
+  appendU32(8192);
+
+  std::wstring imageName = L"C:\\TestApp\\test.exe";
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+  auto wbytes = reinterpret_cast<const uint8_t*>(imageName.c_str());
+  payload.insert(payload.end(), wbytes, wbytes + (imageName.size() + 1) * sizeof(wchar_t));
+
+  EVENT_RECORD record{};
+  record.EventHeader.ProviderId = {0x22fb2cd6, 0x0e7b, 0x422b, {0xa0, 0xc7, 0x2f, 0xad, 0x1f, 0xd0, 0xe7, 0x16}};
+  record.EventHeader.EventDescriptor.Id = 1;
+  record.EventHeader.EventDescriptor.Version = 3;
+  record.UserData = payload.data();
+  record.UserDataLength = static_cast<USHORT>(payload.size());
+
+  CallHandleEtwEvent(&record);
+  RunPending();
+
+  auto action = tracker.GetAction(5000);
+  ASSERT_TRUE(action.has_value());
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::ByPassRoute>(action.value()));
+}
+

@@ -6,7 +6,6 @@
 #include <iostream>
 #include <memory>
 #include <string>
-#include <variant>
 
 #include <windows.h>
 
@@ -24,9 +23,9 @@ namespace {
 
 class ConsoleFlowSnifferCallback : public WinDivertFlowSnifferCallback {
 public:
-  auto OnFlowEstablished(const FlowKey& key, uint32_t pid) -> Omni::Fiber::Coroutine<void> override {
-    std::cout << "[+] ESTABLISHED LocalPort: " << key << " | PID: " << pid << " (" << GetProcessNameAndPath(pid) << ")"
-              << std::endl;
+  auto OnFlowEstablished(const FlowKey& key, Interface::ProcessId process) -> Omni::Fiber::Coroutine<void> override {
+    std::cout << "[+] ESTABLISHED LocalPort: " << key << " | Process: " << process << " ("
+              << GetProcessNameAndPath(process) << ")" << std::endl;
     co_return;
   }
 
@@ -36,7 +35,7 @@ public:
   }
 
 private:
-  static auto GetProcessNameAndPath(uint32_t pid) -> std::string {
+  static auto GetProcessNameAndPath(Interface::ProcessId pid) -> std::string {
     if (pid == 0) {
       return "System Idle Process";
     }

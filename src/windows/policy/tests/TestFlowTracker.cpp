@@ -37,21 +37,21 @@ TEST_F(TestFlowTracker, FlowTracking) {
         .LocalAddress = localIp.to_v4(), .RemoteAddress = remoteIp.to_v4(), .LocalPort = 54321, .RemotePort = 443};
 
     // Initially no flow (assuming port 54321 is not bound)
-    auto pid = tracker.GetPidForConnection(key);
-    EXPECT_FALSE(pid.has_value());
+    auto seq = tracker.GetProcessForConnection(key);
+    EXPECT_FALSE(seq.has_value());
 
     // Establish flow
-    co_await tracker.OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(), 1234);
-    pid = tracker.GetPidForConnection(key);
-    EXPECT_TRUE(pid.has_value());
-    if (pid.has_value()) {
-      EXPECT_EQ(*pid, 1234);
+    co_await tracker.OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(), 12345678ULL);
+    seq = tracker.GetProcessForConnection(key);
+    EXPECT_TRUE(seq.has_value());
+    if (seq.has_value()) {
+      EXPECT_EQ(*seq, 12345678ULL);
     }
 
     // Delete flow
     co_await tracker.OnFlowDeleted(FlowTracker::ToFlowExactKey(key).value());
-    pid = tracker.GetPidForConnection(key);
-    EXPECT_FALSE(pid.has_value());
+    seq = tracker.GetProcessForConnection(key);
+    EXPECT_FALSE(seq.has_value());
 
     testDone = true;
     co_return;
@@ -81,36 +81,36 @@ TEST_F(TestFlowTracker, GetFlows) {
     EXPECT_TRUE(flows.empty());
 
     // Add key1
-    co_await tracker.OnFlowEstablished(FlowTracker::ToFlowExactKey(key1).value(), 1001);
+    co_await tracker.OnFlowEstablished(FlowTracker::ToFlowExactKey(key1).value(), 1001ULL);
     flows = tracker.GetFlows();
     EXPECT_EQ(flows.size(), 1);
     if (!flows.empty()) {
-      EXPECT_EQ(flows[0].ProcessId, 1001);
+      EXPECT_EQ(flows[0].Process, 1001ULL);
       EXPECT_EQ(flows[0].LocalPort, 11111);
     }
 
     // Add key2
-    co_await tracker.OnFlowEstablished(FlowTracker::ToFlowExactKey(key2).value(), 1002);
+    co_await tracker.OnFlowEstablished(FlowTracker::ToFlowExactKey(key2).value(), 1002ULL);
     flows = tracker.GetFlows();
     EXPECT_EQ(flows.size(), 2);
-    DWORD pid1 = 0;
-    DWORD pid2 = 0;
+    Interface::ProcessSequence seq1 = 0;
+    Interface::ProcessSequence seq2 = 0;
     for (const auto& flow : flows) {
       if (flow.LocalPort == 11111) {
-        pid1 = flow.ProcessId;
+        seq1 = flow.Process;
       } else if (flow.LocalPort == 22222) {
-        pid2 = flow.ProcessId;
+        seq2 = flow.Process;
       }
     }
-    EXPECT_EQ(pid1, 1001);
-    EXPECT_EQ(pid2, 1002);
+    EXPECT_EQ(seq1, 1001ULL);
+    EXPECT_EQ(seq2, 1002ULL);
 
     // Delete key1
     co_await tracker.OnFlowDeleted(FlowTracker::ToFlowExactKey(key1).value());
     flows = tracker.GetFlows();
     EXPECT_EQ(flows.size(), 1);
     if (!flows.empty()) {
-      EXPECT_EQ(flows[0].ProcessId, 1002);
+      EXPECT_EQ(flows[0].Process, 1002ULL);
       EXPECT_EQ(flows[0].LocalPort, 22222);
     }
 
@@ -139,13 +139,13 @@ TEST_F(TestFlowTracker, WildcardFlowTracking) {
     WinDivertFlowSnifferCallback::FlowIp4Key wildcard4Key{.Proto = WinDivertFlowSnifferCallback::Protocol::Ipv4Tcp,
                                                           .LocalAddress = boost::asio::ip::address_v4::any(),
                                                           .LocalPort = 33333};
-    co_await tracker.OnFlowEstablished(wildcard4Key, 5555);
+    co_await tracker.OnFlowEstablished(wildcard4Key, 5555ULL);
 
-    // Matching exact local address should resolve to pid 5555 via wildcard fallback
-    auto pid4 = tracker.GetPidForConnection(key4);
-    EXPECT_TRUE(pid4.has_value());
-    if (pid4.has_value()) {
-      EXPECT_EQ(*pid4, 5555);
+    // Matching exact local address should resolve to seq 5555ULL via wildcard fallback
+    auto seq4 = tracker.GetProcessForConnection(key4);
+    EXPECT_TRUE(seq4.has_value());
+    if (seq4.has_value()) {
+      EXPECT_EQ(*seq4, 5555ULL);
     }
 
     // Establish IPv6 flow bound to :: (any)
@@ -157,12 +157,12 @@ TEST_F(TestFlowTracker, WildcardFlowTracking) {
     WinDivertFlowSnifferCallback::FlowIp6Key wildcard6Key{.Proto = WinDivertFlowSnifferCallback::Protocol::Ipv6Tcp,
                                                           .LocalAddress = boost::asio::ip::address_v6::any(),
                                                           .LocalPort = 44444};
-    co_await tracker.OnFlowEstablished(wildcard6Key, 6666);
+    co_await tracker.OnFlowEstablished(wildcard6Key, 6666ULL);
 
-    auto pid6 = tracker.GetPidForConnection(key6);
-    EXPECT_TRUE(pid6.has_value());
-    if (pid6.has_value()) {
-      EXPECT_EQ(*pid6, 6666);
+    auto seq6 = tracker.GetProcessForConnection(key6);
+    EXPECT_TRUE(seq6.has_value());
+    if (seq6.has_value()) {
+      EXPECT_EQ(*seq6, 6666ULL);
     }
 
     testDone = true;
@@ -189,20 +189,16 @@ TEST_F(TestFlowTracker, QuerySystemTablesForLiveSocket) {
     acceptor.listen();
 
     uint16_t port = acceptor.local_endpoint().port();
-    DWORD currentPid = GetCurrentProcessId();
 
-    ConnectionTracker::Ip4TcpKey key{
-        .LocalAddress = boost::asio::ip::make_address("127.0.0.1").to_v4(),
-        .RemoteAddress = boost::asio::ip::make_address("127.0.0.1").to_v4(),
-        .LocalPort = port,
-        .RemotePort = 12345};
+    ConnectionTracker::Ip4TcpKey key{.LocalAddress = boost::asio::ip::make_address("127.0.0.1").to_v4(),
+                                     .RemoteAddress = boost::asio::ip::make_address("127.0.0.1").to_v4(),
+                                     .LocalPort = port,
+                                     .RemotePort = 12345};
 
-    // Before OnFlowEstablished is called, GetPidForConnection should query system tables and find current process PID
-    auto pid = tracker.GetPidForConnection(key);
-    EXPECT_TRUE(pid.has_value());
-    if (pid.has_value()) {
-      EXPECT_EQ(*pid, currentPid);
-    }
+    // Before OnFlowEstablished is called, GetSeqForConnection should query system tables and find current process
+    // sequence number
+    auto seq = tracker.GetProcessForConnection(key);
+    EXPECT_TRUE(seq.has_value());
 
     acceptor.close();
 

@@ -19,6 +19,7 @@ foreach(suffix "" "-asan")
     omni-fiber${suffix}
     great-hole-core${suffix}
     great-hole-application${suffix}
+    great-hole-windows-utils${suffix}
     iphlpapi
   )
 

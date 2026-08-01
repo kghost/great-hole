@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/asio.hpp>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -11,19 +12,23 @@
 #include <windows.h>
 
 #include "ExternalQueue.hpp"
+#include "Interface.hpp"
 #include "Logger.hpp"
 #include "MoveOnlyFunction.hpp"
 #include "PolicyRegistry.hpp"
 #include "ServiceBase.hpp"
 
+class TestProcessTreeTracker;
+
 namespace gh::policy {
 
 struct ProcessNode {
-  DWORD ProcessId;
-  DWORD ParentProcessId;
-  std::string ExecutablePath;
+  Interface::ProcessSequence ProcessSequence{0};
+  std::optional<Interface::ProcessSequence> ParentProcessSequence{0};
+  Interface::ProcessId ProcessId{0};
+  std::optional<std::string> ExecutablePath;
   std::optional<PolicyRule> Policy;
-  std::set<DWORD> Children;
+  std::set<Interface::ProcessSequence> Children;
 };
 
 class ProcessTreeTracker : public ServiceBase {
@@ -42,19 +47,20 @@ public:
   auto DoWork() -> Omni::Fiber::Coroutine<void> override;
   auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
-  auto RegisterPidPolicy(DWORD pid, const PolicyRule& rule) -> bool;
+  auto RegisterProcessPolicy(Interface::ProcessSequence process, const PolicyRule& rule) -> bool;
 
-  auto AddProcess(DWORD pid, DWORD parentPid, const std::string& path) -> const ProcessNode&;
-  void RemoveProcess(DWORD pid);
+  auto AddProcess(Interface::ProcessSequence process, Interface::ProcessSequence parentSeq, Interface::ProcessId pid,
+                  std::optional<std::string> path) -> const ProcessNode&;
+  void RemoveProcess(Interface::ProcessSequence process);
   void ClearAllMock();
-  auto GetAction(DWORD pid) -> std::optional<PolicyRule::RoutingAction>;
+  auto GetAction(Interface::ProcessId process) -> std::optional<PolicyRule::RoutingAction>;
   [[nodiscard]] auto GetProcessTree() const -> std::vector<Interface::ProcessInfo>;
-  void TestReEvaluatePolicy(DWORD pid);
 
 private:
-  [[nodiscard]] static auto GetProcessPath(DWORD pid) -> std::string;
+  friend class ::TestProcessTreeTracker;
+
   void EvaluatePolicyLocked(ProcessNode& node);
-  void ApplyPolicyToDescendantsLocked(const std::set<DWORD>& children, const PolicyRule& rule);
+  void ApplyPolicyToDescendantsLocked(const std::set<Interface::ProcessSequence>& children, const PolicyRule& rule);
   void BuildInitialSnapshot();
   void EtwThreadProc();
   void HandleEtwEvent(PEVENT_RECORD record);
@@ -68,7 +74,8 @@ private:
   Omni::Fiber::ExternalQueue<Task> _TaskQueue;
   PolicyRegistry& _Registry;
 
-  std::map<DWORD, ProcessNode> _ProcessMap;
+  std::map<Interface::ProcessSequence, ProcessNode> _ProcessMap;
+  std::map<Interface::ProcessId, std::reference_wrapper<ProcessNode>> _ProcessIdMap;
 
   TRACEHANDLE _EtwSessionHandle = 0;
   std::thread _EtwThread;

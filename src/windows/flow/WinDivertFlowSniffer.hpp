@@ -26,6 +26,7 @@
 #include <iphlpapi.h>
 #include <ws2tcpip.h>
 
+#include "Interface.hpp"
 #include "Logger.hpp"
 #include "ServiceBase.hpp"
 #include "Utils/Overload.hpp"
@@ -75,7 +76,7 @@ public:
 
   using FlowKey = std::variant<FlowIp4Key, FlowIp6Key>;
 
-  virtual auto OnFlowEstablished(const FlowKey& key, uint32_t pid) -> Omni::Fiber::Coroutine<void> = 0;
+  virtual auto OnFlowEstablished(const FlowKey& key, Interface::ProcessId pid) -> Omni::Fiber::Coroutine<void> = 0;
   virtual auto OnFlowDeleted(const FlowKey& key) -> Omni::Fiber::Coroutine<void> = 0;
 };
 

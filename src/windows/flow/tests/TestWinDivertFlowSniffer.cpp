@@ -25,7 +25,7 @@ class MockFlowSnifferCallback : public WinDivertFlowSnifferCallback {
 public:
   struct EstablishedEvent {
     FlowKey Conn;
-    uint32_t Pid;
+    Interface::ProcessId Process;
   };
 
   struct DeletedEvent {
@@ -35,8 +35,8 @@ public:
   std::vector<EstablishedEvent> EstablishedEvents;
   std::vector<DeletedEvent> DeletedEvents;
 
-  auto OnFlowEstablished(const FlowKey& key, uint32_t pid) -> Omni::Fiber::Coroutine<void> override {
-    EstablishedEvents.push_back({key, pid});
+  auto OnFlowEstablished(const FlowKey& key, Interface::ProcessId process) -> Omni::Fiber::Coroutine<void> override {
+    EstablishedEvents.push_back({key, process});
     co_return;
   }
 
@@ -177,7 +177,7 @@ TEST(WinDivertFlowSnifferTest, FlowEventsTcpUdp) {
         co_await sniffer->Stop();
         co_return;
       }
-      EXPECT_EQ(callback.EstablishedEvents[0].Pid, 1111);
+      EXPECT_EQ(callback.EstablishedEvents[0].Process, 1111);
       WinDivertFlowSnifferCallback::FlowKey expected1 = WinDivertFlowSnifferCallback::FlowIp4Key{
           .Proto = WinDivertFlowSnifferCallback::Protocol::Ipv4Tcp, .LocalAddress = local.to_v4(), .LocalPort = 12345};
       EXPECT_EQ(callback.EstablishedEvents[0].Conn, expected1);
@@ -199,7 +199,7 @@ TEST(WinDivertFlowSnifferTest, FlowEventsTcpUdp) {
         co_await sniffer->Stop();
         co_return;
       }
-      EXPECT_EQ(callback.EstablishedEvents[1].Pid, 2222);
+      EXPECT_EQ(callback.EstablishedEvents[1].Process, 2222);
       WinDivertFlowSnifferCallback::FlowKey expected2 = WinDivertFlowSnifferCallback::FlowIp6Key{
           .Proto = WinDivertFlowSnifferCallback::Protocol::Ipv6Tcp, .LocalAddress = local.to_v6(), .LocalPort = 54321};
       EXPECT_EQ(callback.EstablishedEvents[1].Conn, expected2);
@@ -221,7 +221,7 @@ TEST(WinDivertFlowSnifferTest, FlowEventsTcpUdp) {
         co_await sniffer->Stop();
         co_return;
       }
-      EXPECT_EQ(callback.EstablishedEvents[2].Pid, 3333);
+      EXPECT_EQ(callback.EstablishedEvents[2].Process, 3333);
       WinDivertFlowSnifferCallback::FlowKey expected3 = WinDivertFlowSnifferCallback::FlowIp4Key{
           .Proto = WinDivertFlowSnifferCallback::Protocol::Ipv4Udp, .LocalAddress = local.to_v4(), .LocalPort = 9999};
       EXPECT_EQ(callback.EstablishedEvents[2].Conn, expected3);
@@ -243,7 +243,7 @@ TEST(WinDivertFlowSnifferTest, FlowEventsTcpUdp) {
         co_await sniffer->Stop();
         co_return;
       }
-      EXPECT_EQ(callback.EstablishedEvents[3].Pid, 4444);
+      EXPECT_EQ(callback.EstablishedEvents[3].Process, 4444);
       WinDivertFlowSnifferCallback::FlowKey expected4 = WinDivertFlowSnifferCallback::FlowIp6Key{
           .Proto = WinDivertFlowSnifferCallback::Protocol::Ipv6Udp, .LocalAddress = local.to_v6(), .LocalPort = 8888};
       EXPECT_EQ(callback.EstablishedEvents[3].Conn, expected4);

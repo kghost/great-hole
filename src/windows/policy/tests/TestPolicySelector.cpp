@@ -43,11 +43,12 @@ TEST_F(TestPolicySelector, OutOfOrder_F_Pr_P) {
 
   bool testDone = false;
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    // 1. Flow establishing PID
-    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(), pid);
+    // 1. Process starts/policy resolved
+    const auto& node = selector.GetProcessTreeTracker().AddProcess(1001, 0, pid, "C:\\App\\bypass.exe");
 
-    // 2. Process starts/policy resolved
-    selector.GetProcessTreeTracker().AddProcess(pid, 0, "C:\\App\\bypass.exe");
+    // 2. Flow establishing Sequence Number
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(),
+                                                         node.ProcessId);
 
     // 3. Packet arrives
     auto resolved = selector.ResolvePolicy(key);
@@ -87,10 +88,11 @@ TEST_F(TestPolicySelector, OutOfOrder_Pr_F_P) {
   bool testDone = false;
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     // 1. Process starts/policy resolved
-    selector.GetProcessTreeTracker().AddProcess(pid, 0, "C:\\App\\bypass.exe");
+    const auto& node = selector.GetProcessTreeTracker().AddProcess(1001, 0, pid, "C:\\App\\bypass.exe");
 
-    // 2. Flow establishing PID
-    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(), pid);
+    // 2. Flow establishing Sequence Number
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(),
+                                                         node.ProcessId);
 
     // 3. Packet arrives
     auto resolved = selector.ResolvePolicy(key);

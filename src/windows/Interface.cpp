@@ -52,7 +52,7 @@ public:
   void ClearPathRegistry() override;
   void AddPathPolicy(const std::string& path, const PolicyRule& policy) override;
   void RemovePathPolicy(const std::string& path) override;
-  void AddPidPolicy(uint32_t pid, const PolicyRule& policy) override;
+  void AddProcessPolicy(ProcessSequence process, const PolicyRule& policy) override;
   void SetDefaultPolicy(const PolicyRule& policy) override;
   void LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy) override;
   auto GetFlows() -> std::vector<FlowInfo> override;
@@ -303,11 +303,11 @@ void PlatformImpl::RemovePathPolicy(const std::string& path) {
   future.get();
 }
 
-void PlatformImpl::AddPidPolicy(uint32_t pid, const PolicyRule& policy) {
+void PlatformImpl::AddProcessPolicy(ProcessSequence process, const PolicyRule& policy) {
   std::promise<void> promise;
   auto future = promise.get_future();
-  _TaskQueue.Push([&promise, pid, policy](auto& context) -> Omni::Fiber::Coroutine<void> {
-    context.PolicyEngine->AddPidPolicy(pid, policy);
+  _TaskQueue.Push([&promise, process, policy](auto& context) -> Omni::Fiber::Coroutine<void> {
+    context.PolicyEngine->AddProcessPolicy(process, policy);
     promise.set_value();
     co_return;
   });

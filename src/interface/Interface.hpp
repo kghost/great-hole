@@ -28,10 +28,12 @@ class VpnClientMultiChannelSession;
 namespace Interface {
 
 struct Ip4Address {
-  std::array<uint8_t, 4> Bytes;
+  static constexpr const size_t kSize = 4;
+  std::array<uint8_t, kSize> Bytes;
 };
 struct Ip6Address {
-  std::array<uint8_t, 16> Bytes;
+  static constexpr const size_t kSize = 16;
+  std::array<uint8_t, kSize> Bytes;
 };
 using IpAddress = std::variant<Ip4Address, Ip6Address>;
 
@@ -72,11 +74,14 @@ struct FlowConnection {
   uint16_t RemotePort{0};
 };
 
+using ProcessId = uint32_t;
+using ProcessSequence = uint64_t;
+
 struct FlowInfo {
   std::string Protocol;
   std::string LocalAddress;
   uint16_t LocalPort{0};
-  uint32_t ProcessId{0};
+  ProcessId Process{0};
 };
 
 using VpnEndpoint = std::weak_ptr<VpnClientMultiChannelSession>;
@@ -94,8 +99,9 @@ struct PolicyRule {
 };
 
 struct ProcessInfo {
-  uint32_t ProcessId{0};
-  uint32_t ParentProcessId{0};
+  ProcessSequence Process{0};
+  std::optional<ProcessSequence> ParentProcess{0};
+  ProcessId ProcessId{0};
   std::optional<PolicyRule> Policy;
 };
 
@@ -150,7 +156,7 @@ public:
   virtual void ClearPathRegistry() = 0;
   virtual void AddPathPolicy(const std::string& path, const PolicyRule& policy) = 0;
   virtual void RemovePathPolicy(const std::string& path) = 0;
-  virtual void AddPidPolicy(uint32_t pid, const PolicyRule& policy) = 0;
+  virtual void AddProcessPolicy(ProcessSequence process, const PolicyRule& policy) = 0;
   virtual void SetDefaultPolicy(const PolicyRule& policy) = 0;
   virtual void LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy) = 0;
   virtual auto GetFlows() -> std::vector<FlowInfo> = 0;

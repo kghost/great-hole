@@ -7,6 +7,7 @@
 #include <windows.h>
 
 #include "ConnectionTracker.hpp"
+#include "Interface.hpp"
 #include "WinDivertFlowSniffer.hpp"
 
 namespace gh::policy {
@@ -22,10 +23,11 @@ public:
   auto operator=(FlowTracker&&) -> FlowTracker& = delete;
 
   // WinDivertFlowSnifferCallback overrides
-  auto OnFlowEstablished(const FlowKey& key, uint32_t pid) -> Omni::Fiber::Coroutine<void> override;
+  auto OnFlowEstablished(const FlowKey& key, Interface::ProcessId process) -> Omni::Fiber::Coroutine<void> override;
   auto OnFlowDeleted(const FlowKey& key) -> Omni::Fiber::Coroutine<void> override;
 
-  [[nodiscard]] auto GetPidForConnection(const ConnectionTracker::ConnectionKey& key) -> std::optional<DWORD>;
+  [[nodiscard]] auto GetProcessForConnection(const ConnectionTracker::ConnectionKey& key)
+      -> std::optional<Interface::ProcessId>;
 
   [[nodiscard]] auto GetFlows() const -> std::vector<Interface::FlowInfo>;
 
@@ -33,7 +35,7 @@ public:
   [[nodiscard]] static auto ToFlowExactKey(const ConnectionTracker::ConnectionKey& key) -> std::optional<FlowKey>;
 
 private:
-  std::map<FlowKey, DWORD> _FlowToPid;
+  std::map<FlowKey, Interface::ProcessId> _FlowToProcess;
   gh::base::ComponentLogger _Logger{boost::log::keywords::channel = "FlowTracker"};
 };
 
