@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/asio.hpp>
+#include <expected>
 #include <functional>
 #include <map>
 #include <optional>
@@ -47,7 +48,8 @@ public:
   auto DoWork() -> Omni::Fiber::Coroutine<void> override;
   auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
-  auto RegisterProcessPolicy(Interface::ProcessSequence process, const PolicyRule& rule) -> bool;
+  auto RegisterProcessPolicy(Interface::ProcessSequence process, const PolicyRule& rule)
+      -> std::expected<void, std::string>;
 
   auto AddProcess(Interface::ProcessSequence process, Interface::ProcessSequence parentSeq, Interface::ProcessId pid,
                   std::optional<std::string> path) -> const ProcessNode&;
@@ -73,6 +75,7 @@ private:
   boost::asio::any_io_executor _Executor;
   Omni::Fiber::ExternalQueue<Task> _TaskQueue;
   PolicyRegistry& _Registry;
+  Interface::ProcessSequence _CurrentProcess;
 
   std::map<Interface::ProcessSequence, ProcessNode> _ProcessMap;
   std::map<Interface::ProcessId, std::reference_wrapper<ProcessNode>> _ProcessIdMap;

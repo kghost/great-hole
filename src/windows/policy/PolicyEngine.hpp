@@ -1,9 +1,11 @@
 #pragma once
 
 #include <boost/asio.hpp>
+#include <expected>
 #include <memory>
 #include <string>
 
+#include "Interface.hpp"
 #include "PolicyRegistry.hpp"
 #include "PolicySelector.hpp"
 #include "ServiceBase.hpp"
@@ -29,9 +31,11 @@ public:
   void ClearPathRegistry();
   void AddPathPolicy(const std::string& path, const PolicyRule& policy);
   void RemovePathPolicy(const std::string& path);
-  void AddProcessPolicy(Interface::ProcessSequence process, const PolicyRule& policy);
+  auto AddProcessPolicy(Interface::ProcessSequence process, const PolicyRule& policy)
+      -> std::expected<void, std::string>;
   void SetDefaultPolicy(const PolicyRule& policy);
-  auto LaunchWithPolicy(const std::string& commandLine, const PolicyRule& policy) -> uint32_t;
+  auto LaunchWithPolicy(const std::string& commandLine, const PolicyRule& policy)
+      -> std::expected<Interface::ProcessSequence, std::string>;
 
 protected:
   auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;

@@ -137,6 +137,7 @@ auto Pipeline::IsCritical(const ErrorCode& err) -> bool {
     case boost::system::errc::operation_canceled:
 #ifdef WIN32
     case ERROR_OPERATION_ABORTED:
+    case ERROR_INSUFFICIENT_BUFFER:
 #endif
       return false;
     default:

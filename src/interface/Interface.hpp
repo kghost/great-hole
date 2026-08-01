@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cstdint>
+#include <expected>
 #include <memory>
 #include <optional>
 #include <span>
@@ -156,9 +157,11 @@ public:
   virtual void ClearPathRegistry() = 0;
   virtual void AddPathPolicy(const std::string& path, const PolicyRule& policy) = 0;
   virtual void RemovePathPolicy(const std::string& path) = 0;
-  virtual void AddProcessPolicy(ProcessSequence process, const PolicyRule& policy) = 0;
+  virtual auto AddProcessPolicy(ProcessSequence process, const PolicyRule& policy)
+      -> std::expected<void, std::string> = 0;
   virtual void SetDefaultPolicy(const PolicyRule& policy) = 0;
-  virtual void LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy) = 0;
+  virtual auto LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy)
+      -> std::expected<ProcessSequence, std::string> = 0;
   virtual auto GetFlows() -> std::vector<FlowInfo> = 0;
   virtual auto GetConnections() -> std::vector<TrackedConnectionInfo> = 0;
   virtual auto GetProcessTree() -> std::vector<ProcessInfo> = 0;

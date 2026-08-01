@@ -52,9 +52,10 @@ public:
   void ClearPathRegistry() override;
   void AddPathPolicy(const std::string& path, const PolicyRule& policy) override;
   void RemovePathPolicy(const std::string& path) override;
-  void AddProcessPolicy(ProcessSequence process, const PolicyRule& policy) override;
+  auto AddProcessPolicy(ProcessSequence process, const PolicyRule& policy) -> std::expected<void, std::string> override;
   void SetDefaultPolicy(const PolicyRule& policy) override;
-  void LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy) override;
+  auto LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy)
+      -> std::expected<ProcessSequence, std::string> override;
   auto GetFlows() -> std::vector<FlowInfo> override;
   auto GetConnections() -> std::vector<TrackedConnectionInfo> override;
   auto GetProcessTree() -> std::vector<ProcessInfo> override;
@@ -303,15 +304,15 @@ void PlatformImpl::RemovePathPolicy(const std::string& path) {
   future.get();
 }
 
-void PlatformImpl::AddProcessPolicy(ProcessSequence process, const PolicyRule& policy) {
-  std::promise<void> promise;
+auto PlatformImpl::AddProcessPolicy(ProcessSequence process, const PolicyRule& policy)
+    -> std::expected<void, std::string> {
+  std::promise<std::expected<void, std::string>> promise;
   auto future = promise.get_future();
   _TaskQueue.Push([&promise, process, policy](auto& context) -> Omni::Fiber::Coroutine<void> {
-    context.PolicyEngine->AddProcessPolicy(process, policy);
-    promise.set_value();
+    promise.set_value(context.PolicyEngine->AddProcessPolicy(process, policy));
     co_return;
   });
-  future.get();
+  return future.get();
 }
 
 void PlatformImpl::SetDefaultPolicy(const PolicyRule& policy) {
@@ -325,19 +326,15 @@ void PlatformImpl::SetDefaultPolicy(const PolicyRule& policy) {
   future.get();
 }
 
-void PlatformImpl::LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy) {
-  std::promise<void> promise;
+auto PlatformImpl::LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy)
+    -> std::expected<ProcessSequence, std::string> {
+  std::promise<std::expected<ProcessSequence, std::string>> promise;
   auto future = promise.get_future();
   _TaskQueue.Push([&promise, command_line, policy](auto& context) -> Omni::Fiber::Coroutine<void> {
-    auto pid = context.PolicyEngine->LaunchWithPolicy(command_line, policy);
-    if (pid == 0) {
-      promise.set_exception(std::make_exception_ptr(std::runtime_error("LaunchWithPolicy failed")));
-    } else {
-      promise.set_value();
-    }
+    promise.set_value(context.PolicyEngine->LaunchWithPolicy(command_line, policy));
     co_return;
   });
-  future.get();
+  return future.get();
 }
 
 auto PlatformImpl::GetFlows() -> std::vector<FlowInfo> {

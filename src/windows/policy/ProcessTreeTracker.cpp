@@ -79,7 +79,15 @@ void StopOrphanedSessions(gh::base::ComponentLogger& logger) {
 } // namespace
 
 ProcessTreeTracker::ProcessTreeTracker(boost::asio::any_io_executor executor, PolicyRegistry& registry)
-    : _Executor(std::move(executor)), _TaskQueue(_Executor), _Registry(registry) {}
+    : _Executor(std::move(executor)), _TaskQueue(_Executor), _Registry(registry) {
+  WithProcessHandle(GetCurrentProcessId(), [this](std::optional<HANDLE> handle) -> Nothing {
+    assert(handle.has_value());
+    auto seq = GetProcessSequence(handle.value());
+    assert(seq.has_value());
+    _CurrentProcess = seq.value();
+    return {};
+  });
+}
 
 auto ProcessTreeTracker::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   StopOrphanedSessions(_Logger);
@@ -111,6 +119,10 @@ auto ProcessTreeTracker::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   }
 
   BuildInitialSnapshot();
+
+  auto result = RegisterProcessPolicy(
+      _CurrentProcess, PolicyRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::ProcessSubtree});
+  assert(result.has_value());
 
   _EtwThread = std::thread([this]() -> void { EtwThreadProc(); });
   co_return ErrorCode{};
@@ -159,13 +171,19 @@ void ProcessTreeTracker::ApplyPolicyToDescendantsLocked(const std::set<Interface
       BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
           << "child[" << child << "]:" << childIt->second.ExecutablePath.value_or("") << "] Applying policy "
           << PolicyRuleToString(rule);
-      childIt->second.Policy = rule;
-      ApplyPolicyToDescendantsLocked(childIt->second.Children, rule);
+      if (childIt->second.ProcessSequence != _CurrentProcess) {
+        childIt->second.Policy = rule;
+        ApplyPolicyToDescendantsLocked(childIt->second.Children, rule);
+      }
     }
   }
 }
 
 void ProcessTreeTracker::EvaluatePolicyLocked(ProcessNode& node) {
+  if (node.ProcessSequence == _CurrentProcess) {
+    return;
+  }
+
   if (node.ParentProcessSequence.has_value()) {
     auto parentIt = _ProcessMap.find(node.ParentProcessSequence.value());
     if (parentIt != _ProcessMap.end() && parentIt->second.Policy.has_value() &&
@@ -195,10 +213,16 @@ void ProcessTreeTracker::EvaluatePolicyLocked(ProcessNode& node) {
   }
 }
 
-auto ProcessTreeTracker::RegisterProcessPolicy(Interface::ProcessSequence process, const PolicyRule& rule) -> bool {
+auto ProcessTreeTracker::RegisterProcessPolicy(Interface::ProcessSequence process, const PolicyRule& rule)
+    -> std::expected<void, std::string> {
+  if (process == _CurrentProcess &&
+      (!std::holds_alternative<PolicyRule::ByPassRoute>(rule.Action) || rule.Scope != PolicyScope::ProcessSubtree)) {
+    return std::unexpected("Cannot register policy for VPN process");
+  }
+
   auto iterator = _ProcessMap.find(process);
   if (iterator == _ProcessMap.end()) {
-    return false;
+    return std::unexpected("Process not found");
   }
 
   BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
@@ -208,7 +232,7 @@ auto ProcessTreeTracker::RegisterProcessPolicy(Interface::ProcessSequence proces
   if (rule.Scope == PolicyScope::ProcessSubtree) {
     ApplyPolicyToDescendantsLocked(iterator->second.Children, rule);
   }
-  return true;
+  return {};
 }
 
 auto ProcessTreeTracker::AddProcess(Interface::ProcessSequence process, Interface::ProcessSequence parent,
