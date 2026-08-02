@@ -169,7 +169,7 @@ void ProcessTreeTracker::ApplyPolicyToDescendantsLocked(const std::set<Interface
     auto childIt = _ProcessMap.find(child);
     if (childIt != _ProcessMap.end()) {
       BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
-          << "child[" << child << "]:" << childIt->second.ExecutablePath.value_or("") << "] Applying policy "
+          << "child[" << child << ":" << childIt->second.ExecutablePath.value_or("") << "] Applying policy "
           << PolicyRuleToString(rule);
       if (childIt->second.ProcessSequence != _CurrentProcess) {
         childIt->second.Policy = rule;
@@ -402,6 +402,10 @@ void ProcessTreeTracker::BuildInitialSnapshot() {
   }
 
   for (const auto& item : entries) {
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
+        << "Bootstrap: Seq " << item.Seq << ", PID " << item.Pid << ", ParentSeq " << item.ParentId.value_or(0)
+        << ", Path " << item.Path.value_or("");
+
     auto [iterator, inserted] =
         _ProcessMap.try_emplace(item.Seq, ProcessNode{.ProcessSequence = item.Seq,
                                                       .ParentProcessSequence = item.ParentId.and_then(
@@ -523,14 +527,14 @@ void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
       }
 
       BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
-          << "Event log[Add]: Seq " << seq << ", PID " << pid << ", ParentSeq " << parentSeq << ", Path " << imagePath;
+          << "Add: Seq " << seq << ", PID " << pid << ", ParentSeq " << parentSeq << ", Path " << imagePath;
       _TaskQueue.Push([this, seq, parentSeq, pid, imagePath]() -> Omni::Fiber::Coroutine<void> {
         AddProcess(seq, parentSeq, pid, imagePath);
         co_return;
       });
     } else {
       BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
-          << "Event log[Add]: Unsupported event version " << static_cast<int>(version);
+          << "Add: Unsupported event version " << static_cast<int>(version);
     }
   } else if (eventId == 2) {
     if (version >= 2) {
@@ -539,7 +543,7 @@ void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
         const auto userData =
             std::span<const uint8_t>(static_cast<const uint8_t*>(record->UserData), record->UserDataLength);
         auto seq = SpanToField<Interface::ProcessSequence, 4>(userData);
-        BOOST_LOG_SEV(_Logger, boost::log::trivial::trace) << "Event log[Remove]: Seq " << seq;
+        BOOST_LOG_SEV(_Logger, boost::log::trivial::trace) << "Remove: Seq " << seq;
         _TaskQueue.Push([this, seq]() -> Omni::Fiber::Coroutine<void> {
           RemoveProcess(seq);
           co_return;
@@ -547,7 +551,7 @@ void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
       }
     } else {
       BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
-          << "Event log[Remove]: Unsupported event version " << static_cast<int>(version);
+          << "Remove: Unsupported event version " << static_cast<int>(version);
     }
   }
 }
