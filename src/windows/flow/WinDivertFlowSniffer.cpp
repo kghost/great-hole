@@ -31,18 +31,20 @@ auto WinDivertFlowSniffer::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   _WinDivertFlowHandle =
       WinDivertOpen("true", WINDIVERT_LAYER_SOCKET, 0, WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY);
   if (_WinDivertFlowHandle == INVALID_HANDLE_VALUE) {
-    DWORD err = GetLastError();
-    BOOST_LOG_SEV(_Logger, boost::log::trivial::error) << "WinDivertFlowSniffer: WinDivertOpen failed: " << err;
-    co_return SysError(err);
+    auto err = SysError(GetLastError());
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
+        << "WinDivertFlowSniffer: WinDivertOpen failed: " << err.message();
+    co_return err;
   }
 
   _ReadEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
   if (_ReadEvent == nullptr) {
-    DWORD err = GetLastError();
-    BOOST_LOG_SEV(_Logger, boost::log::trivial::error) << "WinDivertFlowSniffer: CreateEventW failed: " << err;
+    auto err = SysError(GetLastError());
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
+        << "WinDivertFlowSniffer: CreateEventW failed: " << err.message();
     WinDivertClose(_WinDivertFlowHandle);
     _WinDivertFlowHandle = INVALID_HANDLE_VALUE;
-    co_return SysError(err);
+    co_return err;
   }
 
   _ReadObject.emplace(_Executor, _ReadEvent);
@@ -120,34 +122,36 @@ auto WinDivertFlowSniffer::DoWork() -> Omni::Fiber::Coroutine<void> {
     recvLen = 0;
 
     if (WinDivertRecvEx(_WinDivertFlowHandle, nullptr, 0, &recvLen, 0, &addr, &addrLen, &overlapped) != TRUE) {
-      DWORD err = GetLastError();
-      if (err == ERROR_IO_PENDING) {
-        auto [errWinDivert] = co_await _ReadObject->async_wait(Omni::Fiber::AsioUseFiber);
+      auto err = SysError(GetLastError());
+      if (err.value() != ERROR_IO_PENDING) {
+        BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
+            << "WinDivertFlowSniffer: WinDivertRecvEx failed: " << err.message();
+        co_return;
+      }
 
-        if (_Service.value()._Stop.IsTriggered()) {
-          CancelIoEx(_WinDivertFlowHandle, &overlapped);
-          DWORD transferred = 0;
-          GetOverlappedResult(_WinDivertFlowHandle, &overlapped, &transferred, TRUE);
-          co_return;
-        }
+      auto [errWinDivert] = co_await _ReadObject->async_wait(Omni::Fiber::AsioUseFiber);
 
-        if (errWinDivert) {
-          CancelIoEx(_WinDivertFlowHandle, &overlapped);
-          DWORD transferred = 0;
-          GetOverlappedResult(_WinDivertFlowHandle, &overlapped, &transferred, TRUE);
-          co_return;
-        }
-
+      if (_Service.value()._Stop.IsTriggered()) {
+        CancelIoEx(_WinDivertFlowHandle, &overlapped);
         DWORD transferred = 0;
-        if (GetOverlappedResult(_WinDivertFlowHandle, &overlapped, &transferred, FALSE) == TRUE) {
-          // Success
-        } else {
-          BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
-              << "WinDivertFlowSniffer: GetOverlappedResult failed: " << GetLastError();
-          co_return;
-        }
+        GetOverlappedResult(_WinDivertFlowHandle, &overlapped, &transferred, TRUE);
+        co_return;
+      }
+
+      if (errWinDivert) {
+        CancelIoEx(_WinDivertFlowHandle, &overlapped);
+        DWORD transferred = 0;
+        GetOverlappedResult(_WinDivertFlowHandle, &overlapped, &transferred, TRUE);
+        co_return;
+      }
+
+      DWORD transferred = 0;
+      if (GetOverlappedResult(_WinDivertFlowHandle, &overlapped, &transferred, FALSE) == TRUE) {
+        // Success
       } else {
-        BOOST_LOG_SEV(_Logger, boost::log::trivial::error) << "WinDivertFlowSniffer: WinDivertRecvEx failed: " << err;
+        auto err = SysError(GetLastError());
+        BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
+            << "WinDivertFlowSniffer: GetOverlappedResult failed: " << err.message();
         co_return;
       }
     }

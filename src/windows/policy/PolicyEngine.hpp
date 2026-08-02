@@ -34,7 +34,7 @@ public:
   auto AddProcessPolicy(Interface::ProcessSequence process, const PolicyRule& policy)
       -> std::expected<void, std::string>;
   void SetDefaultPolicy(const PolicyRule& policy);
-  auto LaunchWithPolicy(const std::string& commandLine, const PolicyRule& policy)
+  auto LaunchWithPolicy(const std::string& imagePath, const std::string& commandLine, const PolicyRule& policy)
       -> std::expected<Interface::ProcessSequence, std::string>;
 
 protected:

@@ -26,17 +26,17 @@ auto WinDivert::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   );
 
   if (_WinDivertHandle == INVALID_HANDLE_VALUE) {
-    DWORD err = GetLastError();
-    BOOST_LOG_TRIVIAL(error) << GetName() << ": WinDivertOpen failed with error: " << err;
-    co_return SysError(err);
+    auto err = SysError(GetLastError());
+    BOOST_LOG_TRIVIAL(error) << GetName() << ": WinDivertOpen failed with error: " << err.message();
+    co_return err;
   }
 
   _ReadEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
   _WriteEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
 
   if (_ReadEvent == nullptr || _WriteEvent == nullptr) {
-    DWORD err = GetLastError();
-    BOOST_LOG_TRIVIAL(error) << GetName() << ": CreateEvent failed with error: " << err;
+    auto err = SysError(GetLastError());
+    BOOST_LOG_TRIVIAL(error) << GetName() << ": CreateEvent failed with error: " << err.message();
     if (_ReadEvent != nullptr) {
       CloseHandle(_ReadEvent);
       _ReadEvent = nullptr;
@@ -47,7 +47,7 @@ auto WinDivert::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
     }
     WinDivertClose(_WinDivertHandle);
     _WinDivertHandle = INVALID_HANDLE_VALUE;
-    co_return SysError(err);
+    co_return err;
   }
 
   _ReadObjectHandle.emplace(_Executor, _ReadEvent);
@@ -116,25 +116,25 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
     Packet winPacket;
 
     if (WinDivertRecvEx(_WinDivertHandle, winPacket.Data().data(), static_cast<UINT>(winPacket.Data().size()), &recvLen,
-                        0, &addr, &addrLen, &overlapped) != TRUE) {
-      DWORD err = GetLastError();
-      if (err == ERROR_IO_PENDING) {
-        auto [err2] = co_await _ReadObjectHandle->async_wait(Omni::Fiber::AsioUseFiber);
-        if (err2) {
-          CancelIoEx(_WinDivertHandle, &overlapped);
-          DWORD transferred = 0;
-          GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, TRUE);
-          co_return err2;
-        }
+                        0, &addr, &addrLen, &overlapped) == FALSE) {
+      auto err = SysError(GetLastError());
+      if (err.value() != ERROR_IO_PENDING) {
+        co_return err;
+      }
 
+      auto [err2] = co_await _ReadObjectHandle->async_wait(Omni::Fiber::AsioUseFiber);
+      if (err2) {
+        CancelIoEx(_WinDivertHandle, &overlapped);
         DWORD transferred = 0;
-        if (GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, FALSE) == TRUE) {
-          recvLen = transferred;
-        } else {
-          co_return SysError(GetLastError());
-        }
+        GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, TRUE);
+        co_return err2;
+      }
+
+      DWORD transferred = 0;
+      if (GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, FALSE) == TRUE) {
+        recvLen = transferred;
       } else {
-        co_return SysError(err);
+        co_return SysError(GetLastError());
       }
     }
 
@@ -145,8 +145,8 @@ auto WinDivert::Read(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<E
       // FIXME: WinDivertSendEx may block
       if (WinDivertSendEx(_WinDivertHandle, winPacket.Data().data(), static_cast<UINT>(winPacket.Data().size()),
                           &sendLen, 0, &addr, sizeof(addr), nullptr) != TRUE) {
-        DWORD err = GetLastError();
-        BOOST_LOG_TRIVIAL(warning) << "WinDivert: bypass send failed: " << err;
+        auto err = SysError(GetLastError());
+        BOOST_LOG_TRIVIAL(warning) << GetName() << ": bypass send failed: " << err.message();
       }
       continue;
     } else if (route == WinDivertRouteCallback::Result::Discard) {
@@ -186,22 +186,22 @@ auto WinDivert::Write(Packet& packet, Cancel& cancel) -> Omni::Fiber::Coroutine<
   UINT sendLen = 0;
   if (WinDivertSendEx(_WinDivertHandle, packet.Data().data(), static_cast<UINT>(packet.Data().size()), &sendLen, 0,
                       &addr, sizeof(addr), &overlapped) != TRUE) {
-    DWORD err = GetLastError();
-    if (err == ERROR_IO_PENDING) {
-      auto [err2] = co_await _WriteObjectHandle->async_wait(Omni::Fiber::AsioUseFiber);
-      if (err2) {
-        CancelIoEx(_WinDivertHandle, &overlapped);
-        DWORD transferred = 0;
-        GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, TRUE);
-        co_return err2;
-      }
+    auto err = SysError(GetLastError());
+    if (err.value() != ERROR_IO_PENDING) {
+      co_return err;
+    }
 
+    auto [err2] = co_await _WriteObjectHandle->async_wait(Omni::Fiber::AsioUseFiber);
+    if (err2) {
+      CancelIoEx(_WinDivertHandle, &overlapped);
       DWORD transferred = 0;
-      if (GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, FALSE) == 0) {
-        co_return SysError(GetLastError());
-      }
-    } else {
-      co_return SysError(err);
+      GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, TRUE);
+      co_return err2;
+    }
+
+    DWORD transferred = 0;
+    if (GetOverlappedResult(_WinDivertHandle, &overlapped, &transferred, FALSE) == 0) {
+      co_return SysError(GetLastError());
     }
   }
 

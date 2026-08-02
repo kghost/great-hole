@@ -4,8 +4,10 @@
 #include <memory>
 #include <utility>
 
-#include "Interface.hpp"
+#include <winsafer.h>
+
 #include "AutoHandle.hpp"
+#include "Interface.hpp"
 #include "Process.hpp"
 #include "Strings.hpp"
 
@@ -63,20 +65,65 @@ auto PolicyEngine::AddProcessPolicy(Interface::ProcessSequence process, const Po
 
 void PolicyEngine::SetDefaultPolicy(const PolicyRule& policy) { _Registry.SetDefaultAction(policy.Action); }
 
-auto PolicyEngine::LaunchWithPolicy(const std::string& commandLine, const PolicyRule& policy)
+auto PolicyEngine::LaunchWithPolicy(const std::string& imagePath, const std::string& commandLine,
+                                    const PolicyRule& policy)
     -> std::expected<Interface::ProcessSequence, std::string> {
   STARTUPINFOW startupInfo{};
   startupInfo.cb = sizeof(startupInfo);
   PROCESS_INFORMATION processInfo{};
 
-  auto cmdLineCopy = gh::ToWstring(commandLine);
-  if (!cmdLineCopy.has_value()) {
-    return std::unexpected("Failed to convert command line to wstring");
+  std::optional<std::wstring> imagePathW;
+  if (!imagePath.empty()) {
+    imagePathW = gh::ToWstring(imagePath);
+    if (!imagePathW.has_value()) {
+      return std::unexpected("Failed to convert image path to wstring");
+    }
   }
 
-  if (CreateProcessW(nullptr, cmdLineCopy.value().data(), nullptr, nullptr, FALSE, CREATE_SUSPENDED, nullptr, nullptr,
-                     &startupInfo, &processInfo) == FALSE) {
-    return std::unexpected("Failed to create process");
+  std::optional<std::wstring> commandLineW;
+  if (!commandLine.empty()) {
+    commandLineW = gh::ToWstring(commandLine);
+    if (!commandLineW.has_value()) {
+      return std::unexpected("Failed to convert command line to wstring");
+    }
+  }
+
+  LPCWSTR appName = imagePathW.has_value() ? imagePathW.value().c_str() : nullptr;
+  LPWSTR cmdLine = commandLineW.has_value() ? commandLineW.value().data() : nullptr;
+
+  AutoHandle hPrimaryToken;
+
+  HWND hShellWnd = GetShellWindow();
+  if (hShellWnd == nullptr) {
+    return std::unexpected("Failed to get shell window");
+  }
+
+  DWORD explorerPid = 0;
+  GetWindowThreadProcessId(hShellWnd, &explorerPid);
+  if (explorerPid == 0) {
+    return std::unexpected("Failed to get explorer process ID");
+  }
+
+  AutoHandle hExplorerProcess(OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, explorerPid));
+  if (!hExplorerProcess.IsValid()) {
+    auto err = SysError(GetLastError());
+    return std::unexpected(std::format("Failed to open explorer process: {}", err.message()));
+  }
+
+  AutoHandle hExplorerToken;
+  if (OpenProcessToken(hExplorerProcess.Get(), TOKEN_DUPLICATE | TOKEN_QUERY, hExplorerToken.Put()) != FALSE) {
+    DuplicateTokenEx(hExplorerToken.Get(), MAXIMUM_ALLOWED, nullptr, SecurityImpersonation, TokenPrimary,
+                     hPrimaryToken.Put());
+  }
+
+  if (!hPrimaryToken.IsValid()) {
+    return std::unexpected("Failed to obtain non-privileged primary user token");
+  }
+
+  if (CreateProcessWithTokenW(hPrimaryToken.Get(), 0, appName, cmdLine, CREATE_SUSPENDED, nullptr, nullptr,
+                              &startupInfo, &processInfo) == FALSE) {
+    auto err = SysError(GetLastError());
+    return std::unexpected(std::format("Failed to create process: {}", err.message()));
   }
 
   AutoHandle hThread(processInfo.hThread);
@@ -84,8 +131,6 @@ auto PolicyEngine::LaunchWithPolicy(const std::string& commandLine, const Policy
 
   auto process = GetProcessSequence(hProcess.Get());
   if (!process.has_value()) {
-    BOOST_LOG_TRIVIAL(error) << "PolicyEngine::LaunchWithPolicy: Failed to get process sequence number for PID "
-                             << processInfo.dwProcessId;
     if (TerminateProcess(hProcess.Get(), -1) == FALSE) {
       BOOST_LOG_TRIVIAL(error) << "PolicyEngine::LaunchWithPolicy: TerminateProcess failed for PID "
                                << processInfo.dwProcessId;
@@ -95,16 +140,16 @@ auto PolicyEngine::LaunchWithPolicy(const std::string& commandLine, const Policy
 
   auto parent = GetProcessSequence(GetCurrentProcessId());
   assert(parent.has_value());
-  const auto& node = _Selector.GetProcessTreeTracker().AddProcess(process.value(), parent.value(),
-                                                                  processInfo.dwProcessId, commandLine);
+  const std::string& pathOrCmd = !imagePath.empty() ? imagePath : commandLine;
+  const auto& node =
+      _Selector.GetProcessTreeTracker().AddProcess(process.value(), parent.value(), processInfo.dwProcessId, pathOrCmd);
   auto res = _Selector.GetProcessTreeTracker().RegisterProcessPolicy(node.ProcessSequence, policy);
   if (!res) {
-    BOOST_LOG_TRIVIAL(error) << "PolicyEngine::LaunchWithPolicy: Failed to register process policy: " << res.error();
     if (TerminateProcess(hProcess.Get(), -1) == FALSE) {
       BOOST_LOG_TRIVIAL(error) << "PolicyEngine::LaunchWithPolicy: TerminateProcess failed for PID "
                                << processInfo.dwProcessId;
     }
-    return std::unexpected("Failed to register process policy");
+    return std::unexpected(std::format("Failed to register process policy {}", res.error()));
   }
 
   ResumeThread(hThread.Get());

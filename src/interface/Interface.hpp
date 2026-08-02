@@ -160,7 +160,7 @@ public:
   virtual auto AddProcessPolicy(ProcessSequence process, const PolicyRule& policy)
       -> std::expected<void, std::string> = 0;
   virtual void SetDefaultPolicy(const PolicyRule& policy) = 0;
-  virtual auto LaunchWithPolicy(const std::string& command_line, const PolicyRule& policy)
+  virtual auto LaunchWithPolicy(const std::string& imagePath, const std::string& commandLine, const PolicyRule& policy)
       -> std::expected<ProcessSequence, std::string> = 0;
   virtual auto GetFlows() -> std::vector<FlowInfo> = 0;
   virtual auto GetConnections() -> std::vector<TrackedConnectionInfo> = 0;

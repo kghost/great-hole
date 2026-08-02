@@ -17,6 +17,7 @@
 #include <psapi.h>
 #include <windows.h>
 
+#include "ErrorCode.hpp"
 #include "Interface.hpp"
 #include "PolicyRegistry.hpp"
 #include "Process.hpp"
@@ -452,7 +453,8 @@ void ProcessTreeTracker::EtwThreadProc() {
 
   TRACEHANDLE traceHandle = OpenTraceW(&traceLogfile);
   if (traceHandle == INVALID_PROCESSTRACE_HANDLE) {
-    BOOST_LOG_SEV(_Logger, boost::log::trivial::error) << "ProcessTreeTracker: OpenTraceW failed: " << GetLastError();
+    auto err = SysError(GetLastError());
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::error) << "ProcessTreeTracker: OpenTraceW failed: " << err.message();
     std::vector<char> propertiesBuf(sizeof(EVENT_TRACE_PROPERTIES) + kEtwPropertiesBufferExtra);
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto* properties = reinterpret_cast<EVENT_TRACE_PROPERTIES*>(propertiesBuf.data());
