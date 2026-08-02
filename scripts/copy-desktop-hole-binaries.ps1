@@ -58,9 +58,9 @@ foreach ($Variant in $Variants) {
                     "great-hole-windows-asan.pdb"               = "src/windows/Debug/great-hole-windows-asan.pdb"
                     "WinDivert.dll"                             = "_deps/windivert-src/x64/WinDivert.dll"
                     "WinDivert64.sys"                           = "_deps/windivert-src/x64/WinDivert64.sys"
-                    "boost_filesystem-vc145-mt-gd-x64-1_90.dll" = "src/windows/Debug/boost_filesystem-vc145-mt-gd-x64-1_90.dll"
-                    "boost_log-vc145-mt-gd-x64-1_90.dll"        = "src/windows/Debug/boost_log-vc145-mt-gd-x64-1_90.dll"
-                    "boost_thread-vc145-mt-gd-x64-1_90.dll"     = "src/windows/Debug/boost_thread-vc145-mt-gd-x64-1_90.dll"
+                    "boost_filesystem-vc145-mt-gd-x64-1_91.dll" = "src/windows/Debug/boost_filesystem-vc145-mt-gd-x64-1_91.dll"
+                    "boost_log-vc145-mt-gd-x64-1_91.dll"        = "src/windows/Debug/boost_log-vc145-mt-gd-x64-1_91.dll"
+                    "boost_thread-vc145-mt-gd-x64-1_91.dll"     = "src/windows/Debug/boost_thread-vc145-mt-gd-x64-1_91.dll"
                 }
             }
             else {
@@ -70,9 +70,9 @@ foreach ($Variant in $Variants) {
                     "great-hole-windows-asan.pdb"            = "src/windows/Release/great-hole-windows-asan.pdb"
                     "WinDivert.dll"                          = "_deps/windivert-src/x64/WinDivert.dll"
                     "WinDivert64.sys"                        = "_deps/windivert-src/x64/WinDivert64.sys"
-                    "boost_filesystem-vc145-mt-x64-1_90.dll" = "src/windows/Release/boost_filesystem-vc145-mt-x64-1_90.dll"
-                    "boost_log-vc145-mt-x64-1_90.dll"        = "src/windows/Release/boost_log-vc145-mt-x64-1_90.dll"
-                    "boost_thread-vc145-mt-x64-1_90.dll"     = "src/windows/Release/boost_thread-vc145-mt-x64-1_90.dll"
+                    "boost_filesystem-vc145-mt-x64-1_91.dll" = "src/windows/Release/boost_filesystem-vc145-mt-x64-1_91.dll"
+                    "boost_log-vc145-mt-x64-1_91.dll"        = "src/windows/Release/boost_log-vc145-mt-x64-1_91.dll"
+                    "boost_thread-vc145-mt-x64-1_91.dll"     = "src/windows/Release/boost_thread-vc145-mt-x64-1_91.dll"
                 }
             }
         }
@@ -84,9 +84,9 @@ foreach ($Variant in $Variants) {
                     "great-hole-windows.pdb"                    = "src/windows/Debug/great-hole-windows.pdb"
                     "WinDivert.dll"                             = "_deps/windivert-src/x64/WinDivert.dll"
                     "WinDivert64.sys"                           = "_deps/windivert-src/x64/WinDivert64.sys"
-                    "boost_filesystem-vc145-mt-gd-x64-1_90.dll" = "src/windows/Debug/boost_filesystem-vc145-mt-gd-x64-1_90.dll"
-                    "boost_log-vc145-mt-gd-x64-1_90.dll"        = "src/windows/Debug/boost_log-vc145-mt-gd-x64-1_90.dll"
-                    "boost_thread-vc145-mt-gd-x64-1_90.dll"     = "src/windows/Debug/boost_thread-vc145-mt-gd-x64-1_90.dll"
+                    "boost_filesystem-vc145-mt-gd-x64-1_91.dll" = "src/windows/Debug/boost_filesystem-vc145-mt-gd-x64-1_91.dll"
+                    "boost_log-vc145-mt-gd-x64-1_91.dll"        = "src/windows/Debug/boost_log-vc145-mt-gd-x64-1_91.dll"
+                    "boost_thread-vc145-mt-gd-x64-1_91.dll"     = "src/windows/Debug/boost_thread-vc145-mt-gd-x64-1_91.dll"
                 }
             }
             else {
@@ -96,9 +96,9 @@ foreach ($Variant in $Variants) {
                     "great-hole-windows.pdb"                 = "src/windows/Release/great-hole-windows.pdb"
                     "WinDivert.dll"                          = "_deps/windivert-src/x64/WinDivert.dll"
                     "WinDivert64.sys"                        = "_deps/windivert-src/x64/WinDivert64.sys"
-                    "boost_filesystem-vc145-mt-x64-1_90.dll" = "src/windows/Release/boost_filesystem-vc145-mt-x64-1_90.dll"
-                    "boost_log-vc145-mt-x64-1_90.dll"        = "src/windows/Release/boost_log-vc145-mt-x64-1_90.dll"
-                    "boost_thread-vc145-mt-x64-1_90.dll"     = "src/windows/Release/boost_thread-vc145-mt-x64-1_90.dll"
+                    "boost_filesystem-vc145-mt-x64-1_91.dll" = "src/windows/Release/boost_filesystem-vc145-mt-x64-1_91.dll"
+                    "boost_log-vc145-mt-x64-1_91.dll"        = "src/windows/Release/boost_log-vc145-mt-x64-1_91.dll"
+                    "boost_thread-vc145-mt-x64-1_91.dll"     = "src/windows/Release/boost_thread-vc145-mt-x64-1_91.dll"
                 }
             }
         }

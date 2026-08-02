@@ -13,6 +13,7 @@
     "boost-thread",
     "detours",
     "gtest",
+    "krabsetw",
     "pkgconf"
   ]
 }

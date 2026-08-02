@@ -68,6 +68,7 @@ if(ANDROID)
 endif()
 
 if(WIN32)
+  add_compile_definitions(UNICODE _UNICODE)
   add_compile_definitions(_WIN32_WINNT=0x0A00)
   add_compile_definitions(WIN32_LEAN_AND_MEAN)
   add_compile_definitions(BOOST_USE_WINAPI_VERSION=0x0A00)
@@ -75,6 +76,10 @@ if(WIN32)
   add_compile_definitions(BOOST_USE_WINDOWS_H)
   add_compile_definitions(BOOST_NO_ANSI_APIS)
   add_compile_definitions(BOOST_ASIO_HAS_WINDOWS_OBJECT_HANDLE)
+endif()
+
+if(WIN32)
+  find_path(KRABSETW_INCLUDE_DIR "krabs.hpp")
 endif()
 
 # Dependencies

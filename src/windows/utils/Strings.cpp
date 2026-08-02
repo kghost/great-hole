@@ -37,7 +37,7 @@ using std::string;
 
 [[nodiscard]] auto ToString(std::wstring_view wstr) -> std::optional<std::string> {
   if (wstr.empty()) {
-    return {};
+    return "";
   }
 
   std::locale loc("en_US.UTF-8");

@@ -12,6 +12,8 @@
 #include <evntrace.h>
 #include <windows.h>
 
+#include <krabs.hpp>
+
 #include "ExternalQueue.hpp"
 #include "Interface.hpp"
 #include "Logger.hpp"
@@ -82,6 +84,7 @@ private:
 
   TRACEHANDLE _EtwSessionHandle = 0;
   std::thread _EtwThread;
+  krabs::schema_locator _SchemaLocator;
   std::string _SessionName;
   gh::base::ComponentLogger _Logger{boost::log::keywords::channel = "ProcessTreeTracker"};
 };

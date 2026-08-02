@@ -18,6 +18,9 @@ foreach(suffix "" "-asan")
 
   add_library(${target} STATIC ${win_sources})
   target_include_directories(${target} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+  if(WIN32 AND KRABSETW_INCLUDE_DIR)
+    target_include_directories(${target} PRIVATE ${KRABSETW_INCLUDE_DIR})
+  endif()
   target_link_libraries(${target} PUBLIC
     Boost::log
     omni-fiber${suffix}

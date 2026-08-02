@@ -8,7 +8,6 @@
 #include <format>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <thread>
 #include <utility>
 
@@ -25,7 +24,6 @@
 #include "SelectPair.hpp"
 #include "Strings.hpp"
 #include "Utils/Nothing.hpp"
-#include "Utils/Span.hpp"
 
 namespace gh::policy {
 
@@ -473,88 +471,59 @@ void ProcessTreeTracker::EtwThreadProc() {
 }
 
 void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
-  if (record->EventHeader.ProviderId != _ProcessEventsGuid) {
-    return;
-  }
+  try {
+    krabs::schema schema(*record, _SchemaLocator);
+    if (schema.provider_id() != _ProcessEventsGuid) {
+      return;
+    }
 
-  auto eventId = record->EventHeader.EventDescriptor.Id;
-  auto version = record->EventHeader.EventDescriptor.Version;
+    auto eventId = schema.event_id();
+    auto version = schema.event_version();
 
-  if (eventId == 1) {
-    if (version >= 3) {
-      // Version 3 and 4
-      // Fields:
-      // 1. ProcessID (UInt32) - 4 bytes
-      // 2. ProcessSequenceNumber (UInt64) - 8 bytes
-      // 3. CreateTime (FILETIME) - 8 bytes
-      // 4. ParentProcessID (UInt32) - 4 bytes
-      // 5. ParentProcessSequenceNumber (UInt64) - 8 bytes
-      // 6. SessionID (UInt32) - 4 bytes
-      // 7. Flags (UInt32) - 4 bytes
-      // 8. ProcessTokenElevationType (UInt32) - 4 bytes
-      // 9. ProcessTokenIsElevated (UInt32) - 4 bytes
-      // 10. MandatoryLabel (SID) - variable length (starts at offset 48)
-      // 11. ImageName (UnicodeString) - variable length
-      constexpr size_t kStartEventV3HeaderSize = 48;
-      constexpr size_t kStartEventV3ParentSeqOffset = 24;
-      constexpr size_t kSidHeaderSize = 8;
-      constexpr size_t kSidSubAuthoritySize = 4;
+    krabs::parser parser(schema);
 
-      Interface::ProcessId pid = 0;
-      Interface::ProcessSequence seq = 0;
-      Interface::ProcessSequence parentSeq = 0;
-      std::string imagePath;
+    if (eventId == 1) {
+      if (version >= 3) {
+        Interface::ProcessId pid = 0;
+        Interface::ProcessSequence seq = 0;
+        Interface::ProcessSequence parentSeq = 0;
 
-      if (record->UserDataLength >= kStartEventV3HeaderSize) {
-        const auto userData =
-            std::span<const uint8_t>(static_cast<const uint8_t*>(record->UserData), record->UserDataLength);
-        pid = SpanToField<Interface::ProcessId, 0>(userData);
-        seq = SpanToField<Interface::ProcessSequence, 4>(userData);
-        parentSeq = SpanToField<Interface::ProcessSequence, kStartEventV3ParentSeqOffset>(userData);
-
-        if (record->UserDataLength >= kStartEventV3HeaderSize + 2) {
-          const auto sidPtr = userData.subspan<kStartEventV3HeaderSize>();
-          auto subAuthorityCount = SpanToField<uint8_t, 1>(sidPtr);
-          size_t sidSize = kSidHeaderSize + (kSidSubAuthoritySize * subAuthorityCount);
-
-          size_t imageNameOffset = kStartEventV3HeaderSize + sidSize;
-          if (record->UserDataLength > imageNameOffset) {
-            const auto wstrSpan =
-                View<const wchar_t>(userData.subspan(imageNameOffset, record->UserDataLength - imageNameOffset));
-            const auto firstNull = std::ranges::find(wstrSpan, L'\0');
-            const auto wstrView = std::wstring_view(wstrSpan.data(), std::distance(wstrSpan.begin(), firstNull));
-            imagePath = ToString(wstrView).value_or("");
+        if (parser.try_parse(L"ProcessID", pid) && parser.try_parse(L"ProcessSequenceNumber", seq) &&
+            parser.try_parse(L"ParentProcessSequenceNumber", parentSeq)) {
+          std::optional<std::string> imagePath;
+          std::wstring imagePathW;
+          if (parser.try_parse(L"ImageName", imagePathW)) {
+            imagePath = ToString(imagePathW);
           }
-        }
-      }
 
-      BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
-          << "Add: Seq " << seq << ", PID " << pid << ", ParentSeq " << parentSeq << ", Path " << imagePath;
-      _TaskQueue.Push([this, seq, parentSeq, pid, imagePath]() -> Omni::Fiber::Coroutine<void> {
-        AddProcess(seq, parentSeq, pid, imagePath);
-        co_return;
-      });
-    } else {
-      BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
-          << "Add: Unsupported event version " << static_cast<int>(version);
-    }
-  } else if (eventId == 2) {
-    if (version >= 2) {
-      constexpr size_t kStopEventMinSize = 12;
-      if (record->UserDataLength >= kStopEventMinSize) {
-        const auto userData =
-            std::span<const uint8_t>(static_cast<const uint8_t*>(record->UserData), record->UserDataLength);
-        auto seq = SpanToField<Interface::ProcessSequence, 4>(userData);
-        BOOST_LOG_SEV(_Logger, boost::log::trivial::trace) << "Remove: Seq " << seq;
-        _TaskQueue.Push([this, seq]() -> Omni::Fiber::Coroutine<void> {
-          RemoveProcess(seq);
-          co_return;
-        });
+          BOOST_LOG_SEV(_Logger, boost::log::trivial::trace) << "Add: Seq " << seq << ", PID " << pid << ", ParentSeq "
+                                                             << parentSeq << ", Path " << imagePath.value_or("");
+          _TaskQueue.Push([this, seq, parentSeq, pid, imagePath]() -> Omni::Fiber::Coroutine<void> {
+            AddProcess(seq, parentSeq, pid, imagePath);
+            co_return;
+          });
+        }
+      } else {
+        BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
+            << "Add: Unsupported event version " << static_cast<int>(version);
       }
-    } else {
-      BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
-          << "Remove: Unsupported event version " << static_cast<int>(version);
+    } else if (eventId == 2) {
+      if (version >= 2) {
+        Interface::ProcessSequence seq = 0;
+        if (parser.try_parse(L"ProcessSequenceNumber", seq)) {
+          BOOST_LOG_SEV(_Logger, boost::log::trivial::trace) << "Remove: Seq " << seq;
+          _TaskQueue.Push([this, seq]() -> Omni::Fiber::Coroutine<void> {
+            RemoveProcess(seq);
+            co_return;
+          });
+        }
+      } else {
+        BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
+            << "Remove: Unsupported event version " << static_cast<int>(version);
+      }
     }
+  } catch (const std::exception& e) {
+    BOOST_LOG_SEV(_Logger, boost::log::trivial::error) << "ProcessTreeTracker: Krabs ETW parse error: " << e.what();
   }
 }
 
