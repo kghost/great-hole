@@ -4,6 +4,7 @@
 #include <string>
 #include <windows.h>
 
+#include "AutoHandle.hpp"
 #include "Interface.hpp"
 
 namespace gh {
@@ -15,16 +16,14 @@ namespace gh {
 [[nodiscard]] auto GetProcessSequence(Interface::ProcessId pid) -> std::optional<Interface::ProcessSequence>;
 
 template <typename Function> auto WithProcessHandle(Interface::ProcessId pid, Function&& function) -> decltype(auto) {
-  HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-  if (hProcess == nullptr) {
-    hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+  AutoHandle hProcess{OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid)};
+  if (!hProcess) {
+    hProcess.Reset(OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid));
   }
-  if (hProcess == nullptr) {
+  if (!hProcess) {
     return std::forward<Function>(function)(std::nullopt);
   } else {
-    auto result = std::forward<Function>(function)(hProcess);
-    CloseHandle(hProcess);
-    return result;
+    return std::forward<Function>(function)(hProcess.Get());
   }
 }
 

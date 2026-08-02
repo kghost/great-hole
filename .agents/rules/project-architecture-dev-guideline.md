@@ -73,6 +73,9 @@ Documentation in this project is split into two categories based on target audie
 - **src/windows/network**:
   - [src/windows/network/README.md](../../src/windows/network/README.md) - Public APIs and usage guidelines for Windows interface and IP address monitoring.
   - [src/windows/network/DESIGN.md](../../src/windows/network/DESIGN.md) - Internal design, IP Helper integration, fiber event queue bridging, and state caching algorithms.
+- **src/windows/utils**:
+  - [src/windows/utils/README.md](../../src/windows/utils/README.md) - Public APIs and usage guidelines for Windows utility helpers (AutoHandle, Process, Strings).
+  - [src/windows/utils/DESIGN.md](../../src/windows/utils/DESIGN.md) - Internal design specs for AutoHandle RAII handle wrapper and process/string utilities.
 - **src/resolvers**:
   - [src/resolvers/README.md](../../src/resolvers/README.md) - Public APIs and usage guidelines for DNS and endpoint resolvers.
   - [src/resolvers/DESIGN.md](../../src/resolvers/DESIGN.md) - Internal design specs for c-ares wrapper, RunChannel implementation, and event loop integration.

@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "Interface.hpp"
+#include "AutoHandle.hpp"
 #include "Process.hpp"
 #include "Strings.hpp"
 
@@ -78,16 +79,17 @@ auto PolicyEngine::LaunchWithPolicy(const std::string& commandLine, const Policy
     return std::unexpected("Failed to create process");
   }
 
-  auto process = GetProcessSequence(processInfo.hProcess);
+  AutoHandle hThread(processInfo.hThread);
+  AutoHandle hProcess(processInfo.hProcess);
+
+  auto process = GetProcessSequence(hProcess.Get());
   if (!process.has_value()) {
     BOOST_LOG_TRIVIAL(error) << "PolicyEngine::LaunchWithPolicy: Failed to get process sequence number for PID "
                              << processInfo.dwProcessId;
-    if (TerminateProcess(processInfo.hProcess, -1) == FALSE) {
+    if (TerminateProcess(hProcess.Get(), -1) == FALSE) {
       BOOST_LOG_TRIVIAL(error) << "PolicyEngine::LaunchWithPolicy: TerminateProcess failed for PID "
                                << processInfo.dwProcessId;
     }
-    CloseHandle(processInfo.hThread);
-    CloseHandle(processInfo.hProcess);
     return std::unexpected("Failed to get process sequence number");
   }
 
@@ -98,19 +100,14 @@ auto PolicyEngine::LaunchWithPolicy(const std::string& commandLine, const Policy
   auto res = _Selector.GetProcessTreeTracker().RegisterProcessPolicy(node.ProcessSequence, policy);
   if (!res) {
     BOOST_LOG_TRIVIAL(error) << "PolicyEngine::LaunchWithPolicy: Failed to register process policy: " << res.error();
-    if (TerminateProcess(processInfo.hProcess, -1) == FALSE) {
+    if (TerminateProcess(hProcess.Get(), -1) == FALSE) {
       BOOST_LOG_TRIVIAL(error) << "PolicyEngine::LaunchWithPolicy: TerminateProcess failed for PID "
                                << processInfo.dwProcessId;
     }
-    CloseHandle(processInfo.hThread);
-    CloseHandle(processInfo.hProcess);
     return std::unexpected("Failed to register process policy");
   }
 
-  ResumeThread(processInfo.hThread);
-
-  CloseHandle(processInfo.hThread);
-  CloseHandle(processInfo.hProcess);
+  ResumeThread(hThread.Get());
 
   return node.ProcessSequence;
 }

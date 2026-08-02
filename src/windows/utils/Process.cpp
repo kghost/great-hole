@@ -6,6 +6,7 @@
 #include <winternl.h>
 
 #include "Interface.hpp"
+#include "AutoHandle.hpp"
 #include "Strings.hpp"
 
 namespace gh {
@@ -36,17 +37,15 @@ auto GetProcessSequence(HANDLE hProcess) -> std::optional<Interface::ProcessSequ
 }
 
 auto GetProcessSequence(Interface::ProcessId pid) -> std::optional<Interface::ProcessSequence> {
-  HANDLE hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
-  if (hProcess == nullptr) {
-    hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+  AutoHandle hProcess{OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid)};
+  if (!hProcess) {
+    hProcess.Reset(OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid));
   }
-  if (hProcess == nullptr) {
+  if (!hProcess) {
     return std::nullopt;
   }
 
-  auto seqOpt = GetProcessSequence(hProcess);
-  CloseHandle(hProcess);
-  return seqOpt;
+  return GetProcessSequence(hProcess.Get());
 }
 
 auto GetParentProcessId(HANDLE hProcess) -> std::optional<Interface::ProcessId> {

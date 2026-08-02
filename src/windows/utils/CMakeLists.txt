@@ -9,6 +9,7 @@ foreach(suffix "" "-asan")
   set(target "great-hole-windows-utils${suffix}")
 
   set(sources
+    AutoHandle.cpp
     Process.cpp
     Strings.cpp
   )
@@ -24,3 +25,7 @@ foreach(suffix "" "-asan")
     target_link_options(${target} PRIVATE -fsanitize=address)
   endif()
 endforeach()
+
+if(BUILD_TESTING)
+  add_subdirectory(tests)
+endif()
