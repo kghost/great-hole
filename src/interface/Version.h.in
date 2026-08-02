@@ -1,0 +1,7 @@
+#pragma once
+
+namespace gh::Interface {
+
+constexpr const char* kVersion = "@GREAT_HOLE_VERSION@";
+
+} // namespace gh::Interface

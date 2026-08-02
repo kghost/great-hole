@@ -136,6 +136,8 @@ public:
   PlatformInterface(PlatformInterface&&) = delete;
   auto operator=(PlatformInterface&&) -> PlatformInterface& = delete;
 
+  virtual auto GetVersion() -> std::string;
+
   virtual auto StartEngine() -> std::error_code = 0;
   virtual auto StopEngine() -> std::error_code = 0;
 

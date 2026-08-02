@@ -26,6 +26,7 @@ class PlatformInterface {
 public:
   virtual ~PlatformInterface() = default;
 
+  virtual auto GetVersion() -> std::string;
   virtual auto StartEngine() -> std::error_code = 0;
   virtual auto StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code = 0;
   virtual auto StopEngine() -> std::error_code = 0;
