@@ -63,7 +63,7 @@ auto VpnServer::OnChannelEstablished(UdpDynMux::ChannelNotificationTarget& targe
     }
 
     BOOST_LOG_TRIVIAL(info) << "VpnServer: Starting bidirectional pipeline";
-    auto pipe = std::make_shared<Pipeline>(endpoint.UdpChannel, _Filters, tunChannel);
+    auto pipe = std::make_shared<Pipeline>(tunChannel, _Filters, endpoint.UdpChannel);
 
     auto err = co_await pipe->Start();
     if (err) {

@@ -481,7 +481,7 @@ auto VpnClientMultiChannel::OnChannelEstablished(UdpDynMux::ChannelNotificationT
           co_return std::monostate{};
         }
 
-        auto sessionPipeline = std::make_shared<Pipeline>(data.Channel, _Filters, channelSide);
+        auto sessionPipeline = std::make_shared<Pipeline>(channelSide, _Filters, data.Channel);
         auto err = co_await sessionPipeline->Start();
         if (err) {
           BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel pipeline for " << data.Channel->GetName();

@@ -594,10 +594,10 @@ JNIEXPORT jboolean JNICALL Java_info_kghost_android_1hole_vpn_dataplane_JniTunne
     return JNI_FALSE;
   }
 
-  env->SetLongField(stats, txBytesField, static_cast<jlong>(res->BackwardBytes));
-  env->SetLongField(stats, rxBytesField, static_cast<jlong>(res->ForwardBytes));
-  env->SetLongField(stats, txPacketsField, static_cast<jlong>(res->BackwardPackets));
-  env->SetLongField(stats, rxPacketsField, static_cast<jlong>(res->ForwardPackets));
+  env->SetLongField(stats, txBytesField, static_cast<jlong>(res->ForwardBytes));
+  env->SetLongField(stats, rxBytesField, static_cast<jlong>(res->BackwardBytes));
+  env->SetLongField(stats, txPacketsField, static_cast<jlong>(res->ForwardPackets));
+  env->SetLongField(stats, rxPacketsField, static_cast<jlong>(res->BackwardPackets));
   env->SetLongField(stats, rttMsField, static_cast<jlong>(res->RttMs));
   return JNI_TRUE;
 }
