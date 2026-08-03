@@ -62,7 +62,7 @@
       "name": "configure-windows-ninja-release",
       "binaryDir": "${sourceDir}/build-windows-ninja-release-non-asan",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "SKIP_ASAN": "ON",
         "SKIP_NON_ASAN": "OFF",
@@ -87,7 +87,7 @@
       "name": "configure-windows-ninja-release-asan",
       "binaryDir": "${sourceDir}/build-windows-ninja-release-asan",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
         "SKIP_ASAN": "OFF",
         "SKIP_NON_ASAN": "ON",
@@ -118,13 +118,13 @@
       "name": "configure-android-arm64-v8a-release",
       "inherits": "configure-android-base",
       "binaryDir": "${sourceDir}/build-android-arm64-v8a-release",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "ANDROID_ABI": "arm64-v8a" }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "ANDROID_ABI": "arm64-v8a" }
     },
     {
       "name": "configure-android-x86_64-release",
       "inherits": "configure-android-base",
       "binaryDir": "${sourceDir}/build-android-x86_64-release",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "ANDROID_ABI": "x86_64" }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo", "ANDROID_ABI": "x86_64" }
     }
   ],
   "buildPresets": [
@@ -134,8 +134,8 @@
     { "name": "build-gcc-snapshot-debug", "configurePreset": "configure-gcc-snapshot-debug", "jobs": 8 },
     { "name": "build-windows-msvc-debug", "configurePreset": "configure-windows-msvc", "configuration": "Debug", "jobs": 8 },
     { "name": "build-windows-msvc-debug-asan", "configurePreset": "configure-windows-msvc-asan", "configuration": "Debug", "jobs": 8 },
-    { "name": "build-windows-msvc-release", "configurePreset": "configure-windows-msvc", "configuration": "Release", "jobs": 8 },
-    { "name": "build-windows-msvc-release-asan", "configurePreset": "configure-windows-msvc-asan", "configuration": "Release", "jobs": 8 },
+    { "name": "build-windows-msvc-release", "configurePreset": "configure-windows-msvc", "configuration": "RelWithDebInfo", "jobs": 8 },
+    { "name": "build-windows-msvc-release-asan", "configurePreset": "configure-windows-msvc-asan", "configuration": "RelWithDebInfo", "jobs": 8 },
     { "name": "build-windows-ninja-debug", "configurePreset": "configure-windows-ninja-debug", "jobs": 8 },
     { "name": "build-windows-ninja-release", "configurePreset": "configure-windows-ninja-release", "jobs": 8 },
     { "name": "build-windows-ninja-debug-asan", "configurePreset": "configure-windows-ninja-debug-asan", "jobs": 8 },

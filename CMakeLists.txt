@@ -127,7 +127,7 @@ if(BUILD_TESTING)
 endif()
 
 if(WIN32)
-  add_compile_options(/W3 /Od)
+  add_compile_options(/W3)
 else()
   add_compile_options(-Wall)
 endif()
