@@ -184,7 +184,10 @@ public:
     auto DoWork() -> Omni::Fiber::Coroutine<void> override;
     auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
-    auto RegisterProcessPolicy(Interface::ProcessSequence process, const PolicyRule& rule) -> bool;
+    auto RegisterProcessPolicy(Interface::ProcessSequence process, const PolicyRule& rule)
+        -> std::expected<void, std::string>;
+    auto LaunchWithPolicy(const std::string& imagePath, const std::optional<std::string>& commandLine,
+                          const PolicyRule& policy) -> std::expected<Interface::ProcessSequence, std::string>;
     auto AddProcess(Interface::ProcessSequence process, Interface::ProcessSequence parentSeq, Interface::ProcessId pid,
                     std::optional<std::string> path) -> const ProcessNode&;
     void RemoveProcess(Interface::ProcessSequence process);

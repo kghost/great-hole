@@ -30,9 +30,7 @@ protected:
     ioContext.poll();
   }
 
-  void CallHandleEtwEvent(PEVENT_RECORD record) {
-    tracker.HandleEtwEvent(record);
-  }
+  void CallHandleEtwEvent(PEVENT_RECORD record) { tracker.HandleEtwEvent(record); }
 
   void SetUp() override {
     registry.Clear();
@@ -254,4 +252,3 @@ TEST_F(TestProcessTreeTracker, HandleEtwEventParseImagePath) {
   ASSERT_TRUE(action.has_value());
   EXPECT_TRUE(std::holds_alternative<PolicyRule::ByPassRoute>(action.value()));
 }
-

@@ -122,7 +122,7 @@ The `PolicyEngine` is implemented as a `ServiceBase` subclass and exposes the fo
 - `RemovePathPolicy(const std::string& path)`: Removes the registered policy for the given executable path.
 - `AddPidPolicy(DWORD pid, const PolicyRule& policy)`: Registers a dynamic policy rule for a running process.
 - `SetDefaultPolicy(const PolicyRule& policy)`: Configures the default fallback routing policy.
-- `LaunchWithPolicy(const std::string& imagePath, const std::string& commandLine, const PolicyRule& policy)`: Spawns a non-privileged process suspended, registers its process ID and rule with the trackers, and resumes the thread to guarantee atomic, leak-free routing.
+- `LaunchWithPolicy(const std::string& imagePath, const std::optional<std::string>& commandLine, const PolicyRule& policy)`: Spawns a non-privileged process suspended, registers its process ID and rule with the trackers, and resumes the thread to guarantee atomic, leak-free routing.
 
 ---
 

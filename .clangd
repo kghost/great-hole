@@ -7,3 +7,9 @@ If:
   PathMatch: src/android/.*
 CompileFlags:
   CompilationDatabase: "build-android-x86_64-debug/"
+
+---
+If:
+  PathMatch: src/windows/.*
+Diagnostics:
+  Suppress: ["constexpr_var_requires_const_init"]

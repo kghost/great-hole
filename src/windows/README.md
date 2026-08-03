@@ -44,7 +44,7 @@ public:
   virtual void RemovePathPolicy(const std::string& path) = 0;
   virtual void AddPidPolicy(uint32_t pid, const PolicyRule& policy) = 0;
   virtual void SetDefaultPolicy(const PolicyRule& policy) = 0;
-  virtual auto LaunchWithPolicy(const std::string& imagePath, const std::string& commandLine, const PolicyRule& policy) -> std::expected<ProcessSequence, std::string> = 0;
+  virtual auto LaunchWithPolicy(const std::string& imagePath, const std::optional<std::string>& commandLine, const PolicyRule& policy) -> std::expected<ProcessSequence, std::string> = 0;
   virtual auto GetFlows() -> std::vector<FlowInfo> = 0;
 
 

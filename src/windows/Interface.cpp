@@ -54,8 +54,8 @@ public:
   void RemovePathPolicy(const std::string& path) override;
   auto AddProcessPolicy(ProcessSequence process, const PolicyRule& policy) -> std::expected<void, std::string> override;
   void SetDefaultPolicy(const PolicyRule& policy) override;
-  auto LaunchWithPolicy(const std::string& imagePath, const std::string& commandLine, const PolicyRule& policy)
-      -> std::expected<ProcessSequence, std::string> override;
+  auto LaunchWithPolicy(const std::string& imagePath, const std::optional<std::string>& commandLine,
+                        const PolicyRule& policy) -> std::expected<ProcessSequence, std::string> override;
   auto GetFlows() -> std::vector<FlowInfo> override;
   auto GetConnections() -> std::vector<TrackedConnectionInfo> override;
   auto GetProcessTree() -> std::vector<ProcessInfo> override;
@@ -326,7 +326,7 @@ void PlatformImpl::SetDefaultPolicy(const PolicyRule& policy) {
   future.get();
 }
 
-auto PlatformImpl::LaunchWithPolicy(const std::string& imagePath, const std::string& commandLine,
+auto PlatformImpl::LaunchWithPolicy(const std::string& imagePath, const std::optional<std::string>& commandLine,
                                     const PolicyRule& policy) -> std::expected<ProcessSequence, std::string> {
   std::promise<std::expected<ProcessSequence, std::string>> promise;
   auto future = promise.get_future();
