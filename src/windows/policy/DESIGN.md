@@ -177,7 +177,7 @@ struct ProcessNode {
 
 class ProcessTreeTracker : public ServiceBase {
 public:
-    explicit ProcessTreeTracker(boost::asio::any_io_executor executor, PolicyRegistry& registry);
+    explicit ProcessTreeTracker(boost::asio::any_io_executor executor, const PolicyRegistry& registry);
     ~ProcessTreeTracker() override = default;
 
     auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
@@ -188,6 +188,7 @@ public:
         -> std::expected<void, std::string>;
     auto LaunchWithPolicy(const std::string& imagePath, const std::optional<std::string>& commandLine,
                           const PolicyRule& policy) -> std::expected<Interface::ProcessSequence, std::string>;
+    void ApplyPathRule(const std::string& imagePath, const PolicyRule& rule);
     auto AddProcess(Interface::ProcessSequence process, Interface::ProcessSequence parentSeq, Interface::ProcessId pid,
                     std::optional<std::string> path) -> const ProcessNode&;
     void RemoveProcess(Interface::ProcessSequence process);

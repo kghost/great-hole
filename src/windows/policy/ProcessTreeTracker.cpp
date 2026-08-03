@@ -79,7 +79,7 @@ void StopOrphanedSessions(gh::base::ComponentLogger& logger) {
 
 } // namespace
 
-ProcessTreeTracker::ProcessTreeTracker(boost::asio::any_io_executor executor, PolicyRegistry& registry)
+ProcessTreeTracker::ProcessTreeTracker(boost::asio::any_io_executor executor, const PolicyRegistry& registry)
     : _Executor(std::move(executor)), _TaskQueue(_Executor), _Registry(registry) {
   WithProcessHandle(GetCurrentProcessId(), [this](std::optional<HANDLE> handle) -> Nothing {
     assert(handle.has_value());
@@ -234,6 +234,16 @@ auto ProcessTreeTracker::RegisterProcessPolicy(Interface::ProcessSequence proces
     ApplyPolicyToDescendantsLocked(iterator->second.Children, rule);
   }
   return {};
+}
+
+void ProcessTreeTracker::ApplyPathRule(const std::string& imagePath, const PolicyRule& rule) {
+  BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
+      << "ApplyPathRule: path=" << imagePath << " " << PolicyRuleToString(rule);
+  for (auto& [seq, node] : _ProcessMap) {
+    if (node.ExecutablePath.has_value() && node.ExecutablePath.value() == imagePath) {
+      EvaluatePolicyLocked(node);
+    }
+  }
 }
 
 auto ProcessTreeTracker::LaunchWithPolicy(const std::string& imagePath, const std::optional<std::string>& commandLine,
@@ -581,40 +591,122 @@ void ProcessTreeTracker::HandleEtwEvent(PEVENT_RECORD record) {
     krabs::parser parser(schema);
 
     if (eventId == 1) {
-      if (version >= 3) {
+      if (version < 3) {
+        Interface::ProcessId pid = 0;
+        Interface::ProcessId ppid = 0;
+
+        if (!parser.try_parse(L"ProcessID", pid) || !parser.try_parse(L"ParentProcessID", ppid)) {
+          BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
+              << "Add: Failed to parse process info, version " << static_cast<int>(version);
+          return;
+        }
+
+        auto result1 = WithProcessHandle(pid, [](std::optional<HANDLE> handle) -> auto {
+          return handle.and_then([](HANDLE handle) -> auto {
+            return GetProcessSequence(handle).transform(
+                [handle](auto seq) -> auto { return std::make_tuple(seq, GetProcessPath(handle)); });
+          });
+        });
+
+        if (!result1.has_value()) {
+          BOOST_LOG_SEV(_Logger, boost::log::trivial::error) << "Add: Failed to get process info for PID " << pid;
+          return;
+        }
+
+        auto result2 =
+            WithProcessHandle(ppid, [](std::optional<HANDLE> handle) -> std::optional<Interface::ProcessSequence> {
+              return handle.and_then([](HANDLE handle) -> std::optional<Interface::ProcessSequence> {
+                return GetProcessSequence(handle);
+              });
+            });
+
+        if (!result2.has_value()) {
+          BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
+              << "Add: Failed to get process info for Parent PID " << ppid;
+          return;
+        }
+
+        auto [seq, imagePath] = result1.value();
+        auto parentSeq = result2.value();
+
+        BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
+            << "Add: Seq " << seq << ", PID " << pid << ", ParentSeq " << parentSeq << ", Path "
+            << imagePath.value_or("") << ", version " << static_cast<int>(version);
+        _TaskQueue.Push([this, seq, parentSeq, pid, imagePath]() -> Omni::Fiber::Coroutine<void> {
+          AddProcess(seq, parentSeq, pid, imagePath);
+          co_return;
+        });
+      } else if (version >= 3) {
         Interface::ProcessId pid = 0;
         Interface::ProcessSequence seq = 0;
         Interface::ProcessSequence parentSeq = 0;
 
-        if (parser.try_parse(L"ProcessID", pid) && parser.try_parse(L"ProcessSequenceNumber", seq) &&
-            parser.try_parse(L"ParentProcessSequenceNumber", parentSeq)) {
-          std::optional<std::string> imagePath;
-          std::wstring imagePathW;
-          if (parser.try_parse(L"ImageName", imagePathW)) {
-            imagePath = ToString(imagePathW);
-          }
-
-          BOOST_LOG_SEV(_Logger, boost::log::trivial::trace) << "Add: Seq " << seq << ", PID " << pid << ", ParentSeq "
-                                                             << parentSeq << ", Path " << imagePath.value_or("");
-          _TaskQueue.Push([this, seq, parentSeq, pid, imagePath]() -> Omni::Fiber::Coroutine<void> {
-            AddProcess(seq, parentSeq, pid, imagePath);
-            co_return;
-          });
+        if (!parser.try_parse(L"ProcessID", pid) || !parser.try_parse(L"ProcessSequenceNumber", seq) ||
+            !parser.try_parse(L"ParentProcessSequenceNumber", parentSeq)) {
+          BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
+              << "Add: Failed to parse process info, version " << static_cast<int>(version);
+          return;
         }
+
+        std::optional<std::string> imagePath =
+            WithProcessHandle(pid, [](std::optional<HANDLE> handle) -> std::optional<std::string> {
+              return handle.and_then([](HANDLE handle) -> auto { return GetProcessPath(handle); });
+            });
+
+        std::optional<std::string> imagePath2;
+        std::wstring imagePath2W;
+        if (parser.try_parse(L"ImageName", imagePath2W)) {
+          imagePath2 = ToString(imagePath2W);
+        }
+
+        BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
+            << "Add: Seq " << seq << ", PID " << pid << ", ParentSeq " << parentSeq << ", Path "
+            << imagePath.value_or("") << ", version " << static_cast<int>(version) << ", Path2 "
+            << imagePath2.value_or("");
+        _TaskQueue.Push([this, seq, parentSeq, pid, imagePath]() -> Omni::Fiber::Coroutine<void> {
+          AddProcess(seq, parentSeq, pid, imagePath);
+          co_return;
+        });
       } else {
         BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
             << "Add: Unsupported event version " << static_cast<int>(version);
       }
     } else if (eventId == 2) {
-      if (version >= 2) {
-        Interface::ProcessSequence seq = 0;
-        if (parser.try_parse(L"ProcessSequenceNumber", seq)) {
-          BOOST_LOG_SEV(_Logger, boost::log::trivial::trace) << "Remove: Seq " << seq;
-          _TaskQueue.Push([this, seq]() -> Omni::Fiber::Coroutine<void> {
-            RemoveProcess(seq);
-            co_return;
-          });
+      if (version < 2) {
+        Interface::ProcessId pid = 0;
+        if (!parser.try_parse(L"ProcessID", pid)) {
+          BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
+              << "Remove: Failed to parse PID, version " << static_cast<int>(version);
+          return;
         }
+
+        auto seq = GetProcessSequence(pid);
+        if (!seq.has_value()) {
+          BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
+              << "Remove: Failed to get process sequence for PID " << pid;
+          return;
+        }
+
+        BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
+            << "Remove: Seq " << seq.value() << ", PID " << pid << ", version " << static_cast<int>(version);
+        _TaskQueue.Push([this, seq = seq.value()]() -> Omni::Fiber::Coroutine<void> {
+          RemoveProcess(seq);
+          co_return;
+        });
+      } else if (version >= 2) {
+        Interface::ProcessSequence seq = 0;
+        if (!parser.try_parse(L"ProcessSequenceNumber", seq)) {
+          BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
+              << "Remove: Failed to parse process sequence number, version " << static_cast<int>(version);
+          return;
+        }
+
+        BOOST_LOG_SEV(_Logger, boost::log::trivial::trace)
+            << "Remove: Seq " << seq << ", version " << static_cast<int>(version);
+        _TaskQueue.Push([this, seq]() -> Omni::Fiber::Coroutine<void> {
+          RemoveProcess(seq);
+          co_return;
+        });
       } else {
         BOOST_LOG_SEV(_Logger, boost::log::trivial::error)
             << "Remove: Unsupported event version " << static_cast<int>(version);

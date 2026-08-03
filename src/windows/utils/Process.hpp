@@ -17,13 +17,13 @@ namespace gh {
 
 template <typename Function> auto WithProcessHandle(Interface::ProcessId pid, Function&& function) -> decltype(auto) {
   AutoHandle hProcess{OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid)};
-  if (!hProcess) {
+  if (!hProcess.IsValid()) {
     hProcess.Reset(OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid));
   }
-  if (!hProcess) {
-    return std::forward<Function>(function)(std::nullopt);
-  } else {
+  if (hProcess.IsValid()) {
     return std::forward<Function>(function)(hProcess.Get());
+  } else {
+    return std::forward<Function>(function)(std::nullopt);
   }
 }
 

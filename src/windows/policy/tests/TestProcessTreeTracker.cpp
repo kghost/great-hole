@@ -252,3 +252,46 @@ TEST_F(TestProcessTreeTracker, HandleEtwEventParseImagePath) {
   ASSERT_TRUE(action.has_value());
   EXPECT_TRUE(std::holds_alternative<PolicyRule::ByPassRoute>(action.value()));
 }
+
+TEST_F(TestProcessTreeTracker, ApplyPathRuleUpdatesExistingProcessesSubtree) {
+  const auto& p1000 = tracker.AddProcess(1000, 0, 1000, "C:\\App\\app.exe");
+  const auto& p1001 = tracker.AddProcess(1001, 1000, 1001, "C:\\App\\child.exe");
+
+  EXPECT_FALSE(HasPolicy(1000));
+  EXPECT_FALSE(HasPolicy(1001));
+
+  auto session = std::make_shared<VpnClientMultiChannelSession>(UdpDynMux::PskType{}, "dummy");
+  PolicyRule subtreeRule{.Action = PolicyRule::EndpointRoute{session}, .Scope = PolicyScope::ProcessSubtree};
+
+  registry.AddPathRule("C:\\App\\app.exe", subtreeRule);
+  tracker.ApplyPathRule("C:\\App\\app.exe", subtreeRule);
+
+  auto action1000 = tracker.GetAction(p1000.ProcessId);
+  ASSERT_TRUE(action1000.has_value());
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(action1000.value()));
+  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(action1000.value()).Endpoint.lock(), session);
+
+  auto action1001 = tracker.GetAction(p1001.ProcessId);
+  ASSERT_TRUE(action1001.has_value());
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(action1001.value()));
+  EXPECT_EQ(std::get<PolicyRule::EndpointRoute>(action1001.value()).Endpoint.lock(), session);
+}
+
+TEST_F(TestProcessTreeTracker, ApplyPathRuleUpdatesExistingProcessesSingleProcess) {
+  const auto& p2000 = tracker.AddProcess(2000, 0, 2000, "C:\\App\\app2.exe");
+  const auto& p2001 = tracker.AddProcess(2001, 2000, 2001, "C:\\App\\child2.exe");
+
+  EXPECT_FALSE(HasPolicy(2000));
+  EXPECT_FALSE(HasPolicy(2001));
+
+  PolicyRule singleRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::SingleProcess};
+
+  registry.AddPathRule("C:\\App\\app2.exe", singleRule);
+  tracker.ApplyPathRule("C:\\App\\app2.exe", singleRule);
+
+  auto action2000 = tracker.GetAction(p2000.ProcessId);
+  ASSERT_TRUE(action2000.has_value());
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::ByPassRoute>(action2000.value()));
+
+  EXPECT_FALSE(HasPolicy(2001));
+}

@@ -49,6 +49,7 @@ void PolicyEngine::ClearPathRegistry() { _Registry.Clear(); }
 
 void PolicyEngine::AddPathPolicy(const std::string& path, const PolicyRule& policy) {
   _Registry.AddPathRule(path, policy);
+  _Selector.GetProcessTreeTracker().ApplyPathRule(path, policy);
 }
 
 void PolicyEngine::RemovePathPolicy(const std::string& path) { _Registry.RemovePathRule(path); }
