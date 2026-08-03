@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 #include <system_error>
+#include <unordered_map>
 #include <variant>
 #include <vector>
 
@@ -159,6 +160,7 @@ public:
   virtual void ClearPathRegistry() = 0;
   virtual void AddPathPolicy(const std::string& path, const PolicyRule& policy) = 0;
   virtual void RemovePathPolicy(const std::string& path) = 0;
+  virtual auto GetAllPolicies() -> std::unordered_map<std::string, PolicyRule> = 0;
   virtual auto AddProcessPolicy(ProcessSequence process, const PolicyRule& policy)
       -> std::expected<void, std::string> = 0;
   virtual void SetDefaultPolicy(const PolicyRule& policy) = 0;

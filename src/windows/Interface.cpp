@@ -52,6 +52,7 @@ public:
   void ClearPathRegistry() override;
   void AddPathPolicy(const std::string& path, const PolicyRule& policy) override;
   void RemovePathPolicy(const std::string& path) override;
+  auto GetAllPolicies() -> std::unordered_map<std::string, PolicyRule> override;
   auto AddProcessPolicy(ProcessSequence process, const PolicyRule& policy) -> std::expected<void, std::string> override;
   void SetDefaultPolicy(const PolicyRule& policy) override;
   auto LaunchWithPolicy(const std::string& imagePath, const std::optional<std::string>& commandLine,
@@ -302,6 +303,16 @@ void PlatformImpl::RemovePathPolicy(const std::string& path) {
     co_return;
   });
   future.get();
+}
+
+auto PlatformImpl::GetAllPolicies() -> std::unordered_map<std::string, PolicyRule> {
+  std::promise<std::unordered_map<std::string, PolicyRule>> promise;
+  auto future = promise.get_future();
+  _TaskQueue.Push([&promise](auto& context) -> Omni::Fiber::Coroutine<void> {
+    promise.set_value(context.PolicyEngine->GetAllPolicies());
+    co_return;
+  });
+  return future.get();
 }
 
 auto PlatformImpl::AddProcessPolicy(ProcessSequence process, const PolicyRule& policy)

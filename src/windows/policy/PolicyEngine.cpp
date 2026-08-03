@@ -54,6 +54,10 @@ void PolicyEngine::AddPathPolicy(const std::string& path, const PolicyRule& poli
 
 void PolicyEngine::RemovePathPolicy(const std::string& path) { _Registry.RemovePathRule(path); }
 
+auto PolicyEngine::GetAllPolicies() const -> std::unordered_map<std::string, PolicyRule> {
+  return _Registry.GetAllPolicies();
+}
+
 auto PolicyEngine::AddProcessPolicy(Interface::ProcessSequence process, const PolicyRule& policy)
     -> std::expected<void, std::string> {
   return _Selector.GetProcessTreeTracker().RegisterProcessPolicy(process, policy);

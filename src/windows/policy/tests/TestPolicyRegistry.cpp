@@ -43,6 +43,21 @@ TEST_F(TestPolicyRegistry, RegistryPathMatching) {
   EXPECT_FALSE(match4.has_value());
 }
 
+TEST_F(TestPolicyRegistry, GetAllPolicies) {
+  PolicyRegistry& reg = registry;
+
+  PolicyRule bypassRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::SingleProcess};
+  PolicyRule discardRule{.Action = PolicyRule::EndpointRoute{}, .Scope = PolicyScope::ProcessSubtree};
+
+  reg.AddPathRule("C:\\Windows\\notepad.exe", bypassRule);
+  reg.AddPathRule("C:\\Program Files\\Git\\bin\\git.exe", discardRule);
+
+  const auto& policies = reg.GetAllPolicies();
+  EXPECT_EQ(policies.size(), 2);
+  EXPECT_TRUE(policies.contains("C:\\Windows\\notepad.exe"));
+  EXPECT_TRUE(policies.contains("C:\\Program Files\\Git\\bin\\git.exe"));
+}
+
 TEST_F(TestPolicyRegistry, PolicyRuleToStringFormat) {
   PolicyRule bypassRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::SingleProcess};
   EXPECT_EQ(PolicyRuleToString(bypassRule), "Rule(Action=ByPass, Scope=SingleProcess)");

@@ -31,6 +31,7 @@ public:
   void ClearPathRegistry();
   void AddPathPolicy(const std::string& path, const PolicyRule& policy);
   void RemovePathPolicy(const std::string& path);
+  [[nodiscard]] auto GetAllPolicies() const -> std::unordered_map<std::string, PolicyRule>;
   auto AddProcessPolicy(Interface::ProcessSequence process, const PolicyRule& policy)
       -> std::expected<void, std::string>;
   void SetDefaultPolicy(const PolicyRule& policy);

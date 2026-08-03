@@ -32,7 +32,7 @@ void PolicyRegistry::SetDefaultAction(const PolicyRule::RoutingAction& action) {
 
 auto PolicyRegistry::GetDefaultAction() const -> PolicyRule::RoutingAction { return _DefaultRoute; }
 
-auto PolicyRegistry::GetCurrentProcessAction() -> PolicyRule::RoutingAction { return PolicyRule::ByPassRoute{}; }
+auto PolicyRegistry::GetAllPolicies() const -> const std::unordered_map<std::string, PolicyRule>& { return _PathRules; }
 
 auto PolicyRuleToString(const PolicyRule& rule) -> std::string {
   std::string scopeStr;

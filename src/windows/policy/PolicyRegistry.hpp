@@ -32,7 +32,7 @@ public:
   void SetDefaultAction(const PolicyRule::RoutingAction& action);
   [[nodiscard]] auto GetDefaultAction() const -> PolicyRule::RoutingAction;
 
-  [[nodiscard]] static auto GetCurrentProcessAction() -> PolicyRule::RoutingAction;
+  [[nodiscard]] auto GetAllPolicies() const -> const std::unordered_map<std::string, PolicyRule>&;
 
 private:
   std::unordered_map<std::string, PolicyRule> _PathRules;
