@@ -54,7 +54,8 @@ public:
   void RemovePathPolicy(const std::string& path) override;
   auto GetAllPolicies() -> std::unordered_map<std::string, PolicyRule> override;
   auto AddProcessPolicy(ProcessSequence process, const PolicyRule& policy) -> std::expected<void, std::string> override;
-  void SetDefaultPolicy(const PolicyRule& policy) override;
+  void SetDefaultAction(const PolicyRule::RoutingAction& action) override;
+  auto GetDefaultAction() -> PolicyRule::RoutingAction override;
   auto LaunchWithPolicy(const std::string& imagePath, const std::optional<std::string>& commandLine,
                         const PolicyRule& policy) -> std::expected<ProcessSequence, std::string> override;
   auto GetFlows() -> std::vector<FlowInfo> override;
@@ -326,15 +327,25 @@ auto PlatformImpl::AddProcessPolicy(ProcessSequence process, const PolicyRule& p
   return future.get();
 }
 
-void PlatformImpl::SetDefaultPolicy(const PolicyRule& policy) {
+void PlatformImpl::SetDefaultAction(const PolicyRule::RoutingAction& action) {
   std::promise<void> promise;
   auto future = promise.get_future();
-  _TaskQueue.Push([&promise, policy](auto& context) -> Omni::Fiber::Coroutine<void> {
-    context.PolicyEngine->SetDefaultPolicy(policy);
+  _TaskQueue.Push([&promise, action](auto& context) -> Omni::Fiber::Coroutine<void> {
+    context.PolicyEngine->SetDefaultAction(action);
     promise.set_value();
     co_return;
   });
   future.get();
+}
+
+auto PlatformImpl::GetDefaultAction() -> PolicyRule::RoutingAction {
+  std::promise<PolicyRule::RoutingAction> promise;
+  auto future = promise.get_future();
+  _TaskQueue.Push([&promise](auto& context) -> Omni::Fiber::Coroutine<void> {
+    promise.set_value(context.PolicyEngine->GetDefaultAction());
+    co_return;
+  });
+  return future.get();
 }
 
 auto PlatformImpl::LaunchWithPolicy(const std::string& imagePath, const std::optional<std::string>& commandLine,

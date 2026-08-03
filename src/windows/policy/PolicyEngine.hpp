@@ -34,7 +34,8 @@ public:
   [[nodiscard]] auto GetAllPolicies() const -> std::unordered_map<std::string, PolicyRule>;
   auto AddProcessPolicy(Interface::ProcessSequence process, const PolicyRule& policy)
       -> std::expected<void, std::string>;
-  void SetDefaultPolicy(const PolicyRule& policy);
+  void SetDefaultAction(const PolicyRule::RoutingAction& action);
+  [[nodiscard]] auto GetDefaultAction() const -> PolicyRule::RoutingAction;
   auto LaunchWithPolicy(const std::string& imagePath, const std::optional<std::string>& commandLine,
                         const PolicyRule& policy) -> std::expected<Interface::ProcessSequence, std::string>;
 

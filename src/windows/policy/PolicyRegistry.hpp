@@ -28,15 +28,13 @@ public:
   void AddPathRule(const std::string& pathPattern, const PolicyRule& rule);
   void RemovePathRule(const std::string& pathPattern);
   [[nodiscard]] auto GetRuleForPath(const std::string& path) const -> std::optional<PolicyRule>;
-
   void SetDefaultAction(const PolicyRule::RoutingAction& action);
   [[nodiscard]] auto GetDefaultAction() const -> PolicyRule::RoutingAction;
-
   [[nodiscard]] auto GetAllPolicies() const -> const std::unordered_map<std::string, PolicyRule>&;
 
 private:
   std::unordered_map<std::string, PolicyRule> _PathRules;
-  PolicyRule::RoutingAction _DefaultRoute = PolicyRule::ByPassRoute{};
+  PolicyRule::RoutingAction _DefaultAction = PolicyRule::ByPassRoute{};
 };
 
 auto PolicyRuleToString(const PolicyRule& rule) -> std::string;

@@ -9,7 +9,7 @@ namespace gh::policy {
 
 void PolicyRegistry::Clear() {
   _PathRules.clear();
-  _DefaultRoute = PolicyRule::ByPassRoute{};
+  _DefaultAction = PolicyRule::ByPassRoute{};
 }
 
 void PolicyRegistry::AddPathRule(const std::string& pathPattern, const PolicyRule& rule) {
@@ -28,9 +28,9 @@ auto PolicyRegistry::GetRuleForPath(const std::string& path) const -> std::optio
   return std::nullopt;
 }
 
-void PolicyRegistry::SetDefaultAction(const PolicyRule::RoutingAction& action) { _DefaultRoute = action; }
+void PolicyRegistry::SetDefaultAction(const PolicyRule::RoutingAction& action) { _DefaultAction = action; }
 
-auto PolicyRegistry::GetDefaultAction() const -> PolicyRule::RoutingAction { return _DefaultRoute; }
+auto PolicyRegistry::GetDefaultAction() const -> PolicyRule::RoutingAction { return _DefaultAction; }
 
 auto PolicyRegistry::GetAllPolicies() const -> const std::unordered_map<std::string, PolicyRule>& { return _PathRules; }
 

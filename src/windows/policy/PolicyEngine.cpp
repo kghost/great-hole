@@ -63,7 +63,9 @@ auto PolicyEngine::AddProcessPolicy(Interface::ProcessSequence process, const Po
   return _Selector.GetProcessTreeTracker().RegisterProcessPolicy(process, policy);
 }
 
-void PolicyEngine::SetDefaultPolicy(const PolicyRule& policy) { _Registry.SetDefaultAction(policy.Action); }
+void PolicyEngine::SetDefaultAction(const PolicyRule::RoutingAction& action) { _Registry.SetDefaultAction(action); }
+
+auto PolicyEngine::GetDefaultAction() const -> PolicyRule::RoutingAction { return _Registry.GetDefaultAction(); }
 
 auto PolicyEngine::LaunchWithPolicy(const std::string& imagePath, const std::optional<std::string>& commandLine,
                                     const PolicyRule& policy)

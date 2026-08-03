@@ -11,13 +11,9 @@ class TestPolicyRegistry : public ::testing::Test {
 protected:
   PolicyRegistry registry;
 
-  void SetUp() override {
-    registry.Clear();
-  }
+  void SetUp() override { registry.Clear(); }
 
-  void TearDown() override {
-    registry.Clear();
-  }
+  void TearDown() override { registry.Clear(); }
 };
 
 TEST_F(TestPolicyRegistry, RegistryPathMatching) {
@@ -58,6 +54,23 @@ TEST_F(TestPolicyRegistry, GetAllPolicies) {
   EXPECT_TRUE(policies.contains("C:\\Program Files\\Git\\bin\\git.exe"));
 }
 
+TEST_F(TestPolicyRegistry, DefaultAction) {
+  PolicyRegistry& reg = registry;
+
+  auto defaultAction = reg.GetDefaultAction();
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::ByPassRoute>(defaultAction));
+
+  PolicyRule::RoutingAction customAction = PolicyRule::EndpointRoute{};
+  reg.SetDefaultAction(customAction);
+
+  auto updatedAction = reg.GetDefaultAction();
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(updatedAction));
+
+  reg.Clear();
+  auto clearedAction = reg.GetDefaultAction();
+  EXPECT_TRUE(std::holds_alternative<PolicyRule::ByPassRoute>(clearedAction));
+}
+
 TEST_F(TestPolicyRegistry, PolicyRuleToStringFormat) {
   PolicyRule bypassRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::SingleProcess};
   EXPECT_EQ(PolicyRuleToString(bypassRule), "Rule(Action=ByPass, Scope=SingleProcess)");
@@ -65,4 +78,3 @@ TEST_F(TestPolicyRegistry, PolicyRuleToStringFormat) {
   PolicyRule endpointRule{.Action = PolicyRule::EndpointRoute{}, .Scope = PolicyScope::ProcessSubtree};
   EXPECT_EQ(PolicyRuleToString(endpointRule), "Rule(Action=Endpoint[Invalid], Scope=ProcessSubtree)");
 }
-
