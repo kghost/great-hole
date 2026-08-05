@@ -65,14 +65,14 @@ foreach ($Variant in $Variants) {
             }
             else {
                 $BinariesMap = @{
-                    "great-hole-windows-asan.dll"            = "src/windows/Release/great-hole-windows-asan.dll"
-                    "great-hole-windows-asan.lib"            = "src/windows/Release/great-hole-windows-asan.lib"
-                    "great-hole-windows-asan.pdb"            = "src/windows/Release/great-hole-windows-asan.pdb"
+                    "great-hole-windows-asan.dll"            = "src/windows/RelWithDebInfo/great-hole-windows-asan.dll"
+                    "great-hole-windows-asan.lib"            = "src/windows/RelWithDebInfo/great-hole-windows-asan.lib"
+                    "great-hole-windows-asan.pdb"            = "src/windows/RelWithDebInfo/great-hole-windows-asan.pdb"
                     "WinDivert.dll"                          = "_deps/windivert-src/x64/WinDivert.dll"
                     "WinDivert64.sys"                        = "_deps/windivert-src/x64/WinDivert64.sys"
-                    "boost_filesystem-vc145-mt-x64-1_91.dll" = "src/windows/Release/boost_filesystem-vc145-mt-x64-1_91.dll"
-                    "boost_log-vc145-mt-x64-1_91.dll"        = "src/windows/Release/boost_log-vc145-mt-x64-1_91.dll"
-                    "boost_thread-vc145-mt-x64-1_91.dll"     = "src/windows/Release/boost_thread-vc145-mt-x64-1_91.dll"
+                    "boost_filesystem-vc145-mt-x64-1_91.dll" = "src/windows/RelWithDebInfo/boost_filesystem-vc145-mt-x64-1_91.dll"
+                    "boost_log-vc145-mt-x64-1_91.dll"        = "src/windows/RelWithDebInfo/boost_log-vc145-mt-x64-1_91.dll"
+                    "boost_thread-vc145-mt-x64-1_91.dll"     = "src/windows/RelWithDebInfo/boost_thread-vc145-mt-x64-1_91.dll"
                 }
             }
         }
@@ -91,14 +91,14 @@ foreach ($Variant in $Variants) {
             }
             else {
                 $BinariesMap = @{
-                    "great-hole-windows.dll"                 = "src/windows/Release/great-hole-windows.dll"
-                    "great-hole-windows.lib"                 = "src/windows/Release/great-hole-windows.lib"
-                    "great-hole-windows.pdb"                 = "src/windows/Release/great-hole-windows.pdb"
+                    "great-hole-windows.dll"                 = "src/windows/RelWithDebInfo/great-hole-windows.dll"
+                    "great-hole-windows.lib"                 = "src/windows/RelWithDebInfo/great-hole-windows.lib"
+                    "great-hole-windows.pdb"                 = "src/windows/RelWithDebInfo/great-hole-windows.pdb"
                     "WinDivert.dll"                          = "_deps/windivert-src/x64/WinDivert.dll"
                     "WinDivert64.sys"                        = "_deps/windivert-src/x64/WinDivert64.sys"
-                    "boost_filesystem-vc145-mt-x64-1_91.dll" = "src/windows/Release/boost_filesystem-vc145-mt-x64-1_91.dll"
-                    "boost_log-vc145-mt-x64-1_91.dll"        = "src/windows/Release/boost_log-vc145-mt-x64-1_91.dll"
-                    "boost_thread-vc145-mt-x64-1_91.dll"     = "src/windows/Release/boost_thread-vc145-mt-x64-1_91.dll"
+                    "boost_filesystem-vc145-mt-x64-1_91.dll" = "src/windows/RelWithDebInfo/boost_filesystem-vc145-mt-x64-1_91.dll"
+                    "boost_log-vc145-mt-x64-1_91.dll"        = "src/windows/RelWithDebInfo/boost_log-vc145-mt-x64-1_91.dll"
+                    "boost_thread-vc145-mt-x64-1_91.dll"     = "src/windows/RelWithDebInfo/boost_thread-vc145-mt-x64-1_91.dll"
                 }
             }
         }
@@ -114,10 +114,6 @@ foreach ($Variant in $Variants) {
                 Copy-Item -Path $SrcFile -Destination $DestFile -Force
             }
             else {
-                if ($File.EndsWith(".pdb") -and $Config -eq "Release") {
-                    # PDB is expectedly missing in Release build
-                    continue
-                }
                 Write-Warning "Source file not found: $SrcFile"
             }
         }
