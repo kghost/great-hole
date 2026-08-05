@@ -4,6 +4,12 @@ add_library(androidhole_dataplane SHARED
   JniTunnelDataPlaneNative.cpp
 )
 
+set_target_properties(androidhole_dataplane PROPERTIES
+  C_VISIBILITY_PRESET hidden
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN ON
+)
+
 target_include_directories(androidhole_dataplane PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_SOURCE_DIR}/src
@@ -12,6 +18,12 @@ target_include_directories(androidhole_dataplane PRIVATE
   ${CMAKE_SOURCE_DIR}/src/application
   ${CMAKE_SOURCE_DIR}/src/resolvers
   ${CMAKE_SOURCE_DIR}/libs/omni-fiber
+)
+
+target_link_options(androidhole_dataplane PRIVATE
+  "-Wl,--gc-sections"
+  "-Wl,--exclude-libs,ALL"
+  "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/androidhole_dataplane.map"
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Release")

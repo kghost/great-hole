@@ -65,6 +65,17 @@ if(ANDROID)
   set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH CACHE STRING "Find root path mode package" FORCE)
   set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY BOTH CACHE STRING "Find root path mode library" FORCE)
   set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH CACHE STRING "Find root path mode include" FORCE)
+
+  # Find CARES manually
+  find_path(CARES_INCLUDE_DIR NAMES ares.h)
+  find_library(CARES_LIBRARY NAMES cares)
+  add_library(PkgConfig::CARES INTERFACE IMPORTED)
+  set_target_properties(PkgConfig::CARES PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${CARES_INCLUDE_DIR}"
+    INTERFACE_LINK_LIBRARIES "${CARES_LIBRARY}"
+  )
+
+  add_compile_options(-ffunction-sections -fdata-sections)
 endif()
 
 if(WIN32)
@@ -76,25 +87,12 @@ if(WIN32)
   add_compile_definitions(BOOST_USE_WINDOWS_H)
   add_compile_definitions(BOOST_NO_ANSI_APIS)
   add_compile_definitions(BOOST_ASIO_HAS_WINDOWS_OBJECT_HANDLE)
-endif()
 
-if(WIN32)
   find_path(KRABSETW_INCLUDE_DIR "krabs.hpp")
 endif()
 
 # Dependencies
 find_package(Boost REQUIRED COMPONENTS log log_setup program_options filesystem thread)
-
-if(ANDROID)
-  # Find CARES manually
-  find_path(CARES_INCLUDE_DIR NAMES ares.h)
-  find_library(CARES_LIBRARY NAMES cares)
-  add_library(PkgConfig::CARES INTERFACE IMPORTED)
-  set_target_properties(PkgConfig::CARES PROPERTIES
-    INTERFACE_INCLUDE_DIRECTORIES "${CARES_INCLUDE_DIR}"
-    INTERFACE_LINK_LIBRARIES "${CARES_LIBRARY}"
-  )
-endif()
 
 find_package(PkgConfig REQUIRED)
 
