@@ -456,7 +456,7 @@ auto ProcessTreeTracker::GetProcessTree() const -> std::vector<Interface::Proces
     list.push_back(Interface::ProcessInfo{
         .Process = node.ProcessSequence,
         .ParentProcess = node.ParentProcessSequence,
-        .ProcessId = node.ProcessId,
+        .InfoProcessId = node.ProcessId,
         .Policy = node.Policy,
     });
   }

@@ -46,7 +46,7 @@ protected:
 
   auto HasPolicy(DWORD pid) const -> bool {
     auto tree = tracker.GetProcessTree();
-    auto it = std::find_if(tree.begin(), tree.end(), [pid](const auto& info) { return info.ProcessId == pid; });
+    auto it = std::find_if(tree.begin(), tree.end(), [pid](const auto& info) { return info.InfoProcessId == pid; });
     return it != tree.end() && it->Policy.has_value();
   }
 };
@@ -167,14 +167,14 @@ TEST_F(TestProcessTreeTracker, ExposeProcessTree) {
   bool found6000 = false;
   bool found6001 = false;
   for (const auto& entry : tree) {
-    if (entry.ProcessId == 6000) {
+    if (entry.InfoProcessId == 6000) {
       found6000 = true;
       EXPECT_EQ(entry.Process, node6000.ProcessSequence);
       EXPECT_EQ(entry.ParentProcess, 0);
       ASSERT_TRUE(entry.Policy.has_value());
       EXPECT_TRUE(std::holds_alternative<PolicyRule::EndpointRoute>(entry.Policy->Action));
       EXPECT_EQ(entry.Policy->Scope, PolicyScope::ProcessSubtree);
-    } else if (entry.ProcessId == 6001) {
+    } else if (entry.InfoProcessId == 6001) {
       found6001 = true;
       EXPECT_EQ(entry.Process, node6001.ProcessSequence);
       EXPECT_EQ(entry.ParentProcess, node6000.ProcessSequence);

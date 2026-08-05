@@ -103,7 +103,7 @@ struct PolicyRule {
 struct ProcessInfo {
   ProcessSequence Process{0};
   std::optional<ProcessSequence> ParentProcess{0};
-  ProcessId ProcessId{0};
+  ProcessId InfoProcessId{0};
   std::optional<PolicyRule> Policy;
 };
 
