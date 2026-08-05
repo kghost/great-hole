@@ -1,4 +1,3 @@
-#include "Interface.hpp"
 #include "info_kghost_android_hole_vpn_dataplane_JniTunnelDataPlaneNative.h"
 
 #include <android/log.h>
@@ -27,6 +26,7 @@
 #include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
 #include "ExternalQueue.hpp"
+#include "Interface.hpp"
 #include "MoveOnlyFunction.hpp"
 #include "TunnelDataPlane.hpp"
 #include "Utils.hpp"
