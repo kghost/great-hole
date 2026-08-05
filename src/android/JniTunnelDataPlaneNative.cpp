@@ -1,3 +1,4 @@
+#include "Interface.hpp"
 #include "info_kghost_android_hole_vpn_dataplane_JniTunnelDataPlaneNative.h"
 
 #include <android/log.h>
@@ -39,9 +40,7 @@ static jmethodID g_MidOnVpnStateChanged = nullptr;
 
 namespace gh {
 
-class JniSelector;
-
-class JniSession : public DataPlaneCallbacks {
+class JniSession : public Interface::DataPlaneCallbacks {
 public:
   using Task = Omni::Fiber::move_only_function<Omni::Fiber::Coroutine<void>(TunnelDataPlane&, bool&)>;
 
@@ -49,11 +48,11 @@ public:
   ~JniSession() override;
 
   JniSession(const JniSession&) = delete;
-  JniSession& operator=(const JniSession&) = delete;
+  auto operator=(const JniSession&) -> JniSession& = delete;
   JniSession(JniSession&&) = delete;
-  JniSession& operator=(JniSession&&) = delete;
+  auto operator=(JniSession&&) -> JniSession& = delete;
 
-  static JNIEnv* GetEnv() {
+  static auto GetEnv() -> JNIEnv* {
     JNIEnv* env = nullptr;
     jint res = g_JavaVM->GetEnv((void**)&env, JNI_VERSION_1_6);
     if (res == JNI_EDETACHED) {
@@ -65,29 +64,29 @@ public:
   void Start(int tunFd, int mtu, std::vector<char> encryptionKey);
   void MigrateTun(int tunFd);
   void Stop();
-  jlong AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address);
+  auto AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address) -> jlong;
   void RemoveEndpoint(jlong handle);
   void StartEndpoint(jlong handle);
   void StopEndpoint(jlong handle);
 
-  jobject GetCallbacks() const { return _Callbacks; }
-  TunnelDataPlane* GetDataPlane() const { return _DataPlane; }
+  auto GetCallbacks() const -> jobject { return _Callbacks; }
 
-  bool ProtectSocket(int fd);
+  auto ProtectSocket(int fd) -> bool;
   void OnVpnStateChanged(Interface::TunnelState state, const std::string& message) override;
   void OnEndpointStateChanged(Interface::VpnEndpoint endpoint, Interface::TunnelState state,
                               const std::string& error) override;
-  std::optional<VpnTrafficStats> GetTrafficStats(jlong endpointHandle);
+  auto GetTrafficStats(jlong endpointHandle) -> std::optional<Interface::VpnTrafficStats>;
 
-  std::weak_ptr<VpnClientMultiChannelSession> FindSession(const VpnClientMultiChannelSession* ptr) const {
+  auto FindSession(const VpnClientMultiChannelSession* ptr) const -> std::weak_ptr<VpnClientMultiChannelSession> {
     auto iter = _EndpointMap.find(ptr);
     return iter != _EndpointMap.end() ? iter->second : std::weak_ptr<VpnClientMultiChannelSession>{};
   }
 
   template <typename Func> void PostTask(Func&& func) {
-    _TaskQueue.Push([func = std::forward<Func>(func)](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
-      co_await func(dp, stop);
-    });
+    _TaskQueue.Push(
+        [func = std::forward<Func>(func)](TunnelDataPlane& dataplane, bool& stop) -> Omni::Fiber::Coroutine<void> {
+          co_await func(dataplane, stop);
+        });
   }
 
 private:
@@ -96,67 +95,65 @@ private:
   boost::asio::io_context _IoContext;
   std::thread _Thread;
 
-  std::unique_ptr<JniSelector> _Selector;
   Omni::Fiber::ExternalQueue<Task> _TaskQueue;
-  TunnelDataPlane* _DataPlane = nullptr;
 
   std::unordered_map<const VpnClientMultiChannelSession*, std::weak_ptr<VpnClientMultiChannelSession>> _EndpointMap;
 
   std::atomic<bool> _Stopped{false};
 };
 
-class JniSelector : public ConnectionTracker::Selector {
+class PolicyResolverCallback : public TunnelDataPlanePolicyResolverCallback {
 public:
-  explicit JniSelector(JniSession& session) : _Session(session) {}
-  ~JniSelector() override = default;
+  explicit PolicyResolverCallback(JniSession& session) : _Session(session) {}
+  ~PolicyResolverCallback() override = default;
 
-  auto Select(const ConnectionTracker::ConnectionKey& key) -> Action override;
+  PolicyResolverCallback(const PolicyResolverCallback&) = default;
+  PolicyResolverCallback(PolicyResolverCallback&&) = delete;
+  auto operator=(const PolicyResolverCallback&) -> PolicyResolverCallback& = delete;
+  auto operator=(PolicyResolverCallback&&) -> PolicyResolverCallback& = delete;
+
+  auto ResolvePolicy(const ConnectionTracker::ConnectionKey& key) -> Interface::PolicyRule::RoutingAction override;
 
 private:
-  std::shared_ptr<ConnectionMark> FindTunnel(int protocol, const boost::asio::ip::address& localAddr,
-                                             uint16_t localPort, const boost::asio::ip::address& remoteAddr,
-                                             uint16_t remotePort) const;
+  [[nodiscard]] auto FindTunnel(int protocol, const boost::asio::ip::address& localAddr, uint16_t localPort,
+                                const boost::asio::ip::address& remoteAddr, uint16_t remotePort) const
+      -> Interface::PolicyRule::RoutingAction;
 
   JniSession& _Session;
 };
 
-// JniSelector Implementation
-
-std::shared_ptr<ConnectionMark> JniSelector::FindTunnel(int protocol, const boost::asio::ip::address& localAddr,
-                                                        uint16_t localPort, const boost::asio::ip::address& remoteAddr,
-                                                        uint16_t remotePort) const {
+// PolicyResolverCallback Implementation
+auto PolicyResolverCallback::FindTunnel(int protocol, const boost::asio::ip::address& localAddr, uint16_t localPort,
+                                        const boost::asio::ip::address& remoteAddr, uint16_t remotePort) const
+    -> Interface::PolicyRule::RoutingAction {
 
   JNIEnv* env = JniSession::GetEnv();
-  if (!env || !_Session.GetCallbacks()) {
-    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
-  }
-
   jbyteArray localBytes = env->NewByteArray(16);
-  if (!localBytes || env->ExceptionCheck()) {
+  if ((localBytes == nullptr) || (env->ExceptionCheck() != 0U)) {
     BOOST_LOG_TRIVIAL(warning) << "JNI exception or allocation failure for localBytes in FindTunnel";
-    if (env->ExceptionCheck()) {
+    if (env->ExceptionCheck() != 0U) {
       env->ExceptionClear();
     }
-    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
+    return Interface::PolicyRule::DiscardRoute{};
   }
   auto v6Local = MapToV6(localAddr).to_bytes();
   env->SetByteArrayRegion(localBytes, 0, 16, reinterpret_cast<const jbyte*>(v6Local.data()));
 
   jbyteArray remoteBytes = env->NewByteArray(16);
-  if (!remoteBytes || env->ExceptionCheck()) {
+  if ((remoteBytes == nullptr) || (env->ExceptionCheck() != 0U)) {
     BOOST_LOG_TRIVIAL(warning) << "JNI exception or allocation failure for remoteBytes in FindTunnel";
-    if (env->ExceptionCheck()) {
+    if (env->ExceptionCheck() != 0U) {
       env->ExceptionClear();
     }
     env->DeleteLocalRef(localBytes);
-    return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
+    return Interface::PolicyRule::DiscardRoute{};
   }
   auto v6Remote = MapToV6(remoteAddr).to_bytes();
   env->SetByteArrayRegion(remoteBytes, 0, 16, reinterpret_cast<const jbyte*>(v6Remote.data()));
 
   jlong endpointHandle = env->CallLongMethod(_Session.GetCallbacks(), g_MidFindTunnelForFlow, protocol, localBytes,
                                              static_cast<jint>(localPort), remoteBytes, static_cast<jint>(remotePort));
-  if (env->ExceptionCheck()) {
+  if (env->ExceptionCheck() != 0U) {
     BOOST_LOG_TRIVIAL(warning) << "JNI exception in FindTunnel (findTunnelForFlow) for protocol " << protocol;
     env->ExceptionDescribe();
     env->ExceptionClear();
@@ -169,41 +166,41 @@ std::shared_ptr<ConnectionMark> JniSelector::FindTunnel(int protocol, const boos
   if (endpointHandle != 0) {
     auto session = _Session.FindSession(reinterpret_cast<const VpnClientMultiChannelSession*>(endpointHandle));
     if (auto sharedSession = session.lock()) {
-      return std::make_unique<VpnClientMultiChannel::Mark>(session);
+      return Interface::PolicyRule::EndpointRoute{session};
     }
   }
-  return std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{});
+  return Interface::PolicyRule::DiscardRoute{};
 }
 
-auto JniSelector::Select(const ConnectionTracker::ConnectionKey& key) -> ConnectionTracker::Selector::Action {
-  return std::visit(Overload{[this](const ConnectionTracker::Ip4TcpKey& k) {
-                               return FindTunnel(6, k.LocalAddress, k.LocalPort, k.RemoteAddress, k.RemotePort);
-                             },
-                             [this](const ConnectionTracker::Ip6TcpKey& k) {
-                               return FindTunnel(6, k.LocalAddress, k.LocalPort, k.RemoteAddress, k.RemotePort);
-                             },
-                             [this](const ConnectionTracker::Ip4UdpKey& k) {
-                               return FindTunnel(17, k.LocalAddress, k.LocalPort, k.RemoteAddress, k.RemotePort);
-                             },
-                             [this](const ConnectionTracker::Ip6UdpKey& k) {
-                               return FindTunnel(17, k.LocalAddress, k.LocalPort, k.RemoteAddress, k.RemotePort);
-                             },
-                             [this](const ConnectionTracker::IcmpKey& k) {
-                               return FindTunnel(1, k.LocalAddress, k.Id, k.RemoteAddress, 0);
-                             },
-                             [this](const ConnectionTracker::Icmp6Key& k) {
-                               return FindTunnel(58, k.LocalAddress, k.Id, k.RemoteAddress, 0);
-                             }},
-                    key);
+auto PolicyResolverCallback::ResolvePolicy(const ConnectionTracker::ConnectionKey& key)
+    -> Interface::PolicyRule::RoutingAction {
+  return std::visit(
+      Overload{[this](const ConnectionTracker::Ip4TcpKey& key) -> Interface::PolicyRule::RoutingAction {
+                 return FindTunnel(6, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
+               },
+               [this](const ConnectionTracker::Ip6TcpKey& key) -> Interface::PolicyRule::RoutingAction {
+                 return FindTunnel(6, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
+               },
+               [this](const ConnectionTracker::Ip4UdpKey& key) -> Interface::PolicyRule::RoutingAction {
+                 return FindTunnel(17, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
+               },
+               [this](const ConnectionTracker::Ip6UdpKey& key) -> Interface::PolicyRule::RoutingAction {
+                 return FindTunnel(17, key.LocalAddress, key.LocalPort, key.RemoteAddress, key.RemotePort);
+               },
+               [this](const ConnectionTracker::IcmpKey& key) -> Interface::PolicyRule::RoutingAction {
+                 return FindTunnel(1, key.LocalAddress, key.Id, key.RemoteAddress, 0);
+               },
+               [this](const ConnectionTracker::Icmp6Key& key) -> Interface::PolicyRule::RoutingAction {
+                 return FindTunnel(58, key.LocalAddress, key.Id, key.RemoteAddress, 0);
+               }},
+      key);
 }
 
 // JniSession Implementation
 
 JniSession::JniSession(JNIEnv* env, jobject callbacks, jobject connectivityManager)
-    : _TaskQueue(_IoContext.get_executor()) {
-  _Callbacks = env->NewGlobalRef(callbacks);
-  _ConnectivityManager = env->NewGlobalRef(connectivityManager);
-
+    : _Callbacks(env->NewGlobalRef(callbacks)), _ConnectivityManager(env->NewGlobalRef(connectivityManager)),
+      _TaskQueue(_IoContext.get_executor()) {
   int res = ares_library_init_android(_ConnectivityManager);
   if (res != ARES_SUCCESS) {
     BOOST_LOG_TRIVIAL(warning) << "ares_library_init_android failed: " << res;
@@ -220,22 +217,17 @@ JniSession::JniSession(JNIEnv* env, jobject callbacks, jobject connectivityManag
     Omni::Fiber::AsioExecutor executor(ioExecutor);
     Omni::Fiber::Manager manager(executor);
 
-    _Selector = std::make_unique<JniSelector>(*this);
-
     manager.SpawnRoot("root", [this]() -> Omni::Fiber::Coroutine<void> {
-      TunnelDataPlane dp(_IoContext.get_executor(), *_Selector, *this);
-      _DataPlane = &dp;
-
+      auto policyResolver = std::make_unique<PolicyResolverCallback>(*this);
+      TunnelDataPlane dataplane(_IoContext.get_executor(), *policyResolver, *this);
       bool stop = false;
       while (!stop) {
         co_await _TaskQueue;
         while (!_TaskQueue.IsEmpty()) {
           auto task = _TaskQueue.PopFront();
-          co_await task(dp, stop);
+          co_await task(dataplane, stop);
         }
       }
-
-      _DataPlane = nullptr;
       co_return;
     });
 
@@ -246,20 +238,14 @@ JniSession::JniSession(JNIEnv* env, jobject callbacks, jobject connectivityManag
 JniSession::~JniSession() {
   Stop();
   JNIEnv* env = GetEnv();
-  if (env) {
-    if (_Callbacks) {
-      env->DeleteGlobalRef(_Callbacks);
-    }
-    if (_ConnectivityManager) {
-      env->DeleteGlobalRef(_ConnectivityManager);
-    }
-  }
+  env->DeleteGlobalRef(_Callbacks);
+  env->DeleteGlobalRef(_ConnectivityManager);
 }
 
 void JniSession::Start(int tunFd, int mtu, std::vector<char> encryptionKey) {
-  PostTask([this, tunFd, mtu, encryptionKey = std::move(encryptionKey)](TunnelDataPlane& dp,
+  PostTask([this, tunFd, mtu, encryptionKey = std::move(encryptionKey)](TunnelDataPlane& dataplane,
                                                                         bool& stop) -> Omni::Fiber::Coroutine<void> {
-    auto err = co_await dp.Start(tunFd, mtu, std::move(encryptionKey));
+    auto err = co_await dataplane.Start(tunFd, mtu, encryptionKey);
     if (err) {
       BOOST_LOG_TRIVIAL(error) << "Failed to start TunnelDataPlane: " << err.message();
       OnVpnStateChanged(Interface::TunnelState::Failed, err.message());
@@ -269,8 +255,8 @@ void JniSession::Start(int tunFd, int mtu, std::vector<char> encryptionKey) {
 }
 
 void JniSession::MigrateTun(int tunFd) {
-  PostTask([tunFd](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
-    co_await dp.MigrateTun(tunFd);
+  PostTask([tunFd](TunnelDataPlane& dataplane, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    co_await dataplane.MigrateTun(tunFd);
     co_return;
   });
 }
@@ -284,8 +270,8 @@ void JniSession::Stop() {
   std::promise<void> promise;
   auto future = promise.get_future();
 
-  PostTask([&promise](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
-    co_await dp.Stop();
+  PostTask([&promise](TunnelDataPlane& dataplane, bool& stop) -> Omni::Fiber::Coroutine<void> {
+    co_await dataplane.Stop();
     stop = true;
     promise.set_value();
     co_return;
@@ -298,7 +284,7 @@ void JniSession::Stop() {
   }
 }
 
-jlong JniSession::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address) {
+auto JniSession::AddEndpoint(const UdpDynMux::PskType& psk, const std::string& address) -> jlong {
   std::promise<jlong> promise;
   auto future = promise.get_future();
 
@@ -345,22 +331,22 @@ void JniSession::StopEndpoint(jlong handle) {
 }
 
 void JniSession::OnVpnStateChanged(Interface::TunnelState state, const std::string& message) {
-  if (!_Callbacks) {
+  if (_Callbacks == nullptr) {
     return;
   }
   JNIEnv* env = GetEnv();
   jstring msgStr = !message.empty() ? env->NewStringUTF(message.c_str()) : nullptr;
-  if (env->ExceptionCheck()) {
+  if (env->ExceptionCheck() != 0U) {
     BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnVpnStateChanged (NewStringUTF)";
     env->ExceptionClear();
   }
   env->CallVoidMethod(_Callbacks, g_MidOnVpnStateChanged, static_cast<jint>(state), msgStr);
-  if (env->ExceptionCheck()) {
+  if (env->ExceptionCheck() != 0U) {
     BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnVpnStateChanged (onVpnStateChanged)";
     env->ExceptionDescribe();
     env->ExceptionClear();
   }
-  if (msgStr) {
+  if (msgStr != nullptr) {
     env->DeleteLocalRef(msgStr);
   }
 }
@@ -372,46 +358,45 @@ void JniSession::OnEndpointStateChanged(Interface::VpnEndpoint endpoint, Interfa
   }
   JNIEnv* env = GetEnv();
   jstring errStr = !error.empty() ? env->NewStringUTF(error.c_str()) : nullptr;
-  if (env->ExceptionCheck()) {
+  if (env->ExceptionCheck() != 0U) {
     BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnEndpointStateChanged (NewStringUTF)";
     env->ExceptionClear();
   }
   env->CallVoidMethod(_Callbacks, g_MidOnTunnelStateChanged, reinterpret_cast<jlong>(endpoint.lock().get()),
                       static_cast<jint>(std::to_underlying(state)), errStr);
-  if (env->ExceptionCheck()) {
+  if (env->ExceptionCheck() != 0U) {
     BOOST_LOG_TRIVIAL(warning) << "JNI exception in OnEndpointStateChanged (onTunnelStateChanged)";
     env->ExceptionDescribe();
     env->ExceptionClear();
   }
-  if (errStr) {
+  if (errStr != nullptr) {
     env->DeleteLocalRef(errStr);
   }
 }
 
-std::optional<VpnTrafficStats> JniSession::GetTrafficStats(jlong endpointHandle) {
-  std::promise<std::optional<VpnTrafficStats>> promise;
+auto JniSession::GetTrafficStats(jlong endpointHandle) -> std::optional<Interface::VpnTrafficStats> {
+  std::promise<std::optional<Interface::VpnTrafficStats>> promise;
   auto future = promise.get_future();
 
-  PostTask([this, &promise, endpointHandle](TunnelDataPlane& dp, bool& stop) -> Omni::Fiber::Coroutine<void> {
+  PostTask([this, &promise, endpointHandle](TunnelDataPlane& dataplane, bool& stop) -> Omni::Fiber::Coroutine<void> {
     auto* ptr = reinterpret_cast<VpnClientMultiChannelSession*>(endpointHandle);
     auto session = FindSession(ptr);
-    promise.set_value(dp.GetTrafficStats(session));
+    promise.set_value(TunnelDataPlane::GetTrafficStats(session));
     co_return;
   });
-
   return future.get();
 }
 
 } // namespace gh
 
-static gh::JniSession* GetSession(jlong handle) { return reinterpret_cast<gh::JniSession*>(handle); }
-
 namespace {
+
+auto GetSession(jlong handle) -> gh::JniSession* { return reinterpret_cast<gh::JniSession*>(handle); }
 
 class AndroidLogBackend
     : public boost::log::sinks::basic_formatted_sink_backend<char, boost::log::sinks::synchronized_feeding> {
 public:
-  void consume(const boost::log::record_view& rec, const string_type& formattedMessage) {
+  static void consume(const boost::log::record_view& rec, const string_type& formattedMessage) {
     android_LogPriority priority = ANDROID_LOG_INFO;
     if (auto severity = rec[boost::log::trivial::severity]) {
       switch (*severity) {
@@ -447,19 +432,19 @@ void SetupLogging() {
 
 } // namespace
 
-JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
-  g_JavaVM = vm;
+JNIEXPORT auto JNICALL JNI_OnLoad(JavaVM* jvm, void* /*reserved*/) -> jint {
+  g_JavaVM = jvm;
   JNIEnv* env = nullptr;
-  if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) {
+  if (jvm->GetEnv((void**)&env, JNI_VERSION_1_6) != JNI_OK) {
     return JNI_ERR;
   }
 
   SetupLogging();
 
-  ares_library_init_jvm(vm);
+  ares_library_init_jvm(jvm);
 
   jclass localCallbacksClass = env->FindClass("info/kghost/android_hole/vpn/dataplane/TunnelDataPlaneCallbacks");
-  if (!localCallbacksClass) {
+  if (localCallbacksClass == nullptr) {
     return JNI_ERR;
   }
   g_CallbacksClass = (jclass)env->NewGlobalRef(localCallbacksClass);
@@ -468,17 +453,18 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
   g_MidOnTunnelStateChanged = env->GetMethodID(g_CallbacksClass, "onTunnelStateChanged", "(JILjava/lang/String;)V");
   g_MidOnVpnStateChanged = env->GetMethodID(g_CallbacksClass, "onVpnStateChanged", "(ILjava/lang/String;)V");
 
-  if (!g_MidFindTunnelForFlow || !g_MidOnTunnelStateChanged || !g_MidOnVpnStateChanged) {
+  if ((g_MidFindTunnelForFlow == nullptr) || (g_MidOnTunnelStateChanged == nullptr) ||
+      (g_MidOnVpnStateChanged == nullptr)) {
     return JNI_ERR;
   }
 
   return JNI_VERSION_1_6;
 }
 
-JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* vm, void* reserved) {
+JNIEXPORT void JNICALL JNI_OnUnload(JavaVM* jvm, void* /*reserved*/) {
   JNIEnv* env = nullptr;
-  if (vm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_OK) {
-    if (g_CallbacksClass) {
+  if (jvm->GetEnv((void**)&env, JNI_VERSION_1_6) == JNI_OK) {
+    if (g_CallbacksClass != nullptr) {
       env->DeleteGlobalRef(g_CallbacksClass);
     }
   }

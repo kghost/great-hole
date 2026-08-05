@@ -90,11 +90,12 @@ using VpnEndpoint = std::weak_ptr<VpnClientMultiChannelSession>;
 
 struct PolicyRule {
   struct ByPassRoute {};
+  struct DiscardRoute {};
   struct EndpointRoute {
     VpnEndpoint Endpoint;
   };
 
-  using RoutingAction = std::variant<ByPassRoute, EndpointRoute>;
+  using RoutingAction = std::variant<ByPassRoute, DiscardRoute, EndpointRoute>;
 
   RoutingAction Action;
   PolicyScope Scope = PolicyScope::SingleProcess;

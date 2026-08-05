@@ -1,5 +1,4 @@
 #include "TunnelDataPlane.hpp"
-#include "PacketHeader.hpp"
 
 #include <boost/asio.hpp>
 #include <boost/asio/ip/address_v4.hpp>
@@ -9,7 +8,6 @@
 #include <memory>
 #include <optional>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -59,8 +57,7 @@ TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor,
 #else
 TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor,
                                  TunnelDataPlanePolicyResolverCallback& policyResolver,
-                                 Interface::DataPlaneCallbacks& callbacks, std::span<Interface::IpAddress> addresses,
-                                 int32_t mtu)
+                                 Interface::DataPlaneCallbacks& callbacks)
     : _Executor(std::move(executor)), _PolicyResolver(policyResolver), _Callbacks(callbacks),
       _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor)) {}
 #endif
@@ -163,6 +160,9 @@ auto TunnelDataPlane::Select(const ConnectionTracker::ConnectionKey& key) -> Con
   return std::visit(
       Overload{[](const Interface::PolicyRule::ByPassRoute&) -> ConnectionTracker::Selector::Action {
                  return Action(std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Bypass{}));
+               },
+               [](const Interface::PolicyRule::DiscardRoute&) -> ConnectionTracker::Selector::Action {
+                 return Action(std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{}));
                },
                [&](const Interface::PolicyRule::EndpointRoute& route) -> ConnectionTracker::Selector::Action {
                  if (auto session = route.Endpoint.lock()) {

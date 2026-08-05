@@ -57,8 +57,9 @@ public:
       -> Interface::PolicyRule::RoutingAction = 0;
 };
 
-class TunnelDataPlane : public ConnectionTracker::Selector,
+class TunnelDataPlane : public ConnectionTracker::Selector
 #ifdef _WIN32
+    ,
                         public WinDivertRouteCallback
 #endif
 {
@@ -69,7 +70,7 @@ public:
                   WindowsLocalAddressMonitor& windowsLocalAddressMonitor);
 #else
   TunnelDataPlane(boost::asio::any_io_executor executor, TunnelDataPlanePolicyResolverCallback& policyResolver,
-                  Interface::DataPlaneCallbacks& callbacks, std::span<Interface::IpAddress> addresses, int32_t mtu);
+                  Interface::DataPlaneCallbacks& callbacks);
 #endif
   ~TunnelDataPlane();
 
@@ -93,8 +94,10 @@ public:
   auto StopEndpoint(const std::weak_ptr<VpnClientMultiChannelSession>& weak) -> Omni::Fiber::Coroutine<void>;
 
   auto Select(const ConnectionTracker::ConnectionKey& key) -> ConnectionTracker::Selector::Action override;
+#ifdef _WIN32
   auto WinDivertRouteOutbound(Packet& packet) -> WinDivertRouteCallback::Result override;
   auto WinDivertRouteInbound(Packet& packet) -> std::optional<uint32_t> override;
+#endif
 
   [[nodiscard]] auto GetConnections() const -> std::vector<Interface::TrackedConnectionInfo>;
   static auto GetTrafficStats(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
