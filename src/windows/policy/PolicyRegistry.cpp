@@ -53,6 +53,7 @@ auto PolicyRuleToString(const PolicyRule& rule) -> std::string {
 auto PolicyActionToString(const PolicyRule::RoutingAction& action) -> std::string {
   return std::visit(Overload{
                         [](PolicyRule::ByPassRoute) -> std::string { return "ByPass"; },
+                        [](PolicyRule::DiscardRoute) -> std::string { return "Discard"; },
                         [](const PolicyRule::EndpointRoute& route) -> std::string {
                           if (auto session = route.Endpoint.lock()) {
                             return std::format("Endpoint[{}]", session->GetDescription());

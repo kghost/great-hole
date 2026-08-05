@@ -21,6 +21,7 @@
 #include "EndpointUdpDynMux.hpp"
 #include "ErrorCode.hpp"
 #include "FilterXor.hpp"
+#include "PacketHeader.hpp"
 #include "Utils/Overload.hpp"
 #include "VpnClientMultiChannel.hpp"
 
