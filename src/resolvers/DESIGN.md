@@ -62,6 +62,3 @@ To resolve this efficiently without per-request overhead:
 - Discovered IPv6 addresses are exported *without* square brackets (`[...]`) because `c-ares` expects square brackets *only* when a port is explicitly appended (e.g. `[ipv6]:port`), and brackets without a port cause parser errors.
 - If the discovered DNS server list is empty (or all servers are filtered out), public fallback DNS servers (`8.8.8.8,1.1.1.1`) are assigned to prevent `c-ares` from defaulting to `127.0.0.1`.
 - Subsequent `c-ares` channels automatically read this environment variable upon creation.
-- To support this on Windows builds, the target links with the Windows system library `iphlpapi`.
-
-

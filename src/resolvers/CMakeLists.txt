@@ -47,7 +47,7 @@ foreach(suffix "" "-asan")
   )
 
   if(WIN32)
-    target_link_libraries(${target} PUBLIC iphlpapi dnsapi)
+    target_link_libraries(${target} PUBLIC dnsapi)
   else()
     target_link_libraries(${target} PUBLIC PkgConfig::CARES)
   endif()
