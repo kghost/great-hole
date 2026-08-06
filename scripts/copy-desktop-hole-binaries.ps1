@@ -5,10 +5,12 @@ param(
     [string]$DesktopHoleDir
 )
 
-$SrcHeader = "$GreatHoleDir\src\interface\Interface.hpp"
+$Headers = @(
+    "Interface.hpp",
+    "InterfaceWin32.hpp",
+    "InterfaceCommonTypes.hpp"
+)
 $DestHeaderDir = "$DesktopHoleDir\src-tauri\src\cxxbridge"
-$DestHeader = "$DestHeaderDir\Interface.hpp"
-
 $DestBinDir = "$DesktopHoleDir\src-tauri\libs"
 
 # Create directories if they do not exist
@@ -16,9 +18,13 @@ if (!(Test-Path -Path $DestHeaderDir)) {
     New-Item -ItemType Directory -Force -Path $DestHeaderDir | Out-Null
 }
 
-# Copy Interface.hpp
-Write-Host "Copying Interface.hpp..."
-Copy-Item -Path $SrcHeader -Destination $DestHeader -Force
+# Copy interface headers
+foreach ($Header in $Headers) {
+    $SrcHeader = "$GreatHoleDir\src\interface\$Header"
+    $DestHeader = "$DestHeaderDir\$Header"
+    Write-Host "Copying $Header..."
+    Copy-Item -Path $SrcHeader -Destination $DestHeader -Force
+}
 
 # Build variants to process (standard and ASan-instrumented)
 $Variants = @(

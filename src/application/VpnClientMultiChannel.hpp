@@ -15,7 +15,7 @@
 #include "EndpointUdpDynMux.hpp"
 #include "ErrorCode.hpp"
 #include "Filter.hpp"
-#include "Interface.hpp"
+#include "InterfaceCommonTypes.hpp"
 #include "Packet.hpp"
 #include "Pipeline.hpp"
 #include "RemoteCall.hpp"

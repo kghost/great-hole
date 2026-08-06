@@ -15,7 +15,7 @@
 #include <krabs.hpp>
 
 #include "ExternalQueue.hpp"
-#include "Interface.hpp"
+#include "InterfaceWin32.hpp"
 #include "Logger.hpp"
 #include "MoveOnlyFunction.hpp"
 #include "PolicyRegistry.hpp"

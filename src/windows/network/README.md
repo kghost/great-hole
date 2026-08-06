@@ -14,18 +14,29 @@ The module is housed in namespace `gh::windows::network`.
   - `boost::asio::ip::address Address`: IPv4 or IPv6 address.
   - `uint8_t PrefixLength`: Network prefix length (subnet mask bits).
   - `bool IsUnicast`: True for unicast addresses.
+- **`InterfaceAddress<AddressType>`**:
+  - `AddressType Address`: `boost::asio::ip::address_v4` or `address_v6`.
+  - `uint8_t PrefixLength`: Network prefix length (subnet mask bits).
+  - `operator<=>`: Defaulted three-way comparison operator.
+- **`DnsInfo<AddressType>`**:
+  - `std::vector<AddressType> Servers`: Configured DNS server IP addresses.
+  - `bool IsDhcp`: True if DNS servers are automatically assigned via DHCP / RDNSS.
+- **`IpInterfaceCommon`**:
+  - `uint32_t NlMtu`: Network layer MTU.
+  - `uint32_t Metric`: Interface route metric.
+  - `bool Connected`: Operational link status.
+  - `bool ForwardingEnabled`: IPv4 or IPv6 packet forwarding enabled status.
+- **`IpInterfaceInfo<AddressType>`**:
+  - `IpInterfaceCommon Common`: Interface properties common to IP address family.
+  - `std::set<InterfaceAddress<AddressType>> Addresses`: Assigned IPv4 or IPv6 unicast addresses and prefix lengths.
+  - `DnsInfo<AddressType> DnsServers`: Configured DNS server IP addresses and DHCP state.
+  - `std::optional<DnsInfo<AddressType>> OriginalDnsServers`: Original DNS servers and DHCP state captured prior to any override.
 - **`InterfaceInfo`**:
-  - `uint32_t Index`: Windows interface index (`NET_IFINDEX`).
-  - `uint64_t Luid`: Interface LUID value (`NET_LUID`).
-  - `std::string Name`: Adapter GUID or device identifier (e.g. `{GUID}`).
-  - `std::string FriendlyName`: Human-readable adapter name (e.g. `Ethernet`, `Wi-Fi`).
-  - `std::string Description`: Device hardware description.
-  - `std::string MacAddress`: Formatted MAC address string (e.g. `00-11-22-33-44-55`).
-  - `uint32_t Type`: Interface type (`IFTYPE`, e.g. `IF_TYPE_ETHERNET_CSMACD`, `IF_TYPE_SOFTWARE_LOOPBACK`).
-  - `uint32_t OperStatus`: Operational status (`IF_OPER_STATUS`).
-  - `bool IsUp`: Convenience boolean indicating if `OperStatus == IfOperStatusUp`.
-  - `uint32_t Mtu`: Maximum transmission unit in bytes.
-  - `std::vector<IpAddressInfo> IpAddresses`: List of assigned unicast IP addresses.
+  - `InterfaceKey InterfaceIndex`: Windows interface index (`NET_IFINDEX`).
+  - `NET_LUID InterfaceLuid`: Interface LUID value (`NET_LUID`).
+  - `std::optional<std::string> InterfaceName`: Interface alias name.
+  - `std::optional<IpInterfaceInfo<boost::asio::ip::address_v4>> V4Info`: IPv4 configuration and assigned addresses.
+  - `std::optional<IpInterfaceInfo<boost::asio::ip::address_v6>> V6Info`: IPv6 configuration and assigned addresses.
 
 ### Observer Callback Interface
 
@@ -54,8 +65,14 @@ co_await monitor->Start();
 // Query active cached snapshot
 std::vector<gh::windows::network::InterfaceInfo> interfaces = monitor->GetInterfaces();
 
-// Manually trigger a refresh update
-co_await monitor->Refresh();
+// Re-query interfaces and addresses while preserving OriginalDnsServers
+monitor->Refresh();
+
+// Override interface DNS servers (returns std::expected<void, std::string>)
+auto overrideRes = monitor->OverrideDnsServers(ifIndex, newDnsServers);
+
+// Restore interface DNS servers (returns std::expected<void, std::string>)
+auto restoreRes = monitor->RestoreDnsServers(ifIndex);
 
 // Stop service
 co_await monitor->Stop();

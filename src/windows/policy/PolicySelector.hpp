@@ -4,7 +4,7 @@
 
 #include "ConnectionTracker.hpp"
 #include "FlowTracker.hpp"
-#include "Interface.hpp"
+#include "InterfaceWin32.hpp"
 #include "Logger.hpp"
 #include "ProcessTreeTracker.hpp"
 #include "TunnelDataPlane.hpp"

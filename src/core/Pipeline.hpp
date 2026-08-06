@@ -9,7 +9,7 @@
 #include "Endpoint.hpp"
 #include "ErrorCode.hpp"
 #include "Filter.hpp"
-#include "Interface.hpp"
+#include "InterfaceCommonTypes.hpp"
 #include "Service.hpp"
 
 namespace gh {

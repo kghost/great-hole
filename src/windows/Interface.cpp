@@ -61,6 +61,7 @@ public:
   auto GetFlows() -> std::vector<FlowInfo> override;
   auto GetConnections() -> std::vector<TrackedConnectionInfo> override;
   auto GetProcessTree() -> std::vector<ProcessInfo> override;
+  auto GetInterfaces(bool refresh) -> std::vector<InterfaceInfo> override;
 
   // Logging Interface
   void SetLogLevel(LogLevel level) override;
@@ -387,6 +388,20 @@ auto PlatformImpl::GetProcessTree() -> std::vector<ProcessInfo> {
   _TaskQueue.Push([&promise](auto& context) -> Omni::Fiber::Coroutine<void> {
     auto processes = context.PolicyEngine->GetPolicySelector().GetProcessTreeTracker().GetProcessTree();
     promise.set_value(std::move(processes));
+    co_return;
+  });
+  return future.get();
+}
+
+auto PlatformImpl::GetInterfaces(bool refresh) -> std::vector<InterfaceInfo> {
+  std::promise<std::vector<InterfaceInfo>> promise;
+  auto future = promise.get_future();
+  _TaskQueue.Push([&promise, refresh](auto& context) -> Omni::Fiber::Coroutine<void> {
+    std::vector<InterfaceInfo> result;
+    for (const auto& [key, info] : context.InterfaceMonitor->GetInterfaces(refresh)) {
+      result.push_back(info);
+    }
+    promise.set_value(std::move(result));
     co_return;
   });
   return future.get();

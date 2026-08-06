@@ -7,7 +7,7 @@
 #include <boost/log/sources/severity_channel_logger.hpp>
 #include <boost/log/trivial.hpp>
 
-#include "Interface.hpp"
+#include "InterfaceCommonTypes.hpp"
 
 namespace gh::base {
 

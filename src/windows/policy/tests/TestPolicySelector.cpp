@@ -7,7 +7,7 @@
 #include "Asio.hpp"
 #include "Coroutine.hpp"
 #include "Fiber.hpp"
-#include "Interface.hpp"
+#include "InterfaceWin32.hpp"
 #include "Manager.hpp"
 #include "PolicyRegistry.hpp"
 #include "PolicySelector.hpp"
@@ -47,8 +47,7 @@ TEST_F(TestPolicySelector, OutOfOrder_F_Pr_P) {
     const auto& node = selector.GetProcessTreeTracker().AddProcess(1001, 0, pid, "C:\\App\\bypass.exe");
 
     // 2. Flow establishing Sequence Number
-    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(),
-                                                         node.ProcessId);
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(), node.ProcessId);
 
     // 3. Packet arrives
     auto resolved = selector.ResolvePolicy(key);
@@ -91,8 +90,7 @@ TEST_F(TestPolicySelector, OutOfOrder_Pr_F_P) {
     const auto& node = selector.GetProcessTreeTracker().AddProcess(1001, 0, pid, "C:\\App\\bypass.exe");
 
     // 2. Flow establishing Sequence Number
-    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(),
-                                                         node.ProcessId);
+    co_await selector.GetFlowTracker().OnFlowEstablished(FlowTracker::ToFlowExactKey(key).value(), node.ProcessId);
 
     // 3. Packet arrives
     auto resolved = selector.ResolvePolicy(key);

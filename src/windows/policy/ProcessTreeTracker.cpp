@@ -19,7 +19,7 @@
 
 #include "AutoHandle.hpp"
 #include "ErrorCode.hpp"
-#include "Interface.hpp"
+#include "InterfaceWin32.hpp"
 #include "PolicyRegistry.hpp"
 #include "Process.hpp"
 #include "Select.hpp"

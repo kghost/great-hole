@@ -26,7 +26,7 @@
 #include "ConnectionTracker.hpp"
 #include "Coroutine.hpp"
 #include "ExternalQueue.hpp"
-#include "Interface.hpp"
+#include "InterfaceCommonTypes.hpp"
 #include "MoveOnlyFunction.hpp"
 #include "TunnelDataPlane.hpp"
 #include "Utils.hpp"

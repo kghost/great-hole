@@ -7,7 +7,7 @@
 #include <windows.h>
 
 #include "ConnectionTracker.hpp"
-#include "Interface.hpp"
+#include "InterfaceWin32.hpp"
 #include "WinDivertFlowSniffer.hpp"
 
 namespace gh::policy {

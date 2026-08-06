@@ -30,6 +30,7 @@ using std::string;
                          dest.data(), dest.data() + dest.size(), to_next);
 
   if (result != std::codecvt_base::ok) {
+    return std::nullopt;
   }
 
   return std::wstring(dest.data(), to_next);
@@ -56,6 +57,7 @@ using std::string;
                           dest.data(), dest.data() + dest.size(), to_next);
 
   if (result != std::codecvt_base::ok) {
+    return std::nullopt;
   }
 
   return std::string(dest.data(), to_next);

@@ -19,7 +19,7 @@
 #include "Endpoint.hpp"
 #include "EndpointUdpDynMux.hpp"
 #include "ErrorCode.hpp"
-#include "Interface.hpp"
+#include "InterfaceCommonTypes.hpp"
 #include "Packet.hpp"
 #include "Pipe.hpp"
 #include "ResolverHelper.hpp"

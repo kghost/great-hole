@@ -5,8 +5,8 @@
 #include <windows.h>
 #include <winternl.h>
 
-#include "Interface.hpp"
 #include "AutoHandle.hpp"
+#include "InterfaceWin32.hpp"
 #include "Strings.hpp"
 
 namespace gh {

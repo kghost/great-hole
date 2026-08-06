@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-#include "Interface.hpp"
+#include "InterfaceWin32.hpp"
 #include "PolicyRegistry.hpp"
 #include "PolicySelector.hpp"
 #include "ServiceBase.hpp"

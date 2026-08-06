@@ -16,7 +16,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 
-#include "Interface.hpp"
+#include "InterfaceWin32.hpp"
 #include "Utils/Overload.hpp"
 
 namespace gh::policy {

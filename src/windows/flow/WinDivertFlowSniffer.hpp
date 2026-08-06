@@ -26,7 +26,7 @@
 #include <iphlpapi.h>
 #include <ws2tcpip.h>
 
-#include "Interface.hpp"
+#include "InterfaceWin32.hpp"
 #include "Logger.hpp"
 #include "ServiceBase.hpp"
 #include "Utils/Overload.hpp"

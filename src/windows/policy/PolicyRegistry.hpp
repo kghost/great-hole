@@ -6,7 +6,7 @@
 
 #include <windows.h>
 
-#include "Interface.hpp"
+#include "InterfaceWin32.hpp"
 
 namespace gh::policy {
 

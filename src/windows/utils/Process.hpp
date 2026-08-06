@@ -5,7 +5,7 @@
 #include <windows.h>
 
 #include "AutoHandle.hpp"
-#include "Interface.hpp"
+#include "InterfaceWin32.hpp"
 
 namespace gh {
 

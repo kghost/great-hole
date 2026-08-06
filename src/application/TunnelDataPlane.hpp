@@ -13,11 +13,12 @@
 #include "Coroutine.hpp"
 #include "EndpointUdpDynMux.hpp"
 #include "ErrorCode.hpp"
-#include "Interface.hpp"
+#include "InterfaceCommonTypes.hpp"
 #include "VpnClientMultiChannel.hpp"
 
 #ifdef _WIN32
 #include "EndpointWinDivert.hpp"
+#include "InterfaceWin32.hpp"
 #endif
 
 namespace gh {

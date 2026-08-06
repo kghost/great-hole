@@ -1,10 +1,9 @@
 #include "PolicyEngine.hpp"
 
 #include <boost/asio.hpp>
-#include <memory>
 #include <utility>
 
-#include "Interface.hpp"
+#include "InterfaceWin32.hpp"
 
 namespace gh::policy {
 
