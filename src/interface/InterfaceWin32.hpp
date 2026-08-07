@@ -6,7 +6,6 @@
 #include <set>
 #include <string>
 #include <unordered_map>
-#include <variant>
 #include <vector>
 
 #include "InterfaceCommonTypes.hpp"
@@ -57,19 +56,6 @@ struct FlowInfo {
   std::string LocalAddress;
   uint16_t LocalPort{0};
   ProcessId Process{0};
-};
-
-struct PolicyRule {
-  struct ByPassRoute {};
-  struct DiscardRoute {};
-  struct EndpointRoute {
-    VpnEndpoint Endpoint;
-  };
-
-  using RoutingAction = std::variant<ByPassRoute, DiscardRoute, EndpointRoute>;
-
-  RoutingAction Action;
-  PolicyScope Scope = PolicyScope::SingleProcess;
 };
 
 struct ProcessInfo {

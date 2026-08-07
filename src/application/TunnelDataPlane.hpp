@@ -98,9 +98,9 @@ public:
 #ifdef _WIN32
   auto WinDivertRouteOutbound(Packet& packet) -> WinDivertRouteCallback::Result override;
   auto WinDivertRouteInbound(Packet& packet) -> std::optional<uint32_t> override;
+  [[nodiscard]] auto GetConnections() const -> std::vector<Interface::TrackedConnectionInfo>;
 #endif
 
-  [[nodiscard]] auto GetConnections() const -> std::vector<Interface::TrackedConnectionInfo>;
   static auto GetTrafficStats(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
       -> std::optional<Interface::VpnTrafficStats>;
 

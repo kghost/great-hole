@@ -80,5 +80,18 @@ public:
   virtual void OnEndpointStateChanged(VpnEndpoint endpoint, TunnelState state, const std::string& error) = 0;
 };
 
+struct PolicyRule {
+  struct ByPassRoute {};
+  struct DiscardRoute {};
+  struct EndpointRoute {
+    VpnEndpoint Endpoint;
+  };
+
+  using RoutingAction = std::variant<ByPassRoute, DiscardRoute, EndpointRoute>;
+
+  RoutingAction Action;
+  PolicyScope Scope = PolicyScope::SingleProcess;
+};
+
 } // namespace Interface
 } // namespace gh

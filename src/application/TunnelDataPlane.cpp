@@ -21,12 +21,12 @@
 #include "EndpointUdpDynMux.hpp"
 #include "ErrorCode.hpp"
 #include "FilterXor.hpp"
-#include "PacketHeader.hpp"
 #include "Utils/Overload.hpp"
 #include "VpnClientMultiChannel.hpp"
 
 #ifdef _WIN32
 #include "EndpointWinDivert.hpp"
+#include "PacketHeader.hpp"
 #else
 #include "EndpointTun.hpp"
 #endif
@@ -327,7 +327,6 @@ auto TunnelDataPlane::WinDivertRouteInbound(Packet& packet) -> std::optional<Int
                     },
                     GetPacketIpAddress(packet));
 }
-#endif
 
 auto ToFlowConnection(const ConnectionTracker::ConnectionKey& key) -> Interface::FlowConnection {
   return std::visit(Overload{
@@ -389,5 +388,6 @@ auto TunnelDataPlane::GetConnections() const -> std::vector<Interface::TrackedCo
   }
   return result;
 }
+#endif
 
 } // namespace gh
