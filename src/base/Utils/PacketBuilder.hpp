@@ -37,13 +37,32 @@ template <typename T> struct CanSetWith {
   };
 };
 
+template <typename T> struct CanSetDynamicWith {
+  template <typename ArgsTuple> struct Test : std::false_type {};
+
+  template <typename... Args> struct Test<std::tuple<Args...>> {
+    static constexpr bool value =
+        requires { T::SetDynamic(std::declval<std::span<uint8_t>>(), std::declval<Args>()...); };
+  };
+};
+
 template <typename T>
-concept PacketComponent = requires {
+concept PacketFixedComponent = requires {
   { T::Validate(std::declval<std::span<const uint8_t>>()) } -> std::same_as<bool>;
   requires std::same_as<decltype(T::BuilderDataSize), const size_t>;
   typename T::BuilderArgumentsList;
   requires All<CanSetWith<T>::template Test, typename T::BuilderArgumentsList>::value;
 };
+
+template <typename T>
+concept PacketDynamicComponent = requires {
+  { T::Validate(std::declval<std::span<const uint8_t>>()) } -> std::same_as<bool>;
+  typename T::BuilderArgumentsList;
+  requires All<CanSetDynamicWith<T>::template Test, typename T::BuilderArgumentsList>::value;
+};
+
+template <typename T>
+concept PacketComponent = PacketFixedComponent<T> || PacketDynamicComponent<T>;
 
 // ---------------------------------- PacketComponentEnd ---------------------------------- //
 class PacketComponentEnd {
@@ -58,10 +77,22 @@ template <PacketComponent Target, size_t Offset> class PacketBuilder {
 public:
   explicit PacketBuilder(std::span<uint8_t> data) : _Data(data) {}
 
-  auto operator()(auto&&... args) {
-    auto ret =
-        Target::Set(_Data.template subspan<Offset, Target::BuilderDataSize>(), std::forward<decltype(args)>(args)...);
-    return PacketBuilder<decltype(ret), Offset + Target::BuilderDataSize>(_Data);
+  template <PacketComponent NextComponent> class DynamicNextComponent {
+    using Next = NextComponent;
+    std::size_t _Size;
+  };
+
+  auto operator()(auto&&... args) -> decltype(auto) {
+    if constexpr (PacketFixedComponent<Target>) {
+      auto ret =
+          Target::Set(_Data.template subspan<Offset, Target::BuilderDataSize>(), std::forward<decltype(args)>(args)...);
+      return PacketBuilder<decltype(ret), Offset + Target::BuilderDataSize>(_Data);
+    } else {
+      auto next = Target::template SetDynamic<Offset>(_Data, std::forward<decltype(args)>(args)...);
+      static_assert(std::is_same_v<decltype(next), DynamicNextComponent<typename decltype(next)::Next>>,
+                    "The SetDynamic function must return a DynamicNextComponent.");
+      return PacketBuilder<typename decltype(next)::Next, 0>(_Data.subspan(Offset + next._Size));
+    }
   }
 
 private:
@@ -81,7 +112,6 @@ template <typename Result, PacketComponent Target, size_t Offset> class PacketPa
 private:
   struct NextParserCaller {
     std::span<const uint8_t> Data;
-
     template <typename NextComponent> auto Next(auto&& next) const -> ParseEnd<Result> {
       if constexpr (std::same_as<NextComponent, PacketComponentEnd>) {
         return std::forward<decltype(next)>(next);
@@ -92,12 +122,30 @@ private:
     }
   };
 
+  struct DynamicNextParserCaller {
+    std::span<const uint8_t> Data;
+    template <typename NextComponent> auto Next(size_t size, auto&& next) const -> ParseEnd<Result> {
+      if constexpr (std::same_as<NextComponent, PacketComponentEnd>) {
+        return std::forward<decltype(next)>(next);
+      } else {
+        return PacketParser<Result, NextComponent, 0>{Data.subspan(Offset + size)}(std::forward<decltype(next)>(next));
+      }
+    }
+  };
+
 public:
   explicit PacketParser(std::span<const uint8_t> data) : _Data(data) {}
 
-  auto operator()(auto&& func) const -> ParseEnd<Result> {
-    return Target::template Parse<Result>(_Data.template subspan<Offset, Target::BuilderDataSize>(),
-                                          std::forward<decltype(func)>(func), NextParserCaller{.Data = _Data});
+  auto operator()(auto&& callback) const -> ParseEnd<Result> {
+    if constexpr (PacketFixedComponent<Target>) {
+      return Target::template Parse<Result>(_Data.template subspan<Offset, Target::BuilderDataSize>(),
+                                            std::forward<decltype(callback)>(callback),
+                                            NextParserCaller{.Data = _Data});
+    } else {
+      return Target::template ParseDynamic<Result>(_Data.template subspan<Offset>(),
+                                                   std::forward<decltype(callback)>(callback),
+                                                   DynamicNextParserCaller{.Data = _Data});
+    }
   }
 
 private:
@@ -217,12 +265,12 @@ public:
   }
 
   template <typename RetType>
-  static auto Parse(std::span<const uint8_t, BuilderDataSize> data, auto&& func, auto&& next) -> ParseEnd<RetType> {
+  static auto Parse(std::span<const uint8_t, BuilderDataSize> data, auto&& callback, auto&& next) -> ParseEnd<RetType> {
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> ParseEnd<RetType> {
       using ResultType =
-          decltype(func(Fields::Get(data.template subspan<FieldInfos[Is].Offset, FieldInfos[Is].Size>())...));
+          decltype(callback(Fields::Get(data.template subspan<FieldInfos[Is].Offset, FieldInfos[Is].Size>())...));
       return next.template Next<NextComponent, ResultType>(
-          func(Fields::Get(data.template subspan<FieldInfos[Is].Offset, FieldInfos[Is].Size>())...));
+          callback(Fields::Get(data.template subspan<FieldInfos[Is].Offset, FieldInfos[Is].Size>())...));
     }(std::make_index_sequence<sizeof...(Fields)>{});
   }
 };
@@ -326,10 +374,9 @@ private:
 
 public:
   template <typename RetType>
-  static auto Parse(std::span<const uint8_t, BuilderDataSize> data, auto&& overloaded, auto&& next)
-      -> ParseEnd<RetType> {
+  static auto Parse(std::span<const uint8_t, BuilderDataSize> data, auto&& callback, auto&& next) -> ParseEnd<RetType> {
     return ParseResult<RetType, Entries...>::operator()(EnumField::Get(data.template subspan<0, EnumField::Size>()),
-                                                        std::forward<decltype(overloaded)>(overloaded),
+                                                        std::forward<decltype(callback)>(callback),
                                                         std::forward<decltype(next)>(next));
   }
 

@@ -4,9 +4,9 @@
 
 #include <gtest/gtest.h>
 
-#include "../PacketBuilder.hpp"
 #include "Utils/Nothing.hpp"
 #include "Utils/Overload.hpp"
+#include "Utils/PacketBuilder.hpp"
 
 namespace {
 
