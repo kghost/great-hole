@@ -54,9 +54,7 @@ public:
 };
 
 // ---------------------------------- Builder / Parser ---------------------------------- //
-template <typename Target, size_t Offset>
-  requires PacketComponent<Target>
-class PacketBuilder {
+template <PacketComponent Target, size_t Offset> class PacketBuilder {
 public:
   explicit PacketBuilder(std::span<uint8_t> data) : _Data(data) {}
 
@@ -79,45 +77,19 @@ private:
   Result _Result;
 };
 
-template <> class ParseEnd<void> {
-public:
-  ParseEnd() = default;
-};
-
-template <typename Result, typename Target, size_t Offset>
-  requires PacketComponent<Target>
-class PacketParser {
+template <typename Result, PacketComponent Target, size_t Offset> class PacketParser {
 private:
   struct NextParserCaller {
     std::span<const uint8_t> Data;
 
-    template <typename NextComponent>
-      requires(!std::same_as<NextComponent, PacketComponentEnd>)
-    auto operator()(auto&& next) const -> ParseEnd<Result> {
-      return PacketParser<Result, NextComponent, Offset + Target::BuilderDataSize>{Data}(
-          std::forward<decltype(next)>(next));
+    template <typename NextComponent> auto Next(auto&& next) const -> ParseEnd<Result> {
+      if constexpr (std::same_as<NextComponent, PacketComponentEnd>) {
+        return std::forward<decltype(next)>(next);
+      } else {
+        return PacketParser<Result, NextComponent, Offset + Target::BuilderDataSize>{Data}(
+            std::forward<decltype(next)>(next));
+      }
     }
-
-    template <typename NextComponent>
-      requires(!std::same_as<NextComponent, PacketComponentEnd>)
-    auto operator()(NextComponent /*unused*/, auto&& next) const -> ParseEnd<Result> {
-      return PacketParser<Result, NextComponent, Offset + Target::BuilderDataSize>{Data}(
-          std::forward<decltype(next)>(next));
-    }
-
-    template <typename ComponentEnd, typename ResultType>
-      requires std::same_as<ComponentEnd, PacketComponentEnd>
-    auto operator()(ComponentEnd /*unused*/, ResultType result) const -> ParseEnd<Result> {
-      return result;
-    }
-
-    template <typename ComponentEnd, typename ResultType>
-      requires std::same_as<ComponentEnd, PacketComponentEnd>
-    auto operator()(ResultType result) const -> ParseEnd<Result> {
-      return result;
-    }
-
-    template <typename ComponentEnd> auto operator()() const -> ParseEnd<Result> { return {}; }
   };
 
 public:
@@ -125,7 +97,7 @@ public:
 
   auto operator()(auto&& func) const -> ParseEnd<Result> {
     return Target::template Parse<Result>(_Data.template subspan<Offset, Target::BuilderDataSize>(),
-                                          std::forward<decltype(func)>(func), NextParserCaller{_Data});
+                                          std::forward<decltype(func)>(func), NextParserCaller{.Data = _Data});
   }
 
 private:
@@ -190,10 +162,9 @@ public:
 };
 
 // ---------------------------------- PacketComponentContainer ---------------------------------- //
-template <typename FieldsTuple, typename NextComponent> class PacketComponentContainer;
+template <typename FieldsTuple, PacketComponent NextComponent> class PacketComponentContainer;
 
-template <typename... Fields, typename NextComponent>
-  requires(PacketField<Fields> && ...)
+template <PacketField... Fields, PacketComponent NextComponent>
 class PacketComponentContainer<std::tuple<Fields...>, NextComponent> {
 public:
   using FieldsTuple = std::tuple<Fields...>;
@@ -206,7 +177,7 @@ public:
   static constexpr const std::array<FieldInfo, sizeof...(Fields)> FieldInfos =
       []() consteval->std::array<FieldInfo, sizeof...(Fields)> {
     std::array<FieldInfo, sizeof...(Fields)> result{};
-    auto process = [&]<std::size_t Is, typename Field>() -> auto {
+    auto process = [&]<std::size_t Is, PacketField Field>() -> auto {
       result[Is].Size = Field::Size;
       if constexpr (Is == 0) {
         result[Is].Offset = 0;
@@ -250,13 +221,8 @@ public:
     return [&]<std::size_t... Is>(std::index_sequence<Is...>) -> ParseEnd<RetType> {
       using ResultType =
           decltype(func(Fields::Get(data.template subspan<FieldInfos[Is].Offset, FieldInfos[Is].Size>())...));
-      if constexpr (std::is_void_v<ResultType>) {
-        func(Fields::Get(data.template subspan<FieldInfos[Is].Offset, FieldInfos[Is].Size>())...);
-        return next.template operator()<NextComponent>();
-      } else {
-        return next.template operator()<NextComponent, ResultType>(
-            func(Fields::Get(data.template subspan<FieldInfos[Is].Offset, FieldInfos[Is].Size>())...));
-      }
+      return next.template Next<NextComponent, ResultType>(
+          func(Fields::Get(data.template subspan<FieldInfos[Is].Offset, FieldInfos[Is].Size>())...));
     }(std::make_index_sequence<sizeof...(Fields)>{});
   }
 };
@@ -274,9 +240,7 @@ public:
   }
 };
 
-template <auto EnumValue, typename TargetPacketComponent>
-  requires PacketComponent<TargetPacketComponent>
-struct PacketComponentEnumMapEntry {
+template <auto EnumValue, PacketComponent TargetPacketComponent> struct PacketComponentEnumMapEntry {
   static constexpr auto Value = EnumValue;
   using EnumType = decltype(EnumValue);
   using Type = TargetPacketComponent;
@@ -289,8 +253,7 @@ concept IsPacketComponentEnumMapEntryType = requires { typename T::IsPacketCompo
 template <typename MapTuple, typename FallbackComponent = PacketComponentEnumMapParseFailedPacket>
 class PacketComponentEnumMap;
 
-template <typename... Entries, typename FallbackComponent>
-  requires(IsPacketComponentEnumMapEntryType<Entries> && ...) && PacketComponent<FallbackComponent>
+template <IsPacketComponentEnumMapEntryType... Entries, PacketComponent FallbackComponent>
 class PacketComponentEnumMap<std::tuple<Entries...>, FallbackComponent> {
 public:
   using FirstType = std::tuple_element_t<0, std::tuple<Entries...>>;
@@ -309,7 +272,7 @@ public:
       return false;
     }
     return std::visit(
-        [&]<typename ComponentType>(ComponentType /*component*/) -> auto {
+        [&]<PacketComponent ComponentType>(ComponentType /*component*/) -> auto {
           return ComponentType::Validate(data.template subspan<EnumField::Size>());
         },
         EnumToVariant(EnumField::Get(std::span<const uint8_t, EnumField::Size>(data.data(), EnumField::Size))));
@@ -347,7 +310,7 @@ private:
   struct ParseResult<RetType, FirstEntry, RestEntries...> {
     static auto operator()(EnumType value, auto&& overloaded, auto&& next) -> ParseEnd<RetType> {
       if (value == FirstEntry::Value) {
-        return next(typename FirstEntry::Type{}, overloaded(ToC<FirstEntry::Value>()));
+        return next.template Next<typename FirstEntry::Type>(overloaded(ToC<FirstEntry::Value>()));
       } else {
         return ParseResult<RetType, RestEntries...>::operator()(value, std::forward<decltype(overloaded)>(overloaded),
                                                                 std::forward<decltype(next)>(next));
@@ -357,14 +320,7 @@ private:
 
   template <typename RetType> struct ParseResult<RetType> {
     static auto operator()(EnumType value, auto&& overloaded, auto&& next) -> ParseEnd<RetType> {
-      return next(FallbackComponent{}, [&]() -> ParseEnd<RetType> {
-        if constexpr (std::is_void_v<decltype(overloaded(value))>) {
-          overloaded(value);
-          return {};
-        } else {
-          return {overloaded(value)};
-        }
-      }());
+      return next.template Next<FallbackComponent>([&]() -> ParseEnd<RetType> { return {overloaded(value)}; }());
     }
   };
 
