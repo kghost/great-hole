@@ -186,7 +186,7 @@ auto UdpDynMux::Channel::DoWorkRunning() -> Omni::Fiber::Coroutine<UdpDynMux::Ch
 }
 
 auto UdpDynMux::Channel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
-  co_await _PipielineUsageCounter.WaitAll();
+  co_await _PipielineUsageCounter.WaitPipeline();
   _DataPacket.GetConsumer().DiscardAndClose();
   _ControlPacket.GetConsumer().DiscardAndClose();
   co_return ErrorCode{};

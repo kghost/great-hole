@@ -46,7 +46,7 @@ auto Tun::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
 }
 
 auto Tun::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
-  co_await _PipielineUsageCounter.WaitAll();
+  co_await _PipielineUsageCounter.WaitPipeline();
   _TunFileDescriptor.close();
   co_return ErrorCode{};
 }

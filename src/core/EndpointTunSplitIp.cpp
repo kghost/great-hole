@@ -254,7 +254,7 @@ auto EndpointTunSplitIp::Channel::GetName() const -> std::string {
 auto EndpointTunSplitIp::Channel::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
 auto EndpointTunSplitIp::Channel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
-  co_await _PipielineUsageCounter.WaitAll();
+  co_await _PipielineUsageCounter.WaitPipeline();
   _Pipe.GetConsumer().DiscardAndClose();
   co_return ErrorCode{};
 }

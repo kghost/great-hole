@@ -79,7 +79,7 @@ auto WinDivert::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
     _WriteEvent = nullptr;
   }
 
-  co_await _PipielineUsageCounter.WaitAll();
+  co_await _PipielineUsageCounter.WaitPipeline();
 
   if (_ReadEvent != nullptr) {
     CloseHandle(_ReadEvent);

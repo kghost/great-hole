@@ -188,7 +188,7 @@ auto Udp::UdpChannel::GetName() const -> std::string {
 auto Udp::UdpChannel::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
 auto Udp::UdpChannel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
-  co_await _PipielineUsageCounter.WaitAll();
+  co_await _PipielineUsageCounter.WaitPipeline();
   _Pipe.GetConsumer().DiscardAndClose();
   co_return ErrorCode{};
 }
