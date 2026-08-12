@@ -91,6 +91,8 @@ if(WIN32)
   find_path(KRABSETW_INCLUDE_DIR "krabs.hpp")
 endif()
 
+add_compile_definitions(BOOST_ASIO_NO_DEPRECATED)
+
 # Dependencies
 find_package(Boost REQUIRED COMPONENTS log log_setup program_options filesystem thread)
 
