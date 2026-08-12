@@ -97,15 +97,6 @@ void DnsRouter::Clear() {
 
 auto DnsRouter::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }
 
-namespace {
-
-struct ChildAwaitable {
-  Omni::Fiber::Fiber& FiberRef;
-  auto operator co_await() { return FiberRef.ChildAwaitor(); }
-};
-
-} // namespace
-
 auto DnsRouter::DoWork() -> Omni::Fiber::Coroutine<void> {
   auto& currentFiber = co_await Omni::Fiber::GetCurrentOmniFiber();
   bool stopped = false;
@@ -121,7 +112,7 @@ auto DnsRouter::DoWork() -> Omni::Fiber::Coroutine<void> {
                                   co_await req.value()();
                                   co_return true;
                                 }),
-        Omni::Fiber::SelectPair(ChildAwaitable{currentFiber}, [] -> void {}));
+        Omni::Fiber::SelectPair(currentFiber.ChildAwaitor(), [] -> void {}));
 
     if (stopResult.has_value() || (rpcResult.has_value() && !rpcResult.value())) {
       stopped = true;

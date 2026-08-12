@@ -181,11 +181,11 @@ TEST(DnsForwarderIntegrationTest, EndToEndForwardingAndRouting) {
     tempSock.close();
 
     auto forwarder = std::make_shared<DnsForwarder>(io.get_executor());
-    auto listenerRes = co_await forwarder->AddListener(forwarderBindEp);
-    EXPECT_TRUE(listenerRes.has_value());
-
     auto errStart = co_await forwarder->Start();
     EXPECT_FALSE(errStart);
+
+    auto listenerRes = co_await forwarder->AddListener(forwarderBindEp);
+    EXPECT_TRUE(listenerRes.has_value());
 
     boost::asio::ip::udp::endpoint forwarderListenEp = forwarderBindEp;
 
