@@ -9,6 +9,7 @@
 
 #include "Coroutine.hpp"
 #include "Mutex.hpp"
+#include "Utils/ToConst.hpp"
 
 namespace gh {
 
@@ -310,14 +311,10 @@ public:
 
   template <typename Visitor> auto Action(Visitor&& visitor) -> Omni::Fiber::Coroutine<void> {
     auto lock = co_await _Mutex.Wait();
-    const auto currentIndex = _stateIndex;
-    co_await [this, currentIndex,
-              &visitor]<std::size_t... Is>(std::index_sequence<Is...>) -> Omni::Fiber::Coroutine<void> {
-      bool handled = false;
-      ((currentIndex == Is ? (co_await ExecuteForIndex<Is>(std::forward<Visitor>(visitor)), handled = true) : false) ||
-       ...);
-      (void)handled;
-    }(std::make_index_sequence<std::variant_size_v<StorageType>>{});
+    co_await ToConstAsync<std::variant_size_v<StorageType>>(
+        _stateIndex, [this, &visitor]<size_t Is> -> Omni::Fiber::Coroutine<void> {
+          co_await this->ExecuteForIndex<Is>(std::forward<Visitor>(visitor));
+        });
   }
 
 private:
