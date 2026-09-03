@@ -151,18 +151,17 @@ auto DnsRouter::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   co_return ErrorCode{};
 }
 
-auto DnsRouter::HandleRequest(DnsListener& listener, boost::asio::ip::udp::endpoint senderEp, std::vector<uint8_t> data)
+auto DnsRouter::HandleRequest(DnsListener& listener, boost::asio::ip::udp::endpoint sender, std::vector<uint8_t> data)
     -> Omni::Fiber::Coroutine<void> {
-
   auto result =
-      co_await _Rpc.Call([this, &listener, data = std::move(data), senderEp]() mutable -> Omni::Fiber::Coroutine<void> {
+      co_await _Rpc.Call([this, &listener, data = std::move(data), sender]() mutable -> Omni::Fiber::Coroutine<void> {
         auto& currentFiber = co_await Omni::Fiber::GetCurrentOmniFiber();
         auto cancelToken = std::make_shared<Cancel>();
         uint64_t reqId = ++_NextRequestId;
         std::string fiberName = "DnsRequest-" + std::to_string(reqId);
         auto fiber = currentFiber.Spawn(
             std::move(fiberName),
-            [this, &listener, data = std::move(data), senderEp, cancelToken]() mutable -> Omni::Fiber::Coroutine<void> {
+            [this, &listener, data = std::move(data), sender, cancelToken]() mutable -> Omni::Fiber::Coroutine<void> {
               auto parseResult = DnsPacket::Parse(std::span<const uint8_t>(data.data(), data.size()));
               if (!parseResult) {
                 co_return;
@@ -187,7 +186,7 @@ auto DnsRouter::HandleRequest(DnsListener& listener, boost::asio::ip::udp::endpo
               }
 
               if (!txBuffer.empty() && !cancelToken->IsTriggered()) {
-                co_await listener.SendResponse(senderEp, std::move(txBuffer));
+                co_await listener.SendResponse(sender, std::move(txBuffer));
               }
             });
 

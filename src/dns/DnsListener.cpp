@@ -19,16 +19,16 @@ auto DnsListener::GetName() const -> std::string {
   return "DnsListener:" + _Endpoint.address().to_string() + ":" + std::to_string(_Endpoint.port());
 }
 
-auto DnsListener::SendResponse(boost::asio::ip::udp::endpoint senderEp, std::vector<uint8_t> data)
+auto DnsListener::SendResponse(boost::asio::ip::udp::endpoint sender, std::vector<uint8_t> data)
     -> Omni::Fiber::Coroutine<void> {
   if (!_Socket.is_open()) {
     co_return;
   }
-  auto [ecSend, nSend] = co_await _Socket.async_send_to(boost::asio::buffer(data), senderEp, Omni::Fiber::AsioUseFiber);
+  auto [ecSend, nSend] = co_await _Socket.async_send_to(boost::asio::buffer(data), sender, Omni::Fiber::AsioUseFiber);
   if (ecSend) {
     BOOST_LOG_TRIVIAL(error) << GetName() << " async_send_to client failed: " << ecSend.message();
   } else {
-    BOOST_LOG_TRIVIAL(info) << GetName() << " sent " << nSend << " bytes response to " << senderEp;
+    BOOST_LOG_TRIVIAL(info) << GetName() << " sent " << nSend << " bytes response to " << sender;
   }
 }
 

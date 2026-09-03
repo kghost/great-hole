@@ -39,7 +39,7 @@ public:
   [[nodiscard]] auto Route(const std::string& domain) const -> std::optional<std::shared_ptr<DnsUpstream>>;
   void Clear();
 
-  auto HandleRequest(DnsListener& listener, boost::asio::ip::udp::endpoint senderEp, std::vector<uint8_t> data)
+  auto HandleRequest(DnsListener& listener, boost::asio::ip::udp::endpoint sender, std::vector<uint8_t> data)
       -> Omni::Fiber::Coroutine<void>;
 
 protected:

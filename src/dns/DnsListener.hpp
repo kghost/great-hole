@@ -25,8 +25,9 @@ public:
   auto operator=(DnsListener&&) -> DnsListener& = delete;
 
   [[nodiscard]] auto GetName() const -> std::string override;
+  [[nodiscard]] auto GetEndpoint() const -> const boost::asio::ip::udp::endpoint& { return _Endpoint; }
 
-  auto SendResponse(boost::asio::ip::udp::endpoint senderEp, std::vector<uint8_t> data) -> Omni::Fiber::Coroutine<void>;
+  auto SendResponse(boost::asio::ip::udp::endpoint sender, std::vector<uint8_t> data) -> Omni::Fiber::Coroutine<void>;
 
 protected:
   auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;
