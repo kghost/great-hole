@@ -100,6 +100,60 @@ void DnsForwarder::SetDefaultRoute(std::weak_ptr<DnsUpstream> upstream) {
   _Router->SetDefaultRoute(std::move(upstream));
 }
 
+namespace {
+
+auto ToDnsEndpoint(const boost::asio::ip::udp::endpoint& ep) -> Interface::DnsEndpoint {
+  if (ep.address().is_v4()) {
+    return Interface::DnsEndpoint{
+        .Address = Interface::Ip4Address{.Bytes = ep.address().to_v4().to_bytes()},
+        .Port = ep.port(),
+    };
+  }
+  return Interface::DnsEndpoint{
+      .Address = Interface::Ip6Address{.Bytes = ep.address().to_v6().to_bytes()},
+      .Port = ep.port(),
+  };
+}
+
+} // namespace
+
+auto DnsForwarder::GetConfiguration() const -> Configuration {
+  Configuration config;
+
+  config.Listeners.reserve(_Listeners.size());
+  for (const auto& listener : _Listeners) {
+    if (listener) {
+      config.Listeners.push_back(Interface::DnsListenerConfiguration{
+          .Listener = listener,
+          .LocalEndpoint = ToDnsEndpoint(listener->GetLocalEndpoint()),
+      });
+    }
+  }
+
+  config.Upstreams.reserve(_Upstreams.size());
+  for (const auto& upstream : _Upstreams) {
+    if (upstream) {
+      std::vector<Interface::DnsEndpoint> serverEndpoints;
+      serverEndpoints.reserve(upstream->GetUpstreamServers().size());
+      for (const auto& ep : upstream->GetUpstreamServers()) {
+        serverEndpoints.push_back(ToDnsEndpoint(ep));
+      }
+      config.Upstreams.push_back(Interface::DnsUpstreamConfiguration{
+          .Upstream = upstream,
+          .ServerEndpoints = std::move(serverEndpoints),
+          .LocalPort = upstream->GetLocalPort(),
+      });
+    }
+  }
+
+  if (_Router) {
+    config.DefaultRoute = _Router->GetDefaultRoute();
+    config.Routes = _Router->GetRoutes();
+  }
+
+  return config;
+}
+
 auto DnsForwarder::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   std::vector<std::shared_ptr<DnsUpstream>> clientsToStart(_Upstreams.begin(), _Upstreams.end());
   for (auto& client : clientsToStart) {

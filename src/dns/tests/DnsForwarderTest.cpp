@@ -319,3 +319,143 @@ TEST(DnsForwarderTest, DynamicAddAndRemoveListener) {
   io.run();
   EXPECT_TRUE(testPassed);
 }
+
+TEST(DnsForwarderTest, ExposeConfigurationOfForwarderAndComponents) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    auto forwarder = std::make_shared<DnsForwarder>(io.get_executor());
+
+    // Initially empty
+    auto initConfig = forwarder->GetConfiguration();
+    EXPECT_TRUE(initConfig.Listeners.empty());
+    EXPECT_TRUE(initConfig.Upstreams.empty());
+    EXPECT_FALSE(initConfig.DefaultRoute.has_value());
+    EXPECT_TRUE(initConfig.Routes.empty());
+
+    auto errStart = co_await forwarder->Start();
+    EXPECT_FALSE(errStart);
+
+    // 1. Add listeners
+    boost::asio::ip::udp::endpoint ep1(boost::asio::ip::address_v4::loopback(), 53051);
+    boost::asio::ip::udp::endpoint ep2(boost::asio::ip::address_v4::loopback(), 53052);
+    auto l1Res = co_await forwarder->AddListener(ep1);
+    EXPECT_TRUE(l1Res.has_value());
+    auto l2Res = co_await forwarder->AddListener(ep2);
+    EXPECT_TRUE(l2Res.has_value());
+
+    // 2. Add upstreams
+    boost::asio::ip::udp::endpoint srv1(boost::asio::ip::make_address_v4("8.8.8.8"), 53);
+    boost::asio::ip::udp::endpoint srv2(boost::asio::ip::make_address_v4("8.8.4.4"), 53);
+    auto u1Res = co_await forwarder->AddUpstream({srv1, srv2});
+    EXPECT_TRUE(u1Res.has_value());
+
+    boost::asio::ip::udp::endpoint srv3(boost::asio::ip::make_address_v4("10.0.0.1"), 53);
+    auto u2Res = co_await forwarder->AddUpstream({srv3});
+    EXPECT_TRUE(u2Res.has_value());
+
+    // Verify component getters
+    auto u1 = u1Res.value().lock();
+    EXPECT_TRUE(u1 != nullptr);
+    if (u1) {
+      EXPECT_EQ(u1->GetUpstreamServers().size(), 2u);
+      EXPECT_EQ(u1->GetUpstreamServers()[0], srv1);
+      EXPECT_EQ(u1->GetUpstreamServers()[1], srv2);
+    }
+
+    // 3. Add routes
+    forwarder->SetDefaultRoute(u1Res.value());
+    forwarder->AddRoute("company.com", u2Res.value());
+    forwarder->AddRoute("internal.company.com", u2Res.value());
+
+    // 4. Query configuration
+    auto config = forwarder->GetConfiguration();
+
+    // Check listeners
+    EXPECT_EQ(config.Listeners.size(), 2u);
+    bool foundEp1 = false;
+    bool foundEp2 = false;
+    for (const auto& l : config.Listeners) {
+      if (l.LocalEndpoint.Port == 53051) {
+        foundEp1 = true;
+        EXPECT_EQ(l.Listener.lock(), l1Res.value().lock());
+        EXPECT_EQ(std::get<Interface::Ip4Address>(l.LocalEndpoint.Address).Bytes,
+                  (std::array<uint8_t, 4>{127, 0, 0, 1}));
+      } else if (l.LocalEndpoint.Port == 53052) {
+        foundEp2 = true;
+        EXPECT_EQ(l.Listener.lock(), l2Res.value().lock());
+        EXPECT_EQ(std::get<Interface::Ip4Address>(l.LocalEndpoint.Address).Bytes,
+                  (std::array<uint8_t, 4>{127, 0, 0, 1}));
+      }
+    }
+    EXPECT_TRUE(foundEp1);
+    EXPECT_TRUE(foundEp2);
+
+    // Check upstreams and server endpoints
+    EXPECT_EQ(config.Upstreams.size(), 2u);
+    bool foundU1 = false;
+    bool foundU2 = false;
+    for (const auto& u : config.Upstreams) {
+      EXPECT_GT(u.LocalPort, 0u);
+      if (u.Upstream.lock() == u1Res.value().lock()) {
+        foundU1 = true;
+        EXPECT_EQ(u.ServerEndpoints.size(), 2u);
+        if (u.ServerEndpoints.size() == 2u) {
+          EXPECT_EQ(u.ServerEndpoints[0].Port, 53u);
+          EXPECT_EQ(std::get<Interface::Ip4Address>(u.ServerEndpoints[0].Address).Bytes,
+                    (std::array<uint8_t, 4>{8, 8, 8, 8}));
+          EXPECT_EQ(u.ServerEndpoints[1].Port, 53u);
+          EXPECT_EQ(std::get<Interface::Ip4Address>(u.ServerEndpoints[1].Address).Bytes,
+                    (std::array<uint8_t, 4>{8, 8, 4, 4}));
+        }
+      } else if (u.Upstream.lock() == u2Res.value().lock()) {
+        foundU2 = true;
+        EXPECT_EQ(u.ServerEndpoints.size(), 1u);
+        if (u.ServerEndpoints.size() == 1u) {
+          EXPECT_EQ(u.ServerEndpoints[0].Port, 53u);
+          EXPECT_EQ(std::get<Interface::Ip4Address>(u.ServerEndpoints[0].Address).Bytes,
+                    (std::array<uint8_t, 4>{10, 0, 0, 1}));
+        }
+      }
+    }
+    EXPECT_TRUE(foundU1);
+    EXPECT_TRUE(foundU2);
+
+    // Check default route
+    EXPECT_TRUE(config.DefaultRoute.has_value());
+    if (config.DefaultRoute.has_value()) {
+      EXPECT_EQ(config.DefaultRoute->lock(), u1Res.value().lock());
+    }
+
+    // Check routes
+    EXPECT_EQ(config.Routes.size(), 2u);
+    EXPECT_EQ(config.Routes.at("company.com").lock(), u2Res.value().lock());
+    EXPECT_EQ(config.Routes.at("internal.company.com").lock(), u2Res.value().lock());
+
+    // 5. Test dynamic reconfiguration reflected in configuration
+    co_await forwarder->RemoveListener(l1Res.value());
+    forwarder->RemoveRoute("internal.company.com");
+    co_await forwarder->RemoveUpstream(u2Res.value());
+
+    auto updatedConfig = forwarder->GetConfiguration();
+    EXPECT_EQ(updatedConfig.Listeners.size(), 1u);
+    EXPECT_EQ(updatedConfig.Listeners[0].LocalEndpoint.Port, 53052u);
+    EXPECT_EQ(updatedConfig.Upstreams.size(), 1u);
+    EXPECT_EQ(updatedConfig.Upstreams[0].Upstream.lock(), u1Res.value().lock());
+    EXPECT_EQ(updatedConfig.Routes.size(), 1u);
+    EXPECT_FALSE(updatedConfig.Routes.contains("internal.company.com"));
+    // Upstream u2 was removed, so its weak_ptr in Routes["company.com"] is expired
+    EXPECT_TRUE(updatedConfig.Routes.at("company.com").expired());
+
+    co_await forwarder->Stop();
+    testPassed = true;
+    co_return;
+  });
+
+  io.run();
+  EXPECT_TRUE(testPassed);
+}

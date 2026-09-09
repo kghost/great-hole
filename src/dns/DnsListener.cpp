@@ -11,12 +11,12 @@ namespace gh::dns {
 
 DnsListener::DnsListener(boost::asio::any_io_executor executor, boost::asio::ip::udp::endpoint endpoint,
                          DnsRouter& router)
-    : _Executor(std::move(executor)), _Endpoint(std::move(endpoint)), _Socket(_Executor), _Router(router) {}
+    : _Executor(std::move(executor)), _LocalEndpoint(std::move(endpoint)), _Socket(_Executor), _Router(router) {}
 
 DnsListener::~DnsListener() = default;
 
 auto DnsListener::GetName() const -> std::string {
-  return "DnsListener:" + _Endpoint.address().to_string() + ":" + std::to_string(_Endpoint.port());
+  return "DnsListener:" + _LocalEndpoint.address().to_string() + ":" + std::to_string(_LocalEndpoint.port());
 }
 
 auto DnsListener::SendResponse(boost::asio::ip::udp::endpoint sender, std::vector<uint8_t> data)
@@ -34,15 +34,21 @@ auto DnsListener::SendResponse(boost::asio::ip::udp::endpoint sender, std::vecto
 
 auto DnsListener::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   boost::system::error_code err;
-  _Socket.open(_Endpoint.protocol(), err);
+  _Socket.open(_LocalEndpoint.protocol(), err);
   if (err) {
     co_return err;
   }
 
-  _Socket.bind(_Endpoint, err);
+  _Socket.bind(_LocalEndpoint, err);
   if (err) {
     _Socket.close();
     co_return err;
+  }
+
+  boost::system::error_code epErr;
+  auto localEp = _Socket.local_endpoint(epErr);
+  if (!epErr) {
+    _LocalEndpoint = localEp;
   }
 
   co_return ErrorCode{};

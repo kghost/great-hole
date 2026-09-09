@@ -129,6 +129,35 @@ forwarder.RemoveRoute("github.com");
 forwarder.SetDefaultRoute(publicUpstream);
 ```
 
+### 3. Exposing Runtime Configuration
+
+`DnsForwarder` exposes its complete configuration and that of its subordinate components via `GetConfiguration()` (or `GetConfig()`), returning `gh::Interface::DnsForwarderConfiguration`:
+
+```cpp
+auto config = forwarder.GetConfiguration();
+
+// 1. Inbound listener local endpoints
+for (const auto& listener : config.Listeners) {
+  // listener.Listener: std::weak_ptr<DnsListener>
+  // listener.LocalEndpoint: gh::Interface::DnsEndpoint { Address, Port }
+}
+
+// 2. Upstreams, remote server endpoints, and ephemeral local ports
+for (const auto& upstream : config.Upstreams) {
+  // upstream.Upstream: std::weak_ptr<DnsUpstream>
+  // upstream.ServerEndpoints: std::vector<gh::Interface::DnsEndpoint>
+  // upstream.LocalPort: uint16_t (bound ephemeral UDP source port)
+}
+
+// 3. Default route and domain routing rules
+if (config.DefaultRoute.has_value()) {
+  auto defaultUpstream = config.DefaultRoute->lock();
+}
+for (const auto& [domainSuffix, upstreamWeak] : config.Routes) {
+  auto targetUpstream = upstreamWeak.lock();
+}
+```
+
 ---
 
 ## Integration Guidelines

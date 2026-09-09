@@ -30,6 +30,9 @@ public:
 
   [[nodiscard]] auto GetName() const -> std::string override { return "DnsUpstream:" + std::to_string(_LocalPort); }
   [[nodiscard]] auto GetLocalPort() const -> uint16_t { return _LocalPort; }
+  [[nodiscard]] auto GetUpstreamServers() const -> const std::vector<boost::asio::ip::udp::endpoint>& {
+    return _UpstreamServers;
+  }
 
   auto Resolve(DnsPacket request, Cancel& cancel) -> Omni::Fiber::Coroutine<std::expected<DnsPacket, ErrorCode>>;
 

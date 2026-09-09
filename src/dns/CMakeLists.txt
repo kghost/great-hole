@@ -24,6 +24,7 @@ foreach(suffix "" "-asan")
     Boost::log
     omni-base${suffix}
     omni-fiber${suffix}
+    great-hole-interface${suffix}
   )
 
   if(suffix STREQUAL "-asan")

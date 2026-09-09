@@ -11,6 +11,7 @@
 #include "DnsRouter.hpp"
 #include "DnsUpstream.hpp"
 #include "ErrorCode.hpp"
+#include "InterfaceCommonTypes.hpp"
 #include "RemoteCall.hpp"
 #include "ServiceBase.hpp"
 
@@ -18,6 +19,8 @@ namespace gh::dns {
 
 class DnsForwarder : public ServiceBase {
 public:
+  using Configuration = Interface::DnsForwarderConfiguration;
+
   explicit DnsForwarder(boost::asio::any_io_executor executor);
   ~DnsForwarder() override;
 
@@ -39,6 +42,8 @@ public:
   void AddRoute(const std::string& domainSuffix, std::weak_ptr<DnsUpstream> upstream);
   void RemoveRoute(const std::string& domainSuffix);
   void SetDefaultRoute(std::weak_ptr<DnsUpstream> upstream);
+
+  [[nodiscard]] auto GetConfiguration() const -> Configuration;
 
 protected:
   auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;

@@ -39,6 +39,13 @@ public:
   [[nodiscard]] auto Route(const std::string& domain) const -> std::optional<std::shared_ptr<DnsUpstream>>;
   void Clear();
 
+  [[nodiscard]] auto GetRoutes() const -> const std::unordered_map<std::string, std::weak_ptr<DnsUpstream>>& {
+    return _Routes;
+  }
+  [[nodiscard]] auto GetDefaultRoute() const -> const std::optional<std::weak_ptr<DnsUpstream>>& {
+    return _DefaultRoute;
+  }
+
   auto HandleRequest(DnsListener& listener, boost::asio::ip::udp::endpoint sender, std::vector<uint8_t> data)
       -> Omni::Fiber::Coroutine<void>;
 

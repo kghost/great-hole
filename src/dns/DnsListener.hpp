@@ -25,7 +25,7 @@ public:
   auto operator=(DnsListener&&) -> DnsListener& = delete;
 
   [[nodiscard]] auto GetName() const -> std::string override;
-  [[nodiscard]] auto GetEndpoint() const -> const boost::asio::ip::udp::endpoint& { return _Endpoint; }
+  [[nodiscard]] auto GetLocalEndpoint() const -> const boost::asio::ip::udp::endpoint& { return _LocalEndpoint; }
 
   auto SendResponse(boost::asio::ip::udp::endpoint sender, std::vector<uint8_t> data) -> Omni::Fiber::Coroutine<void>;
 
@@ -36,7 +36,7 @@ protected:
 
 private:
   boost::asio::any_io_executor _Executor;
-  boost::asio::ip::udp::endpoint _Endpoint;
+  boost::asio::ip::udp::endpoint _LocalEndpoint;
   boost::asio::ip::udp::socket _Socket;
   DnsRouter& _Router;
 };

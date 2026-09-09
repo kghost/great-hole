@@ -13,6 +13,7 @@
 
 #include "Asio.hpp"
 #include "Coroutine.hpp"
+#include "DnsForwarder.hpp"
 #include "ErrorCode.hpp"
 #include "ExternalQueue.hpp"
 #include "Fiber.hpp"
@@ -48,6 +49,8 @@ public:
   void StopEndpoint(VpnEndpoint endpoint) override;
   auto GetTrafficStats(VpnEndpoint endpoint) -> std::optional<VpnTrafficStats> override;
 
+  auto GetDnsForwarderConfiguration() -> DnsForwarderConfiguration override;
+
   // Policy Interface
   void ClearPathRegistry() override;
   void AddPathPolicy(const std::string& path, const PolicyRule& policy) override;
@@ -76,6 +79,7 @@ private:
   struct PlatformContext {
     std::shared_ptr<gh::policy::PolicyEngine> PolicyEngine;
     std::shared_ptr<gh::windows::network::InterfaceMonitor> InterfaceMonitor;
+    std::shared_ptr<gh::dns::DnsForwarder> DnsForwarder;
     std::unique_ptr<gh::TunnelDataPlane> DataPlane;
     gh::base::LogConfiguration LogConfig;
     bool Running = true;
@@ -141,12 +145,15 @@ auto PlatformImpl::StartEngine() -> std::error_code {
   _TaskQueue.Push([this, &promise](auto& context) -> Omni::Fiber::Coroutine<void> {
     assert(!context.PolicyEngine);
     assert(!context.InterfaceMonitor);
+    assert(!context.DnsForwarder);
     context.PolicyEngine = std::make_shared<gh::policy::PolicyEngine>(_IoContext.get_executor());
     context.InterfaceMonitor = std::make_shared<gh::windows::network::InterfaceMonitor>(_IoContext.get_executor());
+    context.DnsForwarder = std::make_shared<gh::dns::DnsForwarder>(_IoContext.get_executor());
     auto err = co_await context.PolicyEngine->Start();
     if (err) {
       context.PolicyEngine.reset();
       context.InterfaceMonitor.reset();
+      context.DnsForwarder.reset();
       promise.set_value(err);
       co_return;
     }
@@ -155,6 +162,17 @@ auto PlatformImpl::StartEngine() -> std::error_code {
       co_await context.PolicyEngine->Stop();
       context.PolicyEngine.reset();
       context.InterfaceMonitor.reset();
+      context.DnsForwarder.reset();
+      promise.set_value(err);
+      co_return;
+    }
+    err = co_await context.DnsForwarder->Start();
+    if (err) {
+      co_await context.InterfaceMonitor->Stop();
+      co_await context.PolicyEngine->Stop();
+      context.PolicyEngine.reset();
+      context.InterfaceMonitor.reset();
+      context.DnsForwarder.reset();
       promise.set_value(err);
       co_return;
     }
@@ -168,6 +186,13 @@ auto PlatformImpl::StopEngine() -> std::error_code {
   std::promise<ErrorCode> promise;
   auto future = promise.get_future();
   _TaskQueue.Push([&promise](auto& context) -> Omni::Fiber::Coroutine<void> {
+    if (context.DnsForwarder) {
+      auto errDns = co_await context.DnsForwarder->Stop();
+      if (errDns) {
+        BOOST_LOG_TRIVIAL(error) << "Failed to stop dns forwarder: " << errDns.message();
+      }
+      context.DnsForwarder.reset();
+    }
     auto err = co_await context.InterfaceMonitor->Stop();
     if (err) {
       BOOST_LOG_TRIVIAL(error) << "Failed to stop interface monitor: " << err.message();
@@ -269,6 +294,20 @@ auto PlatformImpl::GetTrafficStats(VpnEndpoint endpoint) -> std::optional<VpnTra
   auto future = promise.get_future();
   _TaskQueue.Push([&promise, endpoint](auto& context) -> Omni::Fiber::Coroutine<void> {
     promise.set_value(context.DataPlane->GetTrafficStats(endpoint));
+    co_return;
+  });
+  return future.get();
+}
+
+auto PlatformImpl::GetDnsForwarderConfiguration() -> DnsForwarderConfiguration {
+  std::promise<DnsForwarderConfiguration> promise;
+  auto future = promise.get_future();
+  _TaskQueue.Push([&promise](auto& context) -> Omni::Fiber::Coroutine<void> {
+    if (!context.DnsForwarder) {
+      promise.set_value(DnsForwarderConfiguration{});
+      co_return;
+    }
+    promise.set_value(context.DnsForwarder->GetConfiguration());
     co_return;
   });
   return future.get();

@@ -60,6 +60,8 @@ public:
 
   virtual auto GetTrafficStats(VpnEndpoint endpoint) -> std::optional<VpnTrafficStats> = 0;
 
+  virtual auto GetDnsForwarderConfiguration() -> DnsForwarderConfiguration = 0;
+
   // Logging Interface
   virtual void SetLogLevel(LogLevel level) = 0;
 };

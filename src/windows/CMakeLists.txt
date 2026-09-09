@@ -21,6 +21,7 @@ foreach(suffix "" "-asan")
   target_link_libraries(${target} PUBLIC
     Boost::log
     omni-fiber${suffix}
+    omni-dns${suffix}
     great-hole-core${suffix}
     great-hole-application${suffix}
     great-hole-windows-policy${suffix}

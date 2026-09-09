@@ -278,6 +278,9 @@ The `DnsForwarder` module provides a multi-upstream DNS forwarding service desig
   - `AddRoute(domainSuffix, upstream)`: Delegates to `_Router->AddRoute(...)`.
   - `RemoveRoute(domainSuffix)`: Delegates to `_Router->RemoveRoute(...)`.
   - `SetDefaultRoute(upstream)`: Delegates to `_Router->SetDefaultRoute(...)`.
+- **Configuration Exposure (`GetConfiguration`)**:
+  - Returns `gh::Interface::DnsForwarderConfiguration` aggregating active listeners (`DnsListener` weak_ptr, local endpoints), upstreams (`DnsUpstream` weak_ptr, remote server endpoints, ephemeral local source port), default route, and domain routing rules.
+  - Subordinate components provide dedicated inspection getters (`DnsUpstream::GetUpstreamServers()`, `DnsRouter::GetRoutes()`, `DnsRouter::GetDefaultRoute()`).
 - **Service Lifecycle Coordination**:
   - `DoStart()`:
     1. Starts all registered `DnsUpstream` instances.

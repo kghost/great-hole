@@ -3,12 +3,20 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
+#include <unordered_map>
 #include <variant>
+#include <vector>
 
 namespace gh {
 
 class VpnClientMultiChannelSession;
+
+namespace dns {
+class DnsUpstream;
+class DnsListener;
+} // namespace dns
 
 namespace Interface {
 
@@ -91,6 +99,34 @@ struct PolicyRule {
 
   RoutingAction Action;
   PolicyScope Scope = PolicyScope::SingleProcess;
+};
+
+using DnsUpstream = std::weak_ptr<dns::DnsUpstream>;
+using DnsListener = std::weak_ptr<dns::DnsListener>;
+
+struct DnsEndpoint {
+  IpAddress Address;
+  uint16_t Port{0};
+
+  auto operator<=>(const DnsEndpoint&) const = default;
+};
+
+struct DnsListenerConfiguration {
+  DnsListener Listener;
+  DnsEndpoint LocalEndpoint;
+};
+
+struct DnsUpstreamConfiguration {
+  DnsUpstream Upstream;
+  std::vector<DnsEndpoint> ServerEndpoints;
+  uint16_t LocalPort{0};
+};
+
+struct DnsForwarderConfiguration {
+  std::vector<DnsListenerConfiguration> Listeners;
+  std::vector<DnsUpstreamConfiguration> Upstreams;
+  std::optional<DnsUpstream> DefaultRoute;
+  std::unordered_map<std::string, DnsUpstream> Routes;
 };
 
 } // namespace Interface
