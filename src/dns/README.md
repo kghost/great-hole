@@ -43,45 +43,65 @@ The `dns` module provides a multi-upstream DNS Forwarder service (`DnsForwarder`
 
 ### `DnsForwarder`
 
-Inherits from `gh::ServiceBase`. Represents the DNS Forwarder service lifecycle.
+Inherits from `gh::ServiceBase`. Represents the DNS Forwarder service lifecycle. `DnsForwarder` is configured once upon construction via `gh::Interface::DnsForwarderConfiguration` and remains immutable throughout its runtime lifecycle.
 
 ```cpp
 #include "DnsForwarder.hpp"
 
 namespace gh::dns {
 
-// Instantiate forwarder with executor and add listening endpoints
 boost::asio::io_context ioContext;
 auto executor = ioContext.get_executor();
 
-DnsForwarder forwarder(executor);
-co_await forwarder.AddListener(
-  boost::asio::ip::udp::endpoint(boost::asio::ip::address_v4::loopback(), 53)
-);
+// 1. Define declarative configuration
+Interface::DnsForwarderConfiguration config{
+  // Inbound listening endpoints
+  .Listeners = {
+    {.LocalEndpoint = Interface::DnsEndpoint{
+       .Address = Interface::Ip4Address{.Bytes = {127, 0, 0, 1}},
+       .Port = 53,
+    }},
+  },
+  // Upstream DNS servers
+  .Upstreams = {
+    {
+      .Name = "public_dns",
+      .ServerEndpoints = {
+        Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {8, 8, 8, 8}}, .Port = 53},
+        Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {8, 8, 4, 4}}, .Port = 53},
+      },
+    },
+    {
+      .Name = "corp_dns",
+      .ServerEndpoints = {
+        Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {10, 0, 0, 1}}, .Port = 53},
+      },
+    },
+  },
+  // Default fallback upstream name
+  .DefaultRoute = "public_dns",
+  // Domain suffix routing rules (domain -> upstream name)
+  .Routes = {
+    {"internal.company.com", "corp_dns"}, // Matches internal.company.com & all subdomains
+  },
+};
 
-// Add upstreams by providing a list of upstream endpoints
-auto publicRes = co_await forwarder.AddUpstream({
-  boost::asio::ip::udp::endpoint(boost::asio::ip::address::from_string("8.8.8.8"), 53),
-  boost::asio::ip::udp::endpoint(boost::asio::ip::address::from_string("8.8.4.4"), 53)
-});
-auto publicUpstream = publicRes.value();
+// 2. Instantiate forwarder with executor and configuration
+DnsForwarder forwarder(executor, std::move(config));
 
-auto internalRes = co_await forwarder.AddUpstream({
-  boost::asio::ip::udp::endpoint(boost::asio::ip::address::from_string("10.0.0.1"), 53)
-});
-auto internalUpstream = internalRes.value();
-
-// Configure domain routes using domain suffixes (matches domain and all subdomains)
-forwarder.AddRoute("internal.company.com", internalUpstream); // Matches internal.company.com & all subdomains
-forwarder.SetDefaultRoute(publicUpstream);                     // Sets default fallback upstream for unmatched queries
-
-// Start the forwarder service
+// 3. Start the forwarder service (starts all upstreams, router, and listeners)
 auto err = co_await forwarder.Start();
 if (err) {
   // Handle startup error
 }
 
-// Stop the service gracefully
+// 4. Query runtime configuration snapshot (includes allocated ephemeral ports)
+auto runtimeConfig = forwarder.GetConfiguration();
+for (const auto& upstream : runtimeConfig.Upstreams) {
+  // upstream.LocalPort contains the OS-assigned ephemeral source port
+}
+
+// 5. Stop the service gracefully
 co_await forwarder.Stop();
 
 } // namespace gh::dns
@@ -89,72 +109,31 @@ co_await forwarder.Stop();
 
 ---
 
-## Dynamic Runtime Configuration APIs
+## Runtime Configuration Inspection
 
-`DnsForwarder` provides thread-safe / fiber-safe APIs to manipulate listening endpoints, upstreams, and domain routing rules dynamically on the fly via RemoteCall without restarting the service.
-
-### 0. Listening Endpoint Management
-
-```cpp
-// Add a listener dynamically inside DnsForwarder fiber
-auto listenerRes = co_await forwarder.AddListener(boost::asio::ip::udp::endpoint(boost::asio::ip::address_v6::loopback(), 53));
-
-// Remove a listener dynamically inside DnsForwarder fiber
-co_await forwarder.RemoveListener(listenerRes.value());
-```
-
-### 1. Dynamic Upstream Management
-
-```cpp
-// Add a new upstream at runtime inside DnsForwarder fiber
-auto secureRes = co_await forwarder.AddUpstream({
-  boost::asio::ip::udp::endpoint(boost::asio::ip::address::from_string("9.9.9.9"), 53),
-  boost::asio::ip::udp::endpoint(boost::asio::ip::address::from_string("149.112.112.112"), 53)
-});
-
-// Remove an upstream safely inside DnsForwarder fiber
-co_await forwarder.RemoveUpstream(internalUpstream);
-```
-
-### 2. Dynamic Domain Route Management
-
-```cpp
-// Add or override a domain suffix routing rule on the fly
-forwarder.AddRoute("github.com", secureRes.value()); // Matches github.com and all subdomains
-
-// Remove a domain suffix routing rule
-forwarder.RemoveRoute("github.com");
-
-// Set default fallback route upstream for unmatched domain queries
-forwarder.SetDefaultRoute(publicUpstream);
-```
-
-### 3. Exposing Runtime Configuration
-
-`DnsForwarder` exposes its complete configuration and that of its subordinate components via `GetConfiguration()` (or `GetConfig()`), returning `gh::Interface::DnsForwarderConfiguration`:
+`DnsForwarder` exposes its complete configuration and active state via `GetConfiguration()`, returning `gh::Interface::DnsForwarderConfiguration`:
 
 ```cpp
 auto config = forwarder.GetConfiguration();
 
 // 1. Inbound listener local endpoints
 for (const auto& listener : config.Listeners) {
-  // listener.Listener: std::weak_ptr<DnsListener>
   // listener.LocalEndpoint: gh::Interface::DnsEndpoint { Address, Port }
 }
 
 // 2. Upstreams, remote server endpoints, and ephemeral local ports
 for (const auto& upstream : config.Upstreams) {
-  // upstream.Upstream: std::weak_ptr<DnsUpstream>
+  // upstream.Name: std::string
   // upstream.ServerEndpoints: std::vector<gh::Interface::DnsEndpoint>
   // upstream.LocalPort: uint16_t (bound ephemeral UDP source port)
 }
 
 // 3. Default route and domain routing rules
 if (config.DefaultRoute.has_value()) {
-  auto defaultUpstream = config.DefaultRoute->lock();
+  // *config.DefaultRoute: std::string (upstream name)
 }
-for (const auto& [domainSuffix, upstreamWeak] : config.Routes) {
-  auto targetUpstream = upstreamWeak.lock();
+for (const auto& [domainSuffix, upstreamName] : config.Routes) {
+  // domainSuffix: std::string, upstreamName: std::string
 }
 ```
 
@@ -162,6 +141,7 @@ for (const auto& [domainSuffix, upstreamWeak] : config.Routes) {
 
 ## Integration Guidelines
 
-1. **Service Integration**: Instantiate `DnsForwarder` inside your service topology or application lifecycle.
-2. **Ephemeral Port Allocation**: Sockets for outbound queries automatically request ephemeral local ports from the OS kernel.
-3. **Dynamic Routing**: Use `AddUpstream` and `AddRoute` to dynamically construct or modify resolution paths on the fly.
+1. **Service Integration**: Instantiate `DnsForwarder` inside your service topology or application lifecycle, passing `DnsForwarderConfiguration` at construction.
+2. **Ephemeral Port Allocation**: Sockets for outbound queries automatically request ephemeral local ports from the OS kernel, inspectable via `GetConfiguration()`.
+3. **Immutable Lifecycle**: Routing rules, listening endpoints, and upstreams are established deterministically on construction for race-free concurrency.
+

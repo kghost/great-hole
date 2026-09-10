@@ -1,210 +1,174 @@
 #include "DnsForwarder.hpp"
 
-#include <boost/log/trivial.hpp>
-#include <expected>
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <utility>
+#include <vector>
+
+#include <boost/log/trivial.hpp>
 
 #include "ErrorCode.hpp"
-#include "Select.hpp"
-#include "SelectPair.hpp"
 
 namespace gh::dns {
 
-DnsForwarder::DnsForwarder(boost::asio::any_io_executor executor)
-    : _Executor(std::move(executor)), _Router(std::make_shared<DnsRouter>()) {}
-
-DnsForwarder::~DnsForwarder() { _ClientRpc.DiscardAndClose(); }
-
-auto DnsForwarder::AddListener(boost::asio::ip::udp::endpoint endpoint)
-    -> Omni::Fiber::Coroutine<std::expected<std::weak_ptr<DnsListener>, ErrorCode>> {
-  auto listener = std::make_shared<DnsListener>(_Executor, endpoint, *_Router);
-  auto response = co_await _ClientRpc.Call([this, listener, endpoint]() -> Omni::Fiber::Coroutine<ErrorCode> {
-    _Listeners.insert(listener);
-    auto err = co_await listener->Start();
-    if (err) {
-      BOOST_LOG_TRIVIAL(error) << "Failed to start listener on " << endpoint << ": " << err.message();
-      _Listeners.erase(listener);
-    }
-    co_return err;
-  });
-  if (response.has_value()) {
-    if (response.value()) {
-      co_return std::unexpected(response.value());
-    }
-    co_return listener;
-  }
-  co_return std::unexpected(SysError(ECANCELED));
-}
-
-auto DnsForwarder::RemoveListener(const std::weak_ptr<DnsListener>& weak) -> Omni::Fiber::Coroutine<void> {
-  auto listener = weak.lock();
-  if (!listener) {
-    co_return;
-  }
-  auto response = co_await _ClientRpc.Call([this, listener]() -> Omni::Fiber::Coroutine<ErrorCode> {
-    _Listeners.erase(listener);
-    co_await listener->Stop();
-    co_return ErrorCode{};
-  });
-  if (!response.has_value()) {
-    BOOST_LOG_TRIVIAL(error) << "Failed to remove listener";
-  }
-  co_return;
-}
-
-auto DnsForwarder::AddUpstream(std::vector<boost::asio::ip::udp::endpoint> upstreamServers)
-    -> Omni::Fiber::Coroutine<std::expected<std::weak_ptr<DnsUpstream>, ErrorCode>> {
-  auto upstream = std::make_shared<DnsUpstream>(_Executor, std::move(upstreamServers));
-  auto response = co_await _ClientRpc.Call([this, upstream]() -> Omni::Fiber::Coroutine<ErrorCode> {
-    _Upstreams.insert(upstream);
-    auto err = co_await upstream->Start();
-    if (err) {
-      BOOST_LOG_TRIVIAL(error) << "AddUpstream start client failed: " << err.message();
-      _Upstreams.erase(upstream);
-    }
-    co_return err;
-  });
-  if (response.has_value()) {
-    if (response.value()) {
-      co_return std::unexpected(response.value());
-    }
-    co_return upstream;
-  }
-  co_return std::unexpected(SysError(ECANCELED));
-}
-
-auto DnsForwarder::RemoveUpstream(const std::weak_ptr<DnsUpstream>& weak) -> Omni::Fiber::Coroutine<void> {
-  auto upstream = weak.lock();
-  if (!upstream) {
-    co_return;
-  }
-  auto response = co_await _ClientRpc.Call([this, upstream]() -> Omni::Fiber::Coroutine<ErrorCode> {
-    _Upstreams.erase(upstream);
-    co_await upstream->Stop();
-    co_return ErrorCode{};
-  });
-  if (!response.has_value()) {
-    BOOST_LOG_TRIVIAL(error) << "Failed to remove upstream";
-  }
-  co_return;
-}
-
-void DnsForwarder::AddRoute(const std::string& domainSuffix, std::weak_ptr<DnsUpstream> upstream) {
-  _Router->AddRoute(domainSuffix, std::move(upstream));
-}
-
-void DnsForwarder::RemoveRoute(const std::string& domainSuffix) { _Router->RemoveRoute(domainSuffix); }
-
-void DnsForwarder::SetDefaultRoute(std::weak_ptr<DnsUpstream> upstream) {
-  _Router->SetDefaultRoute(std::move(upstream));
-}
-
 namespace {
 
-auto ToDnsEndpoint(const boost::asio::ip::udp::endpoint& ep) -> Interface::DnsEndpoint {
-  if (ep.address().is_v4()) {
+auto ToDnsEndpoint(const boost::asio::ip::udp::endpoint& endpoint) -> Interface::DnsEndpoint {
+  if (endpoint.address().is_v4()) {
     return Interface::DnsEndpoint{
-        .Address = Interface::Ip4Address{.Bytes = ep.address().to_v4().to_bytes()},
-        .Port = ep.port(),
+        .Address = Interface::Ip4Address{.Bytes = endpoint.address().to_v4().to_bytes()},
+        .Port = endpoint.port(),
     };
   }
   return Interface::DnsEndpoint{
-      .Address = Interface::Ip6Address{.Bytes = ep.address().to_v6().to_bytes()},
-      .Port = ep.port(),
+      .Address = Interface::Ip6Address{.Bytes = endpoint.address().to_v6().to_bytes()},
+      .Port = endpoint.port(),
   };
 }
 
+auto FromDnsEndpoint(const Interface::DnsEndpoint& dnsEndpoint) -> boost::asio::ip::udp::endpoint {
+  if (std::holds_alternative<Interface::Ip4Address>(dnsEndpoint.Address)) {
+    const auto& ip4 = std::get<Interface::Ip4Address>(dnsEndpoint.Address);
+    return {boost::asio::ip::make_address_v4(ip4.Bytes), dnsEndpoint.Port};
+  }
+  const auto& ip6 = std::get<Interface::Ip6Address>(dnsEndpoint.Address);
+  return {boost::asio::ip::make_address_v6(ip6.Bytes), dnsEndpoint.Port};
+}
+
 } // namespace
+
+DnsForwarder::DnsForwarder(boost::asio::any_io_executor executor, Configuration config)
+    : _Executor(std::move(executor)), _Router(std::make_shared<DnsRouter>()) {
+  std::unordered_map<std::string, std::shared_ptr<DnsUpstream>> upstreamsByName;
+  _Upstreams.reserve(config.Upstreams.size());
+  for (const auto& upstreamConfig : config.Upstreams) {
+    std::vector<boost::asio::ip::udp::endpoint> servers;
+    servers.reserve(upstreamConfig.ServerEndpoints.size());
+    for (const auto& serverEndpoint : upstreamConfig.ServerEndpoints) {
+      servers.push_back(FromDnsEndpoint(serverEndpoint));
+    }
+    auto upstream = std::make_shared<DnsUpstream>(_Executor, upstreamConfig.Name, std::move(servers));
+    _Upstreams.push_back(upstream);
+    upstreamsByName[upstreamConfig.Name] = upstream;
+  }
+
+  if (config.DefaultRoute.has_value()) {
+    auto defaultIter = upstreamsByName.find(*config.DefaultRoute);
+    if (defaultIter != upstreamsByName.end()) {
+      _Router->SetDefaultRoute(defaultIter->second);
+    } else {
+      BOOST_LOG_TRIVIAL(warning) << "Default route refers to unknown upstream: " << *config.DefaultRoute;
+    }
+  }
+
+  for (const auto& [domain, upstreamName] : config.Routes) {
+    auto routeIter = upstreamsByName.find(upstreamName);
+    if (routeIter != upstreamsByName.end()) {
+      _Router->AddRoute(domain, routeIter->second);
+    } else {
+      BOOST_LOG_TRIVIAL(warning) << "Route for " << domain << " refers to unknown upstream: " << upstreamName;
+    }
+  }
+
+  _Listeners.reserve(config.Listeners.size());
+  for (const auto& listenerConfig : config.Listeners) {
+    auto localEndpoint = FromDnsEndpoint(listenerConfig.LocalEndpoint);
+    _Listeners.push_back(std::make_shared<DnsListener>(_Executor, localEndpoint, *_Router));
+  }
+}
+
+DnsForwarder::~DnsForwarder() = default;
 
 auto DnsForwarder::GetConfiguration() const -> Configuration {
   Configuration config;
 
   config.Listeners.reserve(_Listeners.size());
   for (const auto& listener : _Listeners) {
-    if (listener) {
-      config.Listeners.push_back(Interface::DnsListenerConfiguration{
-          .Listener = listener,
-          .LocalEndpoint = ToDnsEndpoint(listener->GetLocalEndpoint()),
-      });
-    }
+    config.Listeners.push_back(Interface::DnsListenerConfiguration{
+        .LocalEndpoint = ToDnsEndpoint(listener->GetLocalEndpoint()),
+    });
   }
 
   config.Upstreams.reserve(_Upstreams.size());
   for (const auto& upstream : _Upstreams) {
-    if (upstream) {
-      std::vector<Interface::DnsEndpoint> serverEndpoints;
-      serverEndpoints.reserve(upstream->GetUpstreamServers().size());
-      for (const auto& ep : upstream->GetUpstreamServers()) {
-        serverEndpoints.push_back(ToDnsEndpoint(ep));
-      }
-      config.Upstreams.push_back(Interface::DnsUpstreamConfiguration{
-          .Upstream = upstream,
-          .ServerEndpoints = std::move(serverEndpoints),
-          .LocalPort = upstream->GetLocalPort(),
-      });
+    std::vector<Interface::DnsEndpoint> serverEndpoints;
+    serverEndpoints.reserve(upstream->GetUpstreamServers().size());
+    for (const auto& serverEndpoint : upstream->GetUpstreamServers()) {
+      serverEndpoints.push_back(ToDnsEndpoint(serverEndpoint));
+    }
+    config.Upstreams.push_back(Interface::DnsUpstreamConfiguration{
+        .Name = upstream->GetUpstreamName(),
+        .ServerEndpoints = std::move(serverEndpoints),
+        .LocalPort = upstream->GetLocalPort(),
+    });
+  }
+
+  const auto& defaultRoute = _Router->GetDefaultRoute();
+  if (defaultRoute.has_value()) {
+    if (auto upstream = defaultRoute->lock()) {
+      config.DefaultRoute = upstream->GetUpstreamName();
     }
   }
 
-  if (_Router) {
-    config.DefaultRoute = _Router->GetDefaultRoute();
-    config.Routes = _Router->GetRoutes();
+  for (const auto& [domain, upstreamWeak] : _Router->GetRoutes()) {
+    if (auto upstream = upstreamWeak.lock()) {
+      config.Routes[domain] = upstream->GetUpstreamName();
+    }
   }
 
   return config;
 }
 
 auto DnsForwarder::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
-  std::vector<std::shared_ptr<DnsUpstream>> clientsToStart(_Upstreams.begin(), _Upstreams.end());
-  for (auto& client : clientsToStart) {
-    auto err = co_await client->Start();
+  std::vector<std::shared_ptr<DnsUpstream>> startedUpstreams;
+  for (auto& upstream : _Upstreams) {
+    auto err = co_await upstream->Start();
     if (err) {
+      for (auto& started : startedUpstreams) {
+        co_await started->Stop();
+      }
       co_return err;
     }
+    startedUpstreams.push_back(upstream);
   }
 
   auto errRouter = co_await _Router->Start();
   if (errRouter) {
+    for (auto& started : startedUpstreams) {
+      co_await started->Stop();
+    }
     co_return errRouter;
   }
 
-  std::vector<std::shared_ptr<DnsListener>> listenersToStart(_Listeners.begin(), _Listeners.end());
-  for (auto& listener : listenersToStart) {
+  std::vector<std::shared_ptr<DnsListener>> startedListeners;
+  for (auto& listener : _Listeners) {
     auto err = co_await listener->Start();
     if (err) {
+      for (auto& started : startedListeners) {
+        co_await started->Stop();
+      }
+      co_await _Router->Stop();
+      for (auto& started : startedUpstreams) {
+        co_await started->Stop();
+      }
       co_return err;
     }
+    startedListeners.push_back(listener);
   }
 
   co_return ErrorCode{};
 }
 
-auto DnsForwarder::DoWork() -> Omni::Fiber::Coroutine<void> {
-  bool stopped = false;
-  while (!stopped) {
-    auto [stopResult, rpcResult] = co_await Omni::Fiber::Select(
-        Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] -> void {}),
-        Omni::Fiber::SelectPair(_ClientRpc.GetServiceAwaitor(), Omni::Fiber::RemoteCall::HandleRequest));
-
-    if (stopResult.has_value() || (rpcResult.has_value() && !rpcResult.value())) {
-      stopped = true;
-    }
-  }
-}
+auto DnsForwarder::DoWork() -> Omni::Fiber::Coroutine<void> { co_await _Service.value()._Stop.GetFiberCancelEvent(); }
 
 auto DnsForwarder::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
-  _ClientRpc.DiscardAndClose();
-
-  std::vector<std::shared_ptr<DnsListener>> listenersToStop(_Listeners.begin(), _Listeners.end());
-  _Listeners.clear();
-  for (auto& listener : listenersToStop) {
+  for (auto& listener : _Listeners) {
     co_await listener->Stop();
   }
 
-  std::vector<std::shared_ptr<DnsUpstream>> clientsToStop(_Upstreams.begin(), _Upstreams.end());
-  _Upstreams.clear();
-  for (auto& client : clientsToStop) {
-    co_await client->Stop();
+  for (auto& upstream : _Upstreams) {
+    co_await upstream->Stop();
   }
 
   co_await _Router->Stop();

@@ -24,7 +24,7 @@ The `DnsForwarder` module provides a multi-upstream DNS forwarding service desig
 
 4. **OmniFiber Concurrency & Structured Concurrency**:
    - Built on `OmniFiber` coroutines and `gh::ServiceBase`.
-   - Leverages `Omni::Fiber::RemoteCall` for serialized, fiber-safe dynamic mutations without lock contention.
+   - Immutable service topology established at construction time, avoiding runtime lock contention or complex mutation state machines.
    - Concurrently processes incoming client queries by spawning managed child fibers per request.
 
 ---
@@ -37,7 +37,6 @@ The `DnsForwarder` module provides a multi-upstream DNS forwarding service desig
                                   ┌───────────────────────────────┐
                                   │         DnsForwarder          │
                                   │   (gh::ServiceBase composite) │
-                                  │   RPC: _ClientRpc             │
                                   └───────────────┬───────────────┘
                                                   │
                 ┌─────────────────────────────────┼─────────────────────────────────┐
@@ -259,40 +258,34 @@ The `DnsForwarder` module provides a multi-upstream DNS forwarding service desig
 
 ---
 
-### 3.5 Composite Service & Dynamic Reconfiguration (`DnsForwarder`)
+### 3.5 Composite Service & Construction-Time Configuration (`DnsForwarder`)
 
-`DnsForwarder` is the top-level composite `gh::ServiceBase` subclass that manages all subordinate components.
+`DnsForwarder` is the top-level composite `gh::ServiceBase` subclass that coordinates all subordinate components. It is configured deterministically upon construction via `gh::Interface::DnsForwarderConfiguration` and remains immutable during execution.
 
 - **Component Ownership**:
   - `_Router`: `std::shared_ptr<DnsRouter>`.
-  - `_Listeners`: `std::set<std::shared_ptr<DnsListener>, std::owner_less<>>`.
-  - `_Upstreams`: `std::set<std::shared_ptr<DnsUpstream>, std::owner_less<>>`.
-  - `_ClientRpc`: `Omni::Fiber::RemoteCall` for queueing dynamic administrative operations into the forwarder's fiber.
-- **Dynamic Listener Management**:
-  - `AddListener(endpoint)`: Creates a `DnsListener`, schedules registration via `_ClientRpc`, starts the listener asynchronously (`co_await listener->Start()`), and returns `std::weak_ptr<DnsListener>`.
-  - `RemoveListener(weak)`: Locks weak pointer, schedules removal via `_ClientRpc`, stops the listener asynchronously (`co_await listener->Stop()`), and erases it from `_Listeners`.
-- **Dynamic Upstream Management**:
-  - `AddUpstream(upstreamServers)`: Creates a `DnsUpstream`, schedules registration via `_ClientRpc`, starts the upstream asynchronously (`co_await upstream->Start()`), and returns `std::weak_ptr<DnsUpstream>`.
-  - `RemoveUpstream(weak)`: Locks weak pointer, schedules removal via `_ClientRpc`, stops the upstream asynchronously (`co_await upstream->Stop()`), and erases it from `_Upstreams`.
-- **Dynamic Routing Rule Management**:
-  - `AddRoute(domainSuffix, upstream)`: Delegates to `_Router->AddRoute(...)`.
-  - `RemoveRoute(domainSuffix)`: Delegates to `_Router->RemoveRoute(...)`.
-  - `SetDefaultRoute(upstream)`: Delegates to `_Router->SetDefaultRoute(...)`.
+  - `_Listeners`: `std::vector<std::shared_ptr<DnsListener>>`.
+  - `_Upstreams`: `std::unordered_map<std::string, std::shared_ptr<DnsUpstream>>`.
+- **Construction Initialization**:
+  - Instantiates `DnsUpstream` instances for each entry in `config.Upstreams`, mapping each by `Name`.
+  - Configures `DnsRouter` default fallback route (`config.DefaultRoute`) and domain suffix rules (`config.Routes`) using named upstream resolution.
+  - Instantiates `DnsListener` instances for each entry in `config.Listeners`, connecting each listener to `_Router`.
 - **Configuration Exposure (`GetConfiguration`)**:
-  - Returns `gh::Interface::DnsForwarderConfiguration` aggregating active listeners (`DnsListener` weak_ptr, local endpoints), upstreams (`DnsUpstream` weak_ptr, remote server endpoints, ephemeral local source port), default route, and domain routing rules.
-  - Subordinate components provide dedicated inspection getters (`DnsUpstream::GetUpstreamServers()`, `DnsRouter::GetRoutes()`, `DnsRouter::GetDefaultRoute()`).
+  - Returns `gh::Interface::DnsForwarderConfiguration` containing:
+    - Active listener local endpoints.
+    - Upstream server endpoints alongside actual OS-assigned ephemeral source ports (`upstream->GetLocalPort()`).
+    - Default route and domain suffix routes.
 - **Service Lifecycle Coordination**:
   - `DoStart()`:
-    1. Starts all registered `DnsUpstream` instances.
-    2. Starts `_Router`.
-    3. Starts all registered `DnsListener` instances.
+    1. Starts all registered `DnsUpstream` instances (rolling back on failure).
+    2. Starts `_Router` (rolling back on failure).
+    3. Starts all registered `DnsListener` instances (rolling back on failure).
   - `DoWork()`:
-    - Waits via `Omni::Fiber::Select` on `_Stop.GetFiberCancelEvent()` and `_ClientRpc.GetServiceAwaitor()`, executing dynamic mutation requests.
+    - Suspends awaiting `_Stop.GetFiberCancelEvent()`.
   - `DoGracefulStop()`:
-    1. Closes and flushes `_ClientRpc`.
-    2. Stops and clears all `DnsListener` instances.
-    3. Stops and clears all `DnsUpstream` instances.
-    4. Stops `_Router`.
+    1. Stops all `DnsListener` instances.
+    2. Stops all `DnsUpstream` instances.
+    3. Stops `_Router`.
 
 ---
 
@@ -300,7 +293,6 @@ The `DnsForwarder` module provides a multi-upstream DNS forwarding service desig
 
 ```
 DnsForwarder Fiber (ServiceBase)
-├── _ClientRpc Queue (Add/Remove Listeners & Upstreams)
 ├── DnsRouter Fiber (ServiceBase)
 │   ├── _Rpc Queue (Inbound Requests)
 │   └── Child Request Fibers [DnsRequest-1, DnsRequest-2, ...]
@@ -313,9 +305,8 @@ DnsForwarder Fiber (ServiceBase)
     └── async_receive_from loop -> demuxes to PendingQuery Events
 ```
 
-1. **Lock-Free Concurrency via Coroutines & RPC**:
-   - Rather than relying on traditional mutexes, cross-service interactions and dynamic mutations pass through `Omni::Fiber::RemoteCall` message queues.
-   - Dynamic listener and upstream mutations execute strictly within `DnsForwarder`'s fiber context.
+1. **Lock-Free Concurrency & Deterministic Topology**:
+   - The topology is fully configured upon construction, eliminating runtime mutation locks and race conditions.
    - Inbound DNS query processing is dispatched through `DnsRouter`'s `_Rpc` and executed concurrently across isolated child coroutine fibers.
 
 2. **Transaction Demultiplexing via Fiber Events**:

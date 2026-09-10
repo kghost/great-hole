@@ -7,9 +7,9 @@
 
 namespace gh::dns {
 
-DnsUpstream::DnsUpstream(const boost::asio::any_io_executor& executor,
+DnsUpstream::DnsUpstream(const boost::asio::any_io_executor& executor, std::string name,
                          std::vector<boost::asio::ip::udp::endpoint> upstreamServers)
-    : _Socket(executor), _UpstreamServers(std::move(upstreamServers)) {}
+    : _Name(std::move(name)), _Socket(executor), _UpstreamServers(std::move(upstreamServers)) {}
 
 DnsUpstream::~DnsUpstream() = default;
 

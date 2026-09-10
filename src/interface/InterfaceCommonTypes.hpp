@@ -13,11 +13,6 @@ namespace gh {
 
 class VpnClientMultiChannelSession;
 
-namespace dns {
-class DnsUpstream;
-class DnsListener;
-} // namespace dns
-
 namespace Interface {
 
 struct Ip4Address {
@@ -101,9 +96,6 @@ struct PolicyRule {
   PolicyScope Scope = PolicyScope::SingleProcess;
 };
 
-using DnsUpstream = std::weak_ptr<dns::DnsUpstream>;
-using DnsListener = std::weak_ptr<dns::DnsListener>;
-
 struct DnsEndpoint {
   IpAddress Address;
   uint16_t Port{0};
@@ -112,12 +104,11 @@ struct DnsEndpoint {
 };
 
 struct DnsListenerConfiguration {
-  DnsListener Listener;
   DnsEndpoint LocalEndpoint;
 };
 
 struct DnsUpstreamConfiguration {
-  DnsUpstream Upstream;
+  std::string Name;
   std::vector<DnsEndpoint> ServerEndpoints;
   uint16_t LocalPort{0};
 };
@@ -125,8 +116,8 @@ struct DnsUpstreamConfiguration {
 struct DnsForwarderConfiguration {
   std::vector<DnsListenerConfiguration> Listeners;
   std::vector<DnsUpstreamConfiguration> Upstreams;
-  std::optional<DnsUpstream> DefaultRoute;
-  std::unordered_map<std::string, DnsUpstream> Routes;
+  std::optional<std::string> DefaultRoute;
+  std::unordered_map<std::string, std::string> Routes;
 };
 
 } // namespace Interface

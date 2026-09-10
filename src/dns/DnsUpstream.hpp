@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <expected>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -19,7 +20,7 @@ namespace gh::dns {
 
 class DnsUpstream : public ServiceBase {
 public:
-  explicit DnsUpstream(const boost::asio::any_io_executor& executor,
+  explicit DnsUpstream(const boost::asio::any_io_executor& executor, std::string name,
                        std::vector<boost::asio::ip::udp::endpoint> upstreamServers);
   ~DnsUpstream() override;
 
@@ -28,7 +29,8 @@ public:
   DnsUpstream(DnsUpstream&&) = delete;
   auto operator=(DnsUpstream&&) -> DnsUpstream& = delete;
 
-  [[nodiscard]] auto GetName() const -> std::string override { return "DnsUpstream:" + std::to_string(_LocalPort); }
+  [[nodiscard]] auto GetName() const -> std::string override { return "DnsUpstream[" + _Name + "]"; }
+  [[nodiscard]] auto GetUpstreamName() const -> const std::string& { return _Name; }
   [[nodiscard]] auto GetLocalPort() const -> uint16_t { return _LocalPort; }
   [[nodiscard]] auto GetUpstreamServers() const -> const std::vector<boost::asio::ip::udp::endpoint>& {
     return _UpstreamServers;
@@ -47,6 +49,7 @@ private:
     std::shared_ptr<Omni::Fiber::Event<std::expected<DnsPacket, ErrorCode>>> Event;
   };
 
+  const std::string _Name;
   boost::asio::ip::udp::socket _Socket;
   uint16_t _LocalPort{0};
 
