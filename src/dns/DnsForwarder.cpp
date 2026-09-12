@@ -9,6 +9,7 @@
 #include <boost/log/trivial.hpp>
 
 #include "ErrorCode.hpp"
+#include "InterfaceCommonTypes.hpp"
 
 namespace gh::dns {
 
@@ -38,7 +39,8 @@ auto FromDnsEndpoint(const Interface::DnsEndpoint& dnsEndpoint) -> boost::asio::
 
 } // namespace
 
-DnsForwarder::DnsForwarder(boost::asio::any_io_executor executor, Configuration config)
+DnsForwarder::DnsForwarder(boost::asio::any_io_executor executor, Interface::DnsForwarderConfiguration config,
+                           Interface::DnsForwarderCallbacks& callbacks)
     : _Executor(std::move(executor)) {
   std::unordered_map<std::string, std::shared_ptr<DnsUpstream>> upstreamsByName;
   _Upstreams.reserve(config.Upstreams.size());
@@ -72,7 +74,7 @@ DnsForwarder::DnsForwarder(boost::asio::any_io_executor executor, Configuration 
     }
   }
 
-  _Router = std::make_shared<DnsRouter>(std::move(routerConfig));
+  _Router = std::make_shared<DnsRouter>(std::move(routerConfig), callbacks);
 
   _Listeners.reserve(config.Listeners.size());
   for (const auto& listenerConfig : config.Listeners) {
@@ -83,8 +85,8 @@ DnsForwarder::DnsForwarder(boost::asio::any_io_executor executor, Configuration 
 
 DnsForwarder::~DnsForwarder() = default;
 
-auto DnsForwarder::GetConfiguration() const -> Configuration {
-  Configuration config;
+auto DnsForwarder::GetConfiguration() const -> Interface::DnsForwarderConfiguration {
+  Interface::DnsForwarderConfiguration config;
 
   config.Listeners.reserve(_Listeners.size());
   for (const auto& listener : _Listeners) {

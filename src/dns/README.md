@@ -39,9 +39,35 @@ The `dns` module provides a multi-upstream DNS Forwarder service (`DnsForwarder`
 
 ## Public Interfaces
 
+### `DnsForwarderCallbacks`
+
+A pure virtual interface for receiving notifications about inbound **A** and **AAAA** DNS queries and their resolution results.
+
+```cpp
+#include "InterfaceCommonTypes.hpp"
+
+namespace gh::Interface {
+
+using DnsQueryResult = std::variant<std::span<const Ip4Address>, std::span<const Ip6Address>>;
+
+class DnsForwarderCallbacks {
+public:
+  explicit DnsForwarderCallbacks() = default;
+  virtual ~DnsForwarderCallbacks() = default;
+
+  virtual void OnDnsQueryResult(
+      const std::string& upstream,
+      const std::string& domain,
+      DnsQueryResult results
+  ) = 0;
+};
+
+} // namespace gh::Interface
+```
+
 ### `DnsForwarder`
 
-Inherits from `gh::ServiceBase`. Represents the DNS Forwarder service lifecycle. `DnsForwarder` is configured once upon construction via `gh::Interface::DnsForwarderConfiguration` and remains immutable throughout its runtime lifecycle.
+Inherits from `gh::ServiceBase`. Represents the DNS Forwarder service lifecycle. `DnsForwarder` is configured once upon construction via `gh::Interface::DnsForwarderConfiguration` and a reference to `DnsForwarderCallbacks`, remaining immutable throughout its runtime lifecycle.
 
 ```cpp
 #include "DnsForwarder.hpp"
@@ -84,22 +110,32 @@ Interface::DnsForwarderConfiguration config{
   },
 };
 
-// 2. Instantiate forwarder with executor and configuration
-DnsForwarder forwarder(executor, std::move(config));
+// 2. Implement callback interface
+class MyDnsCallbacks : public DnsForwarderCallbacks {
+public:
+  void OnDnsQueryResult(const std::string& upstream, const std::string& domain,
+                        DnsQueryResult results) override {
+    // Process A / AAAA resolution results
+  }
+};
+MyDnsCallbacks callbacks;
 
-// 3. Start the forwarder service (starts all upstreams, router, and listeners)
+// 3. Instantiate forwarder with executor, configuration, and callbacks
+DnsForwarder forwarder(executor, std::move(config), callbacks);
+
+// 4. Start the forwarder service (starts all upstreams, router, and listeners)
 auto err = co_await forwarder.Start();
 if (err) {
   // Handle startup error
 }
 
-// 4. Query runtime configuration snapshot (includes allocated ephemeral ports)
+// 5. Query runtime configuration snapshot (includes allocated ephemeral ports)
 auto runtimeConfig = forwarder.GetConfiguration();
 for (const auto& upstream : runtimeConfig.Upstreams) {
   // upstream.LocalPort contains the OS-assigned ephemeral source port
 }
 
-// 5. Stop the service gracefully
+// 6. Stop the service gracefully
 co_await forwarder.Stop();
 
 } // namespace gh::dns

@@ -100,6 +100,11 @@ The `DnsForwarder` module provides a multi-upstream DNS forwarding service desig
    - If upstream resolution fails, `DnsRouter` generates a synthetic `DnsRCode::ServFail` error response using `DnsPacket::MakeErrorResponse(queryId, ServFail)`.
    - If no route matches the domain, `DnsRouter` generates a synthetic `DnsRCode::Refused` error response.
    - The child fiber invokes `co_await listener.SendResponse(sender, std::move(txBuffer))` which transmits the response to the client via `_Socket.async_send_to()`.
+
+7. **A/AAAA Query & Result Notification**:
+   - For every question in the incoming query packet where `QType` is `A` or `AAAA`, `DnsRouter` extracts the resolved IP addresses from the answer section (IPv4 `std::span<const Interface::Ip4Address>` for A, IPv6 `std::span<const Interface::Ip6Address>` for AAAA).
+   - If the query was unrouted or resolution failed, an empty span of the corresponding IP type is passed.
+   - Invokes `_Callbacks.OnDnsQueryResult(upstreamName, question.QName, results)` using a `DnsQueryResult` variant distinguishing A from AAAA queries by type.
    - When the child fiber exits, `DnsRouter::DoWork()` reaps completed fiber handles using `currentFiber.TryWait()`.
 
 ---
@@ -180,6 +185,7 @@ The `DnsForwarder` module provides a multi-upstream DNS forwarding service desig
 
 - **Construction-Time Configuration (`DnsRouter::Configuration`)**:
   - Receives `Configuration` containing `DefaultRoute` (`std::optional<std::weak_ptr<DnsUpstream>>`) and `Routes` (`std::unordered_map<std::string, std::weak_ptr<DnsUpstream>>`).
+  - Receives a mandatory reference `DnsForwarderCallbacks& callbacks` stored as `_Callbacks`.
   - Normalizes domain keys upon construction and stores them immutably; mutation functions are omitted to guarantee thread-safe and race-free routing.
 - **Domain Normalization (`NormalizeDomain`)**:
   - Converts all characters to lowercase (`std::tolower`).
@@ -203,11 +209,15 @@ The `DnsForwarder` module provides a multi-upstream DNS forwarding service desig
     1. `DnsPacket::Parse()`: Drops packet if malformed.
     2. Extracts QNAME via `parseResult->GetPrimaryQName()`.
     3. Queries `Route(qname)`:
-       - On match: calls `routeTarget->Resolve(std::move(*parseResult), *cancelToken)`.
+       - On match: calls `routeTarget->Resolve(*parseResult, *cancelToken)`.
          - On success: serializes answer packet.
          - On failure: logs error and generates `ServFail` response.
        - On no match: logs error and generates `Refused` response.
     4. If not canceled, calls `co_await listener.SendResponse(sender, std::move(txBuffer))`.
+    5. A/AAAA Query & Result Notification:
+       - Iterates over all questions in the parsed request packet.
+       - For questions matching `DnsType::A` or `DnsType::AAAA`, parses matching answer IP addresses (`std::span<const Interface::Ip4Address>` for A, `std::span<const Interface::Ip6Address>` for AAAA). If unrouted or resolution failed, passes an empty result span of the respective type and empty upstream string.
+       - Calls `_Callbacks.OnDnsQueryResult(upstreamName, question.QName, results)`.
 - **Fiber Event Loop & Child Fiber Reaping (`DoWork`)**:
   - Uses `Omni::Fiber::Select` to monitor three events:
     - Stop signal: `_Service.value()._Stop.GetFiberCancelEvent()`.
@@ -272,7 +282,7 @@ The `DnsForwarder` module provides a multi-upstream DNS forwarding service desig
 - **Construction Initialization**:
   - Instantiates `DnsUpstream` instances for each entry in `config.Upstreams`, mapping each by `Name`.
   - Builds `DnsRouter::Configuration` resolving upstream names to `std::weak_ptr<DnsUpstream>` for the default route (`config.DefaultRoute`) and domain suffix rules (`config.Routes`).
-  - Instantiates `DnsRouter` with the prepared configuration.
+  - Instantiates `DnsRouter` with the prepared configuration and forwarded `callbacks` reference (`DnsForwarderCallbacks&`).
   - Instantiates `DnsListener` instances for each entry in `config.Listeners`, connecting each listener to `_Router`.
 - **Configuration Exposure (`GetConfiguration`)**:
   - Returns `gh::Interface::DnsForwarderConfiguration` containing:

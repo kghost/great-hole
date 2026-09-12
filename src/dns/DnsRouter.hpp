@@ -11,6 +11,7 @@
 #include "Cancel.hpp"
 #include "Coroutine.hpp"
 #include "ErrorCode.hpp"
+#include "InterfaceCommonTypes.hpp"
 #include "RemoteCall.hpp"
 #include "ServiceBase.hpp"
 
@@ -26,7 +27,7 @@ public:
     std::unordered_map<std::string, std::weak_ptr<DnsUpstream>> Routes;
   };
 
-  explicit DnsRouter(Configuration config);
+  explicit DnsRouter(Configuration config, Interface::DnsForwarderCallbacks& callbacks);
   ~DnsRouter() override;
 
   DnsRouter(const DnsRouter&) = delete;
@@ -55,6 +56,8 @@ private:
 
   std::unordered_map<std::string, std::weak_ptr<DnsUpstream>> _Routes;
   std::optional<std::weak_ptr<DnsUpstream>> _DefaultRoute;
+
+  Interface::DnsForwarderCallbacks& _Callbacks;
 
   Omni::Fiber::RemoteCall _Rpc;
   std::vector<RequestContext> _RequestFibers;

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <variant>
@@ -118,6 +119,23 @@ struct DnsForwarderConfiguration {
   std::vector<DnsUpstreamConfiguration> Upstreams;
   std::optional<std::string> DefaultRoute;
   std::unordered_map<std::string, std::string> Routes;
+};
+
+class DnsForwarderCallbacks {
+public:
+  explicit DnsForwarderCallbacks() = default;
+  virtual ~DnsForwarderCallbacks() = default;
+
+  DnsForwarderCallbacks(const DnsForwarderCallbacks&) = delete;
+  auto operator=(const DnsForwarderCallbacks&) -> DnsForwarderCallbacks& = delete;
+  DnsForwarderCallbacks(DnsForwarderCallbacks&&) = delete;
+  auto operator=(DnsForwarderCallbacks&&) -> DnsForwarderCallbacks& = delete;
+
+  using DnsQueryResultA = std::span<const Ip4Address>;
+  using DnsQueryResultAAAA = std::span<const Ip6Address>;
+  using DnsQueryResult = std::variant<DnsQueryResultA, DnsQueryResultAAAA>;
+
+  virtual void OnDnsQueryResult(const std::string& upstream, const std::string& domain, DnsQueryResult results) = 0;
 };
 
 } // namespace Interface

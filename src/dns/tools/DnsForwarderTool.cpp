@@ -19,11 +19,16 @@
 
 namespace {
 
+auto FormatIp(const gh::Interface::Ip4Address& addr) -> std::string {
+  return boost::asio::ip::address_v4(addr.Bytes).to_string();
+}
+
+auto FormatIp(const gh::Interface::Ip6Address& addr) -> std::string {
+  return boost::asio::ip::address_v6(addr.Bytes).to_string();
+}
+
 auto FormatIp(const gh::Interface::IpAddress& addr) -> std::string {
-  if (std::holds_alternative<gh::Interface::Ip4Address>(addr)) {
-    return boost::asio::ip::address_v4(std::get<gh::Interface::Ip4Address>(addr).Bytes).to_string();
-  }
-  return boost::asio::ip::address_v6(std::get<gh::Interface::Ip6Address>(addr).Bytes).to_string();
+  return std::visit([](const auto& address) { return FormatIp(address); }, addr);
 }
 
 auto FormatEndpoint(const gh::Interface::DnsEndpoint& endpoint) -> std::string {
@@ -63,6 +68,33 @@ void PrintConfiguration(const gh::Interface::DnsForwarderConfiguration& config) 
   std::cout << "========================================\n";
 }
 
+class DnsForwarderToolCallbacks : public gh::Interface::DnsForwarderCallbacks {
+public:
+  void OnDnsQueryResult(const std::string& upstream, const std::string& domain, DnsQueryResult results) override {
+    std::visit(
+        [&](const auto& ips) -> auto {
+          using T = std::decay_t<decltype(ips)>;
+          std::string typeStr = std::is_same_v<T, DnsQueryResultA> ? "A" : "AAAA";
+          std::cout << "[DNS Query] Upstream: " << (upstream.empty() ? "(none)" : upstream) << " | " << domain << " ("
+                    << typeStr << ") -> ";
+          if (ips.empty()) {
+            std::cout << "(no results)\n";
+          } else {
+            bool first = true;
+            for (const auto& address : ips) {
+              if (!first) {
+                std::cout << ", ";
+              }
+              std::cout << FormatIp(address);
+              first = false;
+            }
+            std::cout << "\n";
+          }
+        },
+        results);
+  }
+};
+
 } // namespace
 
 auto main() -> int {
@@ -76,7 +108,8 @@ auto main() -> int {
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     gh::Cancel stopSignal;
-    auto forwarder = std::make_shared<gh::dns::DnsForwarder>(ioContext.get_executor(), std::move(config));
+    DnsForwarderToolCallbacks callbacks;
+    auto forwarder = std::make_shared<gh::dns::DnsForwarder>(ioContext.get_executor(), std::move(config), callbacks);
 
     auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 

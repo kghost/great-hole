@@ -37,6 +37,9 @@ public:
   virtual void StartEndpoint(VpnEndpoint endpoint) = 0;
   virtual void StopEndpoint(VpnEndpoint endpoint) = 0;
   virtual auto GetTrafficStats(VpnEndpoint endpoint) -> std::optional<VpnTrafficStats> = 0;
+  virtual auto StartDnsForwarder(const DnsForwarderConfiguration& config, DnsForwarderCallbacks& callbacks) -> std::error_code = 0;
+  virtual auto StopDnsForwarder() -> std::error_code = 0;
+  virtual auto GetDnsForwarderConfiguration() -> DnsForwarderConfiguration = 0;
 
   // Policy Interface
   virtual void ClearPathRegistry() = 0;

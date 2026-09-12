@@ -16,7 +16,8 @@
 
 namespace gh::dns {
 
-DnsRouter::DnsRouter(DnsRouter::Configuration config) : _DefaultRoute(std::move(config.DefaultRoute)) {
+DnsRouter::DnsRouter(DnsRouter::Configuration config, Interface::DnsForwarderCallbacks& callbacks)
+    : _DefaultRoute(std::move(config.DefaultRoute)), _Callbacks(callbacks) {
   _Routes.reserve(config.Routes.size());
   for (auto&& [domainSuffix, client] : config.Routes) {
     std::string norm = NormalizeDomain(domainSuffix);
@@ -138,45 +139,79 @@ auto DnsRouter::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
 
 auto DnsRouter::HandleRequest(DnsListener& listener, boost::asio::ip::udp::endpoint sender, std::vector<uint8_t> data)
     -> Omni::Fiber::Coroutine<void> {
-  auto result =
-      co_await _Rpc.Call([this, &listener, data = std::move(data), sender]() mutable -> Omni::Fiber::Coroutine<void> {
-        auto& currentFiber = co_await Omni::Fiber::GetCurrentOmniFiber();
-        auto cancelToken = std::make_shared<Cancel>();
-        uint64_t reqId = ++_NextRequestId;
-        std::string fiberName = "DnsRequest-" + std::to_string(reqId);
-        auto fiber = currentFiber.Spawn(
-            std::move(fiberName),
-            [this, &listener, data = std::move(data), sender, cancelToken]() mutable -> Omni::Fiber::Coroutine<void> {
-              auto parseResult = DnsPacket::Parse(std::span<const uint8_t>(data.data(), data.size()));
-              if (!parseResult) {
-                co_return;
-              }
+  auto result = co_await _Rpc.Call([this, &listener, data = std::move(data),
+                                    sender]() mutable -> Omni::Fiber::Coroutine<void> {
+    auto& currentFiber = co_await Omni::Fiber::GetCurrentOmniFiber();
+    auto cancelToken = std::make_shared<Cancel>();
+    uint64_t reqId = ++_NextRequestId;
+    std::string fiberName = "DnsRequest-" + std::to_string(reqId);
+    auto fiber = currentFiber.Spawn(
+        std::move(fiberName),
+        [this, &listener, data = std::move(data), sender, cancelToken]() mutable -> Omni::Fiber::Coroutine<void> {
+          auto parseResult = DnsPacket::Parse(std::span<const uint8_t>(data.data(), data.size()));
+          if (!parseResult) {
+            co_return;
+          }
 
-              std::string qname = parseResult->GetPrimaryQName();
-              std::vector<uint8_t> txBuffer;
-              if (auto routeTarget = Route(qname); routeTarget.has_value()) {
-                auto resolveRes = co_await routeTarget.value()->Resolve(std::move(*parseResult), *cancelToken);
-                if (resolveRes) {
-                  txBuffer = resolveRes->Serialize();
-                  BOOST_LOG_TRIVIAL(info) << "DnsRouter got response " << txBuffer.size() << " bytes for " << qname;
-                } else {
-                  BOOST_LOG_TRIVIAL(error) << "DnsRouter resolve error: " << resolveRes.error().message();
-                  auto errResp = DnsPacket::MakeErrorResponse(parseResult->Header.Id, DnsRCode::ServFail);
-                  txBuffer = errResp.Serialize();
+          std::string qname = parseResult->GetPrimaryQName();
+          std::vector<uint8_t> txBuffer;
+          std::string upstreamName;
+          std::expected<DnsPacket, ErrorCode> resolveRes = std::unexpected(SysError(EINVAL));
+          if (auto routeTarget = Route(qname); routeTarget.has_value()) {
+            upstreamName = routeTarget.value()->GetUpstreamName();
+            resolveRes = co_await routeTarget.value()->Resolve(*parseResult, *cancelToken);
+            if (resolveRes) {
+              txBuffer = resolveRes->Serialize();
+              BOOST_LOG_TRIVIAL(debug) << "DnsRouter got response " << txBuffer.size() << " bytes for " << qname;
+            } else {
+              BOOST_LOG_TRIVIAL(error) << "DnsRouter resolve error: " << resolveRes.error().message();
+              auto errResp = DnsPacket::MakeErrorResponse(parseResult->Header.Id, DnsRCode::ServFail);
+              txBuffer = errResp.Serialize();
+            }
+          } else {
+            BOOST_LOG_TRIVIAL(error) << "DnsRouter no route for " << qname;
+            auto errResp = DnsPacket::MakeErrorResponse(parseResult->Header.Id, DnsRCode::Refused);
+            txBuffer = errResp.Serialize();
+          }
+
+          for (const auto& question : parseResult->Questions) {
+            if (question.QType == std::to_underlying(DnsType::A)) {
+              std::vector<Interface::Ip4Address> results;
+              if (resolveRes.has_value()) {
+                for (const auto& ans : resolveRes->Answers) {
+                  if (ans.Type == std::to_underlying(DnsType::A) && ans.RData.size() == Interface::Ip4Address::kSize) {
+                    Interface::Ip4Address ip4{};
+                    std::copy_n(ans.RData.begin(), Interface::Ip4Address::kSize, ip4.Bytes.begin());
+                    results.emplace_back(ip4);
+                  }
                 }
-              } else {
-                BOOST_LOG_TRIVIAL(error) << "DnsRouter no route for " << qname;
-                auto errResp = DnsPacket::MakeErrorResponse(parseResult->Header.Id, DnsRCode::Refused);
-                txBuffer = errResp.Serialize();
               }
-
-              if (!txBuffer.empty() && !cancelToken->IsTriggered()) {
-                co_await listener.SendResponse(sender, std::move(txBuffer));
+              _Callbacks.OnDnsQueryResult(upstreamName, question.QName,
+                                          std::span<const Interface::Ip4Address>(results));
+            } else if (question.QType == std::to_underlying(DnsType::AAAA)) {
+              std::vector<Interface::Ip6Address> results;
+              if (resolveRes.has_value()) {
+                for (const auto& ans : resolveRes->Answers) {
+                  if (ans.Type == std::to_underlying(DnsType::AAAA) &&
+                      ans.RData.size() == Interface::Ip6Address::kSize) {
+                    Interface::Ip6Address ip6{};
+                    std::copy_n(ans.RData.begin(), Interface::Ip6Address::kSize, ip6.Bytes.begin());
+                    results.emplace_back(ip6);
+                  }
+                }
               }
-            });
+              _Callbacks.OnDnsQueryResult(upstreamName, question.QName,
+                                          std::span<const Interface::Ip6Address>(results));
+            }
+          }
 
-        _RequestFibers.push_back(RequestContext{.FiberHandle = fiber, .CancelToken = cancelToken});
-      });
+          if (!txBuffer.empty() && !cancelToken->IsTriggered()) {
+            co_await listener.SendResponse(sender, std::move(txBuffer));
+          }
+        });
+
+    _RequestFibers.push_back(RequestContext{.FiberHandle = fiber, .CancelToken = cancelToken});
+  });
   if (!result.has_value()) {
     BOOST_LOG_TRIVIAL(error) << "DnsRouter::HandleRequest rpc failed";
   }

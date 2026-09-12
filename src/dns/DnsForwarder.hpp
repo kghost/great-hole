@@ -18,9 +18,8 @@ namespace gh::dns {
 
 class DnsForwarder : public ServiceBase {
 public:
-  using Configuration = Interface::DnsForwarderConfiguration;
-
-  explicit DnsForwarder(boost::asio::any_io_executor executor, Configuration config);
+  explicit DnsForwarder(boost::asio::any_io_executor executor, Interface::DnsForwarderConfiguration config,
+                        Interface::DnsForwarderCallbacks& callbacks);
   ~DnsForwarder() override;
 
   DnsForwarder(const DnsForwarder&) = delete;
@@ -30,7 +29,7 @@ public:
 
   [[nodiscard]] auto GetName() const -> std::string override { return "DnsForwarder"; }
 
-  [[nodiscard]] auto GetConfiguration() const -> Configuration;
+  [[nodiscard]] auto GetConfiguration() const -> Interface::DnsForwarderConfiguration;
 
 protected:
   auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;

@@ -28,7 +28,7 @@ auto DnsListener::SendResponse(boost::asio::ip::udp::endpoint sender, std::vecto
   if (ecSend) {
     BOOST_LOG_TRIVIAL(error) << GetName() << " async_send_to client failed: " << ecSend.message();
   } else {
-    BOOST_LOG_TRIVIAL(info) << GetName() << " sent " << nSend << " bytes response to " << sender;
+    BOOST_LOG_TRIVIAL(debug) << GetName() << " sent " << nSend << " bytes response to " << sender;
   }
 }
 

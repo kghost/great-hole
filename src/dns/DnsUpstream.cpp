@@ -66,7 +66,7 @@ auto DnsUpstream::ReceiveLoop() -> Omni::Fiber::Coroutine<void> {
                                                                 _Service.value()._Stop.AsioSlot()());
 
     if (err) {
-      BOOST_LOG_TRIVIAL(info) << GetName() << " ReceiveLoop rx error: " << err.message();
+      BOOST_LOG_TRIVIAL(error) << GetName() << " ReceiveLoop rx error: " << err.message();
       if (_Service.value()._Stop.IsTriggered() || !_Socket.is_open()) {
         break;
       }
@@ -75,12 +75,12 @@ auto DnsUpstream::ReceiveLoop() -> Omni::Fiber::Coroutine<void> {
 
     auto parseResult = DnsPacket::Parse(std::span<const uint8_t>(rxBuffer.data(), bytesRecv));
     if (!parseResult) {
-      BOOST_LOG_TRIVIAL(error) << "DnsUpstream rx parse failed";
+      BOOST_LOG_TRIVIAL(error) << GetName() << " rx parse failed";
       continue;
     }
 
     uint16_t txId = parseResult->Header.Id;
-    BOOST_LOG_TRIVIAL(info) << "DnsUpstream rx packet txId=" << txId;
+    BOOST_LOG_TRIVIAL(debug) << GetName() << " rx packet txId=" << txId;
     std::shared_ptr<Omni::Fiber::Event<std::expected<DnsPacket, ErrorCode>>> eventToNotify;
     uint16_t origTxId = 0;
 
@@ -89,7 +89,7 @@ auto DnsUpstream::ReceiveLoop() -> Omni::Fiber::Coroutine<void> {
       origTxId = matchIt->second.OriginalTxId;
       _PendingQueries.erase(matchIt);
     } else {
-      BOOST_LOG_TRIVIAL(error) << "DnsUpstream txId=" << txId << " not found in pending queries";
+      BOOST_LOG_TRIVIAL(error) << GetName() << " txId=" << txId << " not found in pending queries";
     }
 
     if (eventToNotify) {
@@ -102,7 +102,7 @@ auto DnsUpstream::ReceiveLoop() -> Omni::Fiber::Coroutine<void> {
 auto DnsUpstream::Resolve(DnsPacket request, Cancel& cancel)
     -> Omni::Fiber::Coroutine<std::expected<DnsPacket, ErrorCode>> {
   if (_UpstreamServers.empty() || GetState() != State::kRunning) {
-    BOOST_LOG_TRIVIAL(error) << "DnsUpstream::Resolve rejected: upstreams empty or not running state="
+    BOOST_LOG_TRIVIAL(error) << GetName() << "::Resolve rejected: upstreams empty or not running state="
                              << static_cast<int>(GetState());
     co_return std::unexpected(SysError(ENETUNREACH));
   }
@@ -117,18 +117,18 @@ auto DnsUpstream::Resolve(DnsPacket request, Cancel& cancel)
   request.Header.Id = clientTxId;
   auto wireBuf = request.Serialize();
 
-  BOOST_LOG_TRIVIAL(info) << "DnsUpstream sending query txId=" << clientTxId << " to " << targets.size()
-                          << " upstreams";
+  BOOST_LOG_TRIVIAL(debug) << GetName() << " sending query txId=" << clientTxId << " to " << targets.size()
+                           << " upstreams";
 
   bool sent = false;
   for (const auto& target : targets) {
     auto [err, bytesSent] = co_await _Socket.async_send_to(boost::asio::buffer(wireBuf), target, cancel.AsioSlot()());
     if (!err) {
       sent = true;
-      BOOST_LOG_TRIVIAL(info) << "DnsUpstream sent " << bytesSent << " bytes to " << target;
+      BOOST_LOG_TRIVIAL(debug) << GetName() << " sent " << bytesSent << " bytes to " << target;
       break;
     } else {
-      BOOST_LOG_TRIVIAL(error) << "DnsUpstream async_send_to failed: " << err.message();
+      BOOST_LOG_TRIVIAL(error) << GetName() << " async_send_to failed: " << err.message();
     }
   }
 
@@ -137,9 +137,9 @@ auto DnsUpstream::Resolve(DnsPacket request, Cancel& cancel)
     co_return std::unexpected(SysError(EHOSTUNREACH));
   }
 
-  BOOST_LOG_TRIVIAL(info) << "DnsUpstream awaiting event for txId=" << clientTxId;
+  BOOST_LOG_TRIVIAL(debug) << GetName() << " awaiting event for txId=" << clientTxId;
   auto res = co_await *event;
-  BOOST_LOG_TRIVIAL(info) << "DnsUpstream event received for txId=" << clientTxId;
+  BOOST_LOG_TRIVIAL(debug) << GetName() << " event received for txId=" << clientTxId;
 
   _PendingQueries.erase(clientTxId);
 
