@@ -82,5 +82,5 @@ Documentation in this project is split into two categories based on target audie
 - **src/dns**:
   - [src/dns/README.md](../../src/dns/README.md) - Public APIs and usage guidelines for multi-client DNS Forwarder service.
   - [src/dns/DESIGN.md](../../src/dns/DESIGN.md) - Internal architecture design specs for DNS packet parser, router, per-client fixed local port binding, cache, and validator.
-
-
+- **src/dns/tools**:
+  - [src/dns/tools/README.md](../../src/dns/tools/README.md) - Usage, configuration, and build guidelines for the standalone DNS forwarder tool.

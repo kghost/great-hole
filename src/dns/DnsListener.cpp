@@ -56,7 +56,6 @@ auto DnsListener::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
 
 auto DnsListener::DoWork() -> Omni::Fiber::Coroutine<void> {
   constexpr size_t kRxBufferSize = 2048;
-  std::vector<uint8_t> rxBuffer(kRxBufferSize);
   boost::asio::ip::udp::endpoint senderEp;
 
   while (_Service.has_value() && !_Service.value()._Stop.IsTriggered()) {
@@ -64,6 +63,7 @@ auto DnsListener::DoWork() -> Omni::Fiber::Coroutine<void> {
       break;
     }
 
+    std::vector<uint8_t> rxBuffer(kRxBufferSize);
     auto [err, bytesRecv] = co_await _Socket.async_receive_from(boost::asio::buffer(rxBuffer), senderEp,
                                                                 _Service.value()._Stop.AsioSlot()());
 

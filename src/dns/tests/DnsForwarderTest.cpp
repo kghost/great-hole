@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include "Asio.hpp"
+#include "Cancel.hpp"
 #include "Coroutine.hpp"
 #include "DnsForwarder.hpp"
 #include "DnsPacket.hpp"
@@ -496,6 +497,121 @@ TEST(DnsForwarderTest, ExposeConfigurationOfForwarderAndComponents) {
     EXPECT_EQ(config.Routes.at("internal.company.com"), "u2");
 
     co_await forwarder->Stop();
+    testPassed = true;
+    co_return;
+  });
+
+  io.run();
+  EXPECT_TRUE(testPassed);
+}
+
+TEST(DnsForwarderIntegrationTest, HandleMultipleSequentialQueries) {
+  boost::asio::io_context io;
+  Omni::Fiber::AsioExecutor executor(io.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    boost::asio::ip::udp::endpoint mockUpstreamBindEp(boost::asio::ip::address_v4::loopback(), 0);
+    auto mockSocket = std::make_shared<boost::asio::ip::udp::socket>(io.get_executor());
+    mockSocket->open(mockUpstreamBindEp.protocol());
+    mockSocket->bind(mockUpstreamBindEp);
+    boost::asio::ip::udp::endpoint mockUpstreamEp = mockSocket->local_endpoint();
+
+    Cancel stopMock;
+    auto mockUpstreamFiber =
+        (co_await Omni::Fiber::GetCurrentOmniFiber())
+            .Spawn("MockUpstream", [mockSocket, &stopMock]() -> Omni::Fiber::Coroutine<void> {
+              while (!stopMock.IsTriggered()) {
+                std::vector<uint8_t> buf(2048);
+                boost::asio::ip::udp::endpoint clientEp;
+
+                auto [ec, n] = co_await mockSocket->async_receive_from(
+                    boost::asio::buffer(buf), clientEp, stopMock.AsioSlot()());
+                if (ec) {
+                  break;
+                }
+
+                auto req = DnsPacket::Parse(std::span<const uint8_t>(buf.data(), n));
+                if (req) {
+                  DnsPacket resp;
+                  resp.Header.Id = req->Header.Id;
+                  resp.Header.SetResponse(true);
+                  resp.Questions = req->Questions;
+
+                  DnsResourceRecord rr;
+                  rr.Name = req->GetPrimaryQName();
+                  rr.Type = static_cast<uint16_t>(DnsType::A);
+                  rr.Ttl = 60;
+                  rr.RData = {192, 168, 1, 100};
+                  resp.Answers.push_back(rr);
+
+                  auto wire = resp.Serialize();
+                  co_await mockSocket->async_send_to(boost::asio::buffer(wire), clientEp, Omni::Fiber::AsioUseFiber);
+                }
+              }
+            });
+
+    boost::asio::ip::udp::endpoint tempEp(boost::asio::ip::address_v4::loopback(), 0);
+    boost::asio::ip::udp::socket tempSock(io.get_executor());
+    tempSock.open(tempEp.protocol());
+    tempSock.bind(tempEp);
+    boost::asio::ip::udp::endpoint forwarderBindEp = tempSock.local_endpoint();
+    tempSock.close();
+
+    Interface::DnsForwarderConfiguration config{
+        .Listeners = {{.LocalEndpoint = ToDnsEndpoint(forwarderBindEp)}},
+        .Upstreams = {{.Name = "mock", .ServerEndpoints = {ToDnsEndpoint(mockUpstreamEp)}}},
+        .DefaultRoute = "mock",
+    };
+
+    auto forwarder = std::make_shared<DnsForwarder>(io.get_executor(), std::move(config));
+    auto errStart = co_await forwarder->Start();
+    EXPECT_FALSE(errStart);
+
+    boost::asio::ip::udp::socket testClientSocket(io.get_executor());
+    testClientSocket.open(boost::asio::ip::udp::v4());
+    testClientSocket.bind(boost::asio::ip::udp::endpoint(boost::asio::ip::address_v4::loopback(), 0));
+
+    // Send and verify multiple sequential queries
+    for (uint16_t i = 1; i <= 5; ++i) {
+      DnsPacket queryPacket;
+      queryPacket.Header.Id = 0x1000 + i;
+      DnsQuestion q;
+      q.QName = "query" + std::to_string(i) + ".example.com";
+      q.QType = static_cast<uint16_t>(DnsType::A);
+      queryPacket.Questions.push_back(q);
+
+      auto queryWire = queryPacket.Serialize();
+      co_await testClientSocket.async_send_to(boost::asio::buffer(queryWire), forwarderBindEp,
+                                              Omni::Fiber::AsioUseFiber);
+
+      std::vector<uint8_t> respBuf(2048);
+      boost::asio::ip::udp::endpoint senderEp;
+      auto [ecRecv, respLen] = co_await testClientSocket.async_receive_from(boost::asio::buffer(respBuf), senderEp,
+                                                                            Omni::Fiber::AsioUseFiber);
+      EXPECT_FALSE(ecRecv);
+      auto respPacket = DnsPacket::Parse(std::span<const uint8_t>(respBuf.data(), respLen));
+      EXPECT_TRUE(respPacket.has_value());
+      if (respPacket.has_value()) {
+        EXPECT_EQ(respPacket->Header.Id, 0x1000 + i);
+        EXPECT_TRUE(respPacket->Header.IsResponse());
+        EXPECT_EQ(respPacket->Answers.size(), 1u);
+        if (!respPacket->Answers.empty()) {
+          EXPECT_EQ(respPacket->Answers[0].Name, "query" + std::to_string(i) + ".example.com");
+          EXPECT_EQ(respPacket->Answers[0].RData, (std::vector<uint8_t>{192, 168, 1, 100}));
+        }
+      }
+    }
+
+    // Cleanup
+    stopMock.Trigger();
+    mockSocket->close();
+    co_await (co_await Omni::Fiber::GetCurrentOmniFiber()).Join(mockUpstreamFiber);
+    testClientSocket.close();
+    co_await forwarder->Stop();
+
     testPassed = true;
     co_return;
   });

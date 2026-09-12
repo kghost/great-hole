@@ -340,7 +340,12 @@ src/dns/
 ├── DnsUpstream.cpp
 ├── DnsForwarder.hpp       # Composite DNS forwarder service manager (ServiceBase)
 ├── DnsForwarder.cpp
-└── tests/                 # Unit and integration test suite
+├── tests/                 # Unit and integration test suite
+│   ├── CMakeLists.txt
+│   └── DnsForwarderTest.cpp
+└── tools/                 # Standalone tools
     ├── CMakeLists.txt
-    └── DnsForwarderTest.cpp
+    ├── README.md              # Standalone tool usage, configuration, and build guide
+    ├── DnsForwarderToolConfig.hpp # Native C++ declarative configuration
+    └── DnsForwarderTool.cpp       # Standalone CLI executable
 ```

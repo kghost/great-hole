@@ -145,3 +145,9 @@ for (const auto& [domainSuffix, upstreamName] : config.Routes) {
 2. **Ephemeral Port Allocation**: Sockets for outbound queries automatically request ephemeral local ports from the OS kernel, inspectable via `GetConfiguration()`.
 3. **Immutable Lifecycle**: Routing rules, listening endpoints, and upstreams are established deterministically on construction for race-free concurrency.
 
+---
+
+## Standalone DNS Forwarder Tool
+
+A standalone daemon executable (`dns-forwarder`) configured via native C++ header is available in `src/dns/tools`. See [src/dns/tools/README.md](tools/README.md) for usage, configuration, and build instructions.
+
