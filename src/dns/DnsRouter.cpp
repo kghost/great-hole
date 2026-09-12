@@ -16,6 +16,18 @@
 
 namespace gh::dns {
 
+DnsRouter::DnsRouter(DnsRouter::Configuration config) : _DefaultRoute(std::move(config.DefaultRoute)) {
+  _Routes.reserve(config.Routes.size());
+  for (auto&& [domainSuffix, client] : config.Routes) {
+    std::string norm = NormalizeDomain(domainSuffix);
+    if (norm.empty()) {
+      _DefaultRoute = std::move(client);
+    } else {
+      _Routes[std::move(norm)] = std::move(client);
+    }
+  }
+}
+
 DnsRouter::~DnsRouter() { _Rpc.DiscardAndClose(); }
 
 auto DnsRouter::NormalizeDomain(const std::string& domain) -> std::string {
@@ -26,28 +38,6 @@ auto DnsRouter::NormalizeDomain(const std::string& domain) -> std::string {
   }
   return norm;
 }
-
-void DnsRouter::AddRoute(const std::string& domainSuffix, std::weak_ptr<DnsUpstream> client) {
-  std::string norm = NormalizeDomain(domainSuffix);
-  if (norm.empty()) {
-    _DefaultRoute = std::move(client);
-  } else {
-    _Routes[norm] = std::move(client);
-  }
-}
-
-void DnsRouter::RemoveRoute(const std::string& domainSuffix) {
-  std::string norm = NormalizeDomain(domainSuffix);
-  if (norm.empty()) {
-    _DefaultRoute.reset();
-  } else {
-    _Routes.erase(norm);
-  }
-}
-
-void DnsRouter::SetDefaultRoute(std::weak_ptr<DnsUpstream> client) { _DefaultRoute = std::move(client); }
-
-void DnsRouter::ClearDefaultRoute() { _DefaultRoute.reset(); }
 
 auto DnsRouter::Route(const std::string& domain) const -> std::optional<std::shared_ptr<DnsUpstream>> {
   std::string norm = NormalizeDomain(domain);
@@ -88,11 +78,6 @@ auto DnsRouter::Route(const std::string& domain) const -> std::optional<std::sha
   }
 
   return std::nullopt;
-}
-
-void DnsRouter::Clear() {
-  _Routes.clear();
-  _DefaultRoute.reset();
 }
 
 auto DnsRouter::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> { co_return ErrorCode{}; }

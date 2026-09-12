@@ -69,7 +69,6 @@ TEST(DnsPacketTest, SerializeAndParseAnswerRecord) {
 }
 
 TEST(DnsRouterTest, SuffixMatchingAndLongestMatchWins) {
-  auto router = std::make_shared<DnsRouter>();
   boost::asio::io_context io;
 
   auto defaultClient =
@@ -79,9 +78,15 @@ TEST(DnsRouterTest, SuffixMatchingAndLongestMatchWins) {
   auto subCompanyClient =
       std::make_shared<DnsUpstream>(io.get_executor(), "subCompany", std::vector<boost::asio::ip::udp::endpoint>{});
 
-  router->SetDefaultRoute(defaultClient);
-  router->AddRoute("company.com", companyClient);
-  router->AddRoute("internal.company.com", subCompanyClient);
+  DnsRouter::Configuration config{
+      .DefaultRoute = defaultClient,
+      .Routes =
+          {
+              {"company.com", companyClient},
+              {"internal.company.com", subCompanyClient},
+          },
+  };
+  auto router = std::make_shared<DnsRouter>(std::move(config));
 
   // Exact & Suffix matching
   EXPECT_EQ(router->Route("foo.bar.org"), defaultClient);
@@ -90,12 +95,10 @@ TEST(DnsRouterTest, SuffixMatchingAndLongestMatchWins) {
   EXPECT_EQ(router->Route("internal.company.com"), subCompanyClient);
   EXPECT_EQ(router->Route("api.internal.company.com"), subCompanyClient);
 
-  // Remove route
-  router->RemoveRoute("internal.company.com");
-  EXPECT_EQ(router->Route("api.internal.company.com"), companyClient);
-
   // Test weak_ptr expiration handling
   subCompanyClient.reset();
+  EXPECT_EQ(router->Route("api.internal.company.com"), companyClient);
+
   companyClient.reset();
   EXPECT_EQ(router->Route("company.com"), defaultClient);
 
@@ -527,8 +530,8 @@ TEST(DnsForwarderIntegrationTest, HandleMultipleSequentialQueries) {
                 std::vector<uint8_t> buf(2048);
                 boost::asio::ip::udp::endpoint clientEp;
 
-                auto [ec, n] = co_await mockSocket->async_receive_from(
-                    boost::asio::buffer(buf), clientEp, stopMock.AsioSlot()());
+                auto [ec, n] =
+                    co_await mockSocket->async_receive_from(boost::asio::buffer(buf), clientEp, stopMock.AsioSlot()());
                 if (ec) {
                   break;
                 }

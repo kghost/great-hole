@@ -178,6 +178,9 @@ The `DnsForwarder` module provides a multi-upstream DNS forwarding service desig
 
 `DnsRouter` is a `gh::ServiceBase` subclass that coordinates domain matching, request queueing, and concurrent query fiber execution.
 
+- **Construction-Time Configuration (`DnsRouter::Configuration`)**:
+  - Receives `Configuration` containing `DefaultRoute` (`std::optional<std::weak_ptr<DnsUpstream>>`) and `Routes` (`std::unordered_map<std::string, std::weak_ptr<DnsUpstream>>`).
+  - Normalizes domain keys upon construction and stores them immutably; mutation functions are omitted to guarantee thread-safe and race-free routing.
 - **Domain Normalization (`NormalizeDomain`)**:
   - Converts all characters to lowercase (`std::tolower`).
   - Strips trailing dots (e.g., `"example.com."` -> `"example.com"`).
@@ -268,7 +271,8 @@ The `DnsForwarder` module provides a multi-upstream DNS forwarding service desig
   - `_Upstreams`: `std::unordered_map<std::string, std::shared_ptr<DnsUpstream>>`.
 - **Construction Initialization**:
   - Instantiates `DnsUpstream` instances for each entry in `config.Upstreams`, mapping each by `Name`.
-  - Configures `DnsRouter` default fallback route (`config.DefaultRoute`) and domain suffix rules (`config.Routes`) using named upstream resolution.
+  - Builds `DnsRouter::Configuration` resolving upstream names to `std::weak_ptr<DnsUpstream>` for the default route (`config.DefaultRoute`) and domain suffix rules (`config.Routes`).
+  - Instantiates `DnsRouter` with the prepared configuration.
   - Instantiates `DnsListener` instances for each entry in `config.Listeners`, connecting each listener to `_Router`.
 - **Configuration Exposure (`GetConfiguration`)**:
   - Returns `gh::Interface::DnsForwarderConfiguration` containing:

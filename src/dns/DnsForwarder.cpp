@@ -39,7 +39,7 @@ auto FromDnsEndpoint(const Interface::DnsEndpoint& dnsEndpoint) -> boost::asio::
 } // namespace
 
 DnsForwarder::DnsForwarder(boost::asio::any_io_executor executor, Configuration config)
-    : _Executor(std::move(executor)), _Router(std::make_shared<DnsRouter>()) {
+    : _Executor(std::move(executor)) {
   std::unordered_map<std::string, std::shared_ptr<DnsUpstream>> upstreamsByName;
   _Upstreams.reserve(config.Upstreams.size());
   for (const auto& upstreamConfig : config.Upstreams) {
@@ -53,10 +53,11 @@ DnsForwarder::DnsForwarder(boost::asio::any_io_executor executor, Configuration 
     upstreamsByName[upstreamConfig.Name] = upstream;
   }
 
+  DnsRouter::Configuration routerConfig;
   if (config.DefaultRoute.has_value()) {
     auto defaultIter = upstreamsByName.find(*config.DefaultRoute);
     if (defaultIter != upstreamsByName.end()) {
-      _Router->SetDefaultRoute(defaultIter->second);
+      routerConfig.DefaultRoute = defaultIter->second;
     } else {
       BOOST_LOG_TRIVIAL(warning) << "Default route refers to unknown upstream: " << *config.DefaultRoute;
     }
@@ -65,11 +66,13 @@ DnsForwarder::DnsForwarder(boost::asio::any_io_executor executor, Configuration 
   for (const auto& [domain, upstreamName] : config.Routes) {
     auto routeIter = upstreamsByName.find(upstreamName);
     if (routeIter != upstreamsByName.end()) {
-      _Router->AddRoute(domain, routeIter->second);
+      routerConfig.Routes[domain] = routeIter->second;
     } else {
       BOOST_LOG_TRIVIAL(warning) << "Route for " << domain << " refers to unknown upstream: " << upstreamName;
     }
   }
+
+  _Router = std::make_shared<DnsRouter>(std::move(routerConfig));
 
   _Listeners.reserve(config.Listeners.size());
   for (const auto& listenerConfig : config.Listeners) {

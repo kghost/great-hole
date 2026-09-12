@@ -20,7 +20,7 @@ class DnsForwarder : public ServiceBase {
 public:
   using Configuration = Interface::DnsForwarderConfiguration;
 
-  explicit DnsForwarder(boost::asio::any_io_executor executor, Configuration config = {});
+  explicit DnsForwarder(boost::asio::any_io_executor executor, Configuration config);
   ~DnsForwarder() override;
 
   DnsForwarder(const DnsForwarder&) = delete;

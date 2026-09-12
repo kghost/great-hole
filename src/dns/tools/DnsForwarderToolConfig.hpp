@@ -4,6 +4,7 @@
 
 namespace gh::dns::tools {
 
+// NOLINTBEGIN(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
 inline auto GetDnsForwarderConfig() -> Interface::DnsForwarderConfiguration {
   return Interface::DnsForwarderConfiguration{
       .Listeners =
@@ -54,5 +55,6 @@ inline auto GetDnsForwarderConfig() -> Interface::DnsForwarderConfiguration {
           },
   };
 }
+// NOLINTEND(cppcoreguidelines-avoid-magic-numbers,readability-magic-numbers)
 
 } // namespace gh::dns::tools

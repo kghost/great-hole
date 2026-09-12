@@ -21,7 +21,12 @@ class DnsListener;
 
 class DnsRouter : public ServiceBase {
 public:
-  explicit DnsRouter() = default;
+  struct Configuration {
+    std::optional<std::weak_ptr<DnsUpstream>> DefaultRoute;
+    std::unordered_map<std::string, std::weak_ptr<DnsUpstream>> Routes;
+  };
+
+  explicit DnsRouter(Configuration config);
   ~DnsRouter() override;
 
   DnsRouter(const DnsRouter&) = delete;
@@ -30,22 +35,10 @@ public:
   auto operator=(DnsRouter&&) -> DnsRouter& = delete;
 
   [[nodiscard]] auto GetName() const -> std::string override { return "DnsRouter"; }
-
-  void AddRoute(const std::string& domainSuffix, std::weak_ptr<DnsUpstream> client);
-  void RemoveRoute(const std::string& domainSuffix);
-  void SetDefaultRoute(std::weak_ptr<DnsUpstream> client);
-  void ClearDefaultRoute();
+  [[nodiscard]] auto GetRoutes() const -> const auto& { return _Routes; }
+  [[nodiscard]] auto GetDefaultRoute() const -> const auto& { return _DefaultRoute; }
 
   [[nodiscard]] auto Route(const std::string& domain) const -> std::optional<std::shared_ptr<DnsUpstream>>;
-  void Clear();
-
-  [[nodiscard]] auto GetRoutes() const -> const std::unordered_map<std::string, std::weak_ptr<DnsUpstream>>& {
-    return _Routes;
-  }
-  [[nodiscard]] auto GetDefaultRoute() const -> const std::optional<std::weak_ptr<DnsUpstream>>& {
-    return _DefaultRoute;
-  }
-
   auto HandleRequest(DnsListener& listener, boost::asio::ip::udp::endpoint sender, std::vector<uint8_t> data)
       -> Omni::Fiber::Coroutine<void>;
 
