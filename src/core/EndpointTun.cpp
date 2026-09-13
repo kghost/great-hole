@@ -28,7 +28,7 @@ auto Tun::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   }
   int fd = ::open("/dev/net/tun", O_RDWR);
   if (fd < 0) {
-    co_return ErrorCode(errno, system_category());
+    co_return ErrorCode(errno, std::system_category());
   }
 
   struct ifreq ifr;
@@ -37,7 +37,7 @@ auto Tun::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
   ifr.ifr_flags = IFF_TUN | IFF_NO_PI;
   if (::ioctl(fd, TUNSETIFF, (void*)&ifr) < 0) {
     ::close(fd);
-    co_return ErrorCode(errno, system_category());
+    co_return ErrorCode(errno, std::system_category());
   }
 
   _TunFileDescriptor.assign(fd);
