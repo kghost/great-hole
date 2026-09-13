@@ -95,7 +95,7 @@ auto main(int ac, char** av) -> int {
         } else if (err == boost::asio::error::operation_aborted) {
           continue;
         } else {
-          throw boost::system::system_error(err, "error on waiting signal");
+          throw std::system_error(err, "error on waiting signal");
         }
       }
       signals.clear();

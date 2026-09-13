@@ -3,8 +3,6 @@
 #include <array>
 #include <vector>
 
-#include <boost/system/system_error.hpp>
-
 #include "Endpoint.hpp"
 #include "Filter.hpp"
 #include "Pipeline.hpp" // IWYU pragma: keep
@@ -18,7 +16,7 @@ static void PipelineStart(lua_State* L) {
   interface.Schedule([pipe](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await pipe->Start();
     if (err) {
-      throw boost::system::system_error(err, "pipeline start error");
+      throw std::system_error(err, "pipeline start error");
     }
     co_return 0;
   });

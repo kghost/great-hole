@@ -17,6 +17,7 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/log/trivial.hpp>
+#include <boost/system/system_error.hpp>
 
 #include "Asio.hpp"
 #include "BackoffTimer.hpp"
@@ -411,12 +412,22 @@ auto UdpDynMux::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
     _Socket.bind(_Local);
     _Local = _Socket.local_endpoint();
     BOOST_LOG_TRIVIAL(info) << GetName() << " bound at " << _Local;
-  } catch (const SystemError& e) {
+  } catch (const boost::system::system_error& e) {
     BOOST_LOG_TRIVIAL(info) << GetName() << " start failed: " << e.what();
     err = e.code();
+  } catch (const std::system_error& e) {
+    BOOST_LOG_TRIVIAL(info) << GetName() << " start failed: " << e.what();
+    err = e.code();
+  } catch (const std::exception& e) {
+    BOOST_LOG_TRIVIAL(info) << GetName() << " start failed: " << e.what();
+    err = std::make_error_code(std::errc::io_error);
   }
 
   if (err) {
+    if (_Socket.is_open()) {
+      boost::system::error_code ignoreEc;
+      _Socket.close(ignoreEc);
+    }
     _ChannelRpc.DiscardAndClose();
     co_return err;
   }

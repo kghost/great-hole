@@ -5,7 +5,6 @@
 #include <utility>
 
 #include <boost/asio.hpp>
-#include <boost/system/system_error.hpp>
 
 #include "EndpointUdpMux.hpp"
 #include "ErrorCode.hpp"
@@ -71,7 +70,7 @@ static void UdpMuxServerStart(lua_State* L) {
   interface.Schedule([u](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await u->Start();
     if (err) {
-      throw boost::system::system_error(err, "udp_mux_server start error");
+      throw std::system_error(err, "udp_mux_server start error");
     }
     co_return 0;
   });

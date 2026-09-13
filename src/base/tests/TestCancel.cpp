@@ -1,6 +1,7 @@
 #include <boost/asio.hpp>
 #include <chrono>
 #include <gtest/gtest.h>
+#include <system_error>
 
 #include "Asio.hpp"
 #include "Cancel.hpp"
@@ -30,7 +31,7 @@ TEST(CancelSelectTest, CorrectWayCancelsTimer) {
 
   Cancel cancel;
   bool selectFinished = false;
-  boost::system::error_code selectEc;
+  std::error_code selectErr;
 
   manager.SpawnRoot("root", [&]() -> Coroutine<void> {
     auto& current = co_await GetCurrentOmniFiber();
@@ -51,9 +52,9 @@ TEST(CancelSelectTest, CorrectWayCancelsTimer) {
     // Storing the cancelSlot extending its lifetime for the duration of co_await Select
     auto cancelSlot = cancel.AsioSlot();
 
-    co_await Select(SelectPair(dummyEvent, [] -> void {}),
-                    SelectPair(timer->async_wait(cancelSlot()),
-                               AsioApply([&](boost::system::error_code ec) -> void { selectEc = ec; })));
+    co_await Select(
+        SelectPair(dummyEvent, [] -> void {}),
+        SelectPair(timer->async_wait(cancelSlot()), AsioApply([&](std::error_code err) -> void { selectErr = err; })));
 
     selectFinished = true;
     co_await current.Join(child);
@@ -63,7 +64,7 @@ TEST(CancelSelectTest, CorrectWayCancelsTimer) {
   RunEventLoop(io);
 
   EXPECT_TRUE(selectFinished);
-  EXPECT_EQ(selectEc, boost::asio::error::operation_aborted);
+  EXPECT_EQ(selectErr, std::errc::operation_canceled);
 }
 
 TEST(CancelSelectTest, InlineTemporaryWayHangsOrCrashes) {
@@ -93,9 +94,8 @@ TEST(CancelSelectTest, InlineTemporaryWayHangsOrCrashes) {
     });
 
     Event<void> dummyEvent;
-    co_await Select(
-        SelectPair(dummyEvent, [] -> void {}),
-        SelectPair(timer->async_wait(cancel.AsioSlot()()), AsioApply([&](boost::system::error_code ec) -> void {})));
+    co_await Select(SelectPair(dummyEvent, [] -> void {}),
+                    SelectPair(timer->async_wait(cancel.AsioSlot()()), AsioApply([&](std::error_code ec) -> void {})));
     co_await current.Join(child);
     co_return;
   });
@@ -127,7 +127,7 @@ TEST(CancelSelectTest, InlineTemporaryWaySplitStatementVulnerability) {
   //   });
   //
   //   Event<void> dummyEvent;
-  //   auto pair = SelectPair(timer->async_wait(cancel.AsioSlot()()), AsioApply([&](boost::system::error_code ec) ->
+  //   auto pair = SelectPair(timer->async_wait(cancel.AsioSlot()()), AsioApply([&](std::error_code ec) ->
   //   void {}));
   //
   //   co_await Select(SelectPair(dummyEvent, [] -> void {}), pair);

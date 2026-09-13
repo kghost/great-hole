@@ -1,6 +1,7 @@
 #include "Pipeline.hpp"
 
 #include <memory>
+#include <system_error>
 
 #include <boost/asio/buffer.hpp>
 #include <boost/log/trivial.hpp>
@@ -62,7 +63,7 @@ auto Pipeline::RunDirection(std::shared_ptr<Endpoint> input, std::shared_ptr<End
       } else if (IsCritical(errRead)) {
         BOOST_LOG_TRIVIAL(error) << std::format("{} read error: {}", GetNameWithDirection(direction),
                                                 errRead.message());
-        throw boost::system::system_error(errRead, "Pipeline read error");
+        throw std::system_error(errRead, "Pipeline read error");
       } else {
         BOOST_LOG_TRIVIAL(warning) << std::format("{} read error (non-critical): {}", GetNameWithDirection(direction),
                                                   errRead.message());
@@ -78,7 +79,7 @@ auto Pipeline::RunDirection(std::shared_ptr<Endpoint> input, std::shared_ptr<End
         } else if (IsCritical(errPipe)) {
           BOOST_LOG_TRIVIAL(error) << std::format("{} filter error: {}", GetNameWithDirection(direction),
                                                   errPipe.message());
-          throw boost::system::system_error(errPipe, "Pipeline filter error");
+          throw std::system_error(errPipe, "Pipeline filter error");
         } else {
           BOOST_LOG_TRIVIAL(warning) << std::format("{} filter error (non-critical): {}",
                                                     GetNameWithDirection(direction), errPipe.message());
@@ -93,7 +94,7 @@ auto Pipeline::RunDirection(std::shared_ptr<Endpoint> input, std::shared_ptr<End
       } else if (IsCritical(errWrite)) {
         BOOST_LOG_TRIVIAL(error) << std::format("{} write error: {}", GetNameWithDirection(direction),
                                                 errWrite.message());
-        throw boost::system::system_error(errWrite, "Pipeline write error");
+        throw std::system_error(errWrite, "Pipeline write error");
       } else {
         BOOST_LOG_TRIVIAL(warning) << std::format("{} write error (non-critical): {}", GetNameWithDirection(direction),
                                                   errWrite.message());
@@ -127,22 +128,18 @@ auto Pipeline::Stop() -> Omni::Fiber::Coroutine<ErrorCode> {
 auto Pipeline::IsCritical(const ErrorCode& err) -> bool {
   if (!err || err.category() == AppMinorErrorCategory::kErrorCategory) {
     return false;
-  } else if (err.category() == boost::system::system_category()) {
-    switch (err.value()) {
-    case boost::system::errc::invalid_argument:
-    case boost::system::errc::io_error:
-    case boost::system::errc::connection_refused:
-    case boost::system::errc::network_unreachable:
-    case boost::system::errc::host_unreachable:
-    case boost::system::errc::operation_canceled:
-#ifdef WIN32
-    case ERROR_OPERATION_ABORTED:
-    case ERROR_INSUFFICIENT_BUFFER:
-#endif
+  } else if (err.category() == std::system_category()) {
+    if (err == std::errc::invalid_argument || err == std::errc::io_error || err == std::errc::connection_refused ||
+        err == std::errc::network_unreachable || err == std::errc::host_unreachable ||
+        err == std::errc::operation_canceled) {
       return false;
-    default:
-      return true;
     }
+#ifdef _WIN32
+    if (err.value() == ERROR_OPERATION_ABORTED || err.value() == ERROR_INSUFFICIENT_BUFFER) {
+      return false;
+    }
+#endif
+    return true;
   } else {
     return true;
   }

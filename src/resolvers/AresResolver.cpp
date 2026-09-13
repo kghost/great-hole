@@ -154,8 +154,8 @@ auto RunChannel(boost::asio::any_io_executor executor, InitiateQuery&& initiateQ
 
   ErrorCode err = std::forward<InitiateQuery>(initiateQuery)(channel);
   while (!err) {
-    Omni::Fiber::SelectPairList<Omni::Fiber::AsioResult<boost::system::error_code>,
-                                std::function<void(std::tuple<boost::system::error_code>)>>
+    Omni::Fiber::SelectPairList<Omni::Fiber::AsioResult<std::error_code>,
+                                std::function<void(std::tuple<std::error_code>)>>
         list;
 
     boost::asio::steady_timer timer(executor);

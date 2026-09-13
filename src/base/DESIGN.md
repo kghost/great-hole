@@ -48,3 +48,13 @@ The lifecycle is controlled by the `Stop()` method, which performs the following
 - **`ActionResult<StateVal>` Deduction**:
   Filters all `Transition` declarations originating from `StateVal`, collects unique `actionType`s, and forms `std::variant<ActionTypes...>`.
 
+---
+
+## 3. Lifecycle Exception Resilience & Deadlock Prevention
+
+When starting or stopping a service:
+- `Start()` awaits an internal `Omni::Fiber::Event<ErrorCode> errStart` fired from the spawned service worker fiber upon completion of `co_await DoStart()`.
+- If an unhandled exception (such as `boost::system::system_error` or `std::system_error` thrown by underlying socket operations) escapes `DoStart()` or `DoGracefulStop()`, `errStart` or `_StopError` would never be fired, causing `Start()` or `Stop()` to hang indefinitely.
+- To prevent this class of deadlocks, the worker coroutine in `ServiceBase` wraps both `co_await DoStart()` and `co_await DoGracefulStop()` with defensive `try-catch` blocks catching `boost::system::system_error`, `std::system_error`, and `std::exception`. If an exception occurs, the error code is extracted and fired to `errStart` or `_StopError`, ensuring structured parent fibers always wake up and can join their child fibers.
+
+

@@ -1,7 +1,11 @@
 #include "DnsUpstream.hpp"
 
-#include <boost/log/trivial.hpp>
 #include <cstddef>
+#include <exception>
+#include <system_error>
+
+#include <boost/log/trivial.hpp>
+#include <boost/system/system_error.hpp>
 
 #include "Event.hpp"
 
@@ -14,16 +18,30 @@ DnsUpstream::DnsUpstream(const boost::asio::any_io_executor& executor, std::stri
 DnsUpstream::~DnsUpstream() = default;
 
 auto DnsUpstream::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
-  boost::system::error_code err;
-  _Socket.open(boost::asio::ip::udp::v4(), err);
-  if (err) {
-    co_return err;
-  }
-
-  _Socket.bind(boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), 0), err);
-  if (err) {
-    _Socket.close();
-    co_return err;
+  try {
+    _Socket.open(boost::asio::ip::udp::v4());
+    _Socket.bind(boost::asio::ip::udp::endpoint(boost::asio::ip::udp::v4(), 0));
+  } catch (const boost::system::system_error& e) {
+    BOOST_LOG_TRIVIAL(info) << GetName() << " start failed: " << e.what();
+    if (_Socket.is_open()) {
+      boost::system::error_code ignoreEc;
+      _Socket.close(ignoreEc);
+    }
+    co_return e.code();
+  } catch (const std::system_error& e) {
+    BOOST_LOG_TRIVIAL(info) << GetName() << " start failed: " << e.what();
+    if (_Socket.is_open()) {
+      boost::system::error_code ignoreEc;
+      _Socket.close(ignoreEc);
+    }
+    co_return e.code();
+  } catch (const std::exception& e) {
+    BOOST_LOG_TRIVIAL(info) << GetName() << " start failed: " << e.what();
+    if (_Socket.is_open()) {
+      boost::system::error_code ignoreEc;
+      _Socket.close(ignoreEc);
+    }
+    co_return std::make_error_code(std::errc::io_error);
   }
 
   _LocalPort = _Socket.local_endpoint().port();
@@ -34,8 +52,7 @@ auto DnsUpstream::DoWork() -> Omni::Fiber::Coroutine<void> { co_await ReceiveLoo
 
 auto DnsUpstream::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
   BOOST_LOG_TRIVIAL(info) << GetName() << " DoGracefulStop start";
-  boost::system::error_code err;
-  _Socket.close(err);
+  _Socket.close();
 
   for (auto& [txId, pending] : _PendingQueries) {
     if (pending.Event) {

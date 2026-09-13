@@ -294,7 +294,7 @@ auto PlatformImpl::StartDnsForwarder(const DnsForwarderConfiguration& config, Dn
   auto future = promise.get_future();
   _TaskQueue.Push([this, &promise, config, &callbacks](auto& context) -> Omni::Fiber::Coroutine<void> {
     if (context.DnsForwarder) {
-      promise.set_value(ErrorCode(static_cast<int>(std::errc::already_connected), std::generic_category()));
+      promise.set_value(std::make_error_code(std::errc::already_connected));
       co_return;
     }
     context.DnsForwarder = std::make_shared<gh::dns::DnsForwarder>(_IoContext.get_executor(), config, callbacks);

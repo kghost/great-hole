@@ -1,8 +1,12 @@
 #include "ServiceBase.hpp"
 
-#include <boost/log/trivial.hpp>
 #include <cassert>
+#include <exception>
 #include <format>
+#include <system_error>
+
+#include <boost/log/trivial.hpp>
+#include <boost/system/system_error.hpp>
 
 #include "Coroutine.hpp"
 #include "ErrorCode.hpp"
@@ -25,7 +29,18 @@ auto ServiceBase::Start() -> Omni::Fiber::Coroutine<ErrorCode> {
                     assert(_State == State::kPreStart);
                     _State = State::kStarting;
                     BOOST_LOG_TRIVIAL(info) << GetName() << " starting";
-                    auto err = co_await DoStart();
+                    ErrorCode err;
+                    try {
+                      err = co_await DoStart();
+                    } catch (const boost::system::system_error& e) {
+                      err = e.code();
+                    } catch (const std::system_error& e) {
+                      err = e.code();
+                    } catch (const std::exception&) {
+                      err = std::make_error_code(std::errc::io_error);
+                    } catch (...) {
+                      err = std::make_error_code(std::errc::io_error);
+                    }
                     errStart.Fire(err);
                     if (err) {
                       _State = State::kError;
@@ -40,7 +55,18 @@ auto ServiceBase::Start() -> Omni::Fiber::Coroutine<ErrorCode> {
 
                     _State = State::kStopping;
                     BOOST_LOG_TRIVIAL(info) << GetName() << " stopping";
-                    auto errStop = co_await DoGracefulStop();
+                    ErrorCode errStop;
+                    try {
+                      errStop = co_await DoGracefulStop();
+                    } catch (const boost::system::system_error& e) {
+                      errStop = e.code();
+                    } catch (const std::system_error& e) {
+                      errStop = e.code();
+                    } catch (const std::exception&) {
+                      errStop = std::make_error_code(std::errc::io_error);
+                    } catch (...) {
+                      errStop = std::make_error_code(std::errc::io_error);
+                    }
                     _Service.value()._StopError.Fire(errStop);
                     if (!errStop) {
                       _State = State::kFinished;

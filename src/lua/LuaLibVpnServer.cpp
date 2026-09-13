@@ -2,8 +2,6 @@
 
 #include <vector>
 
-#include <boost/system/system_error.hpp>
-
 #include "ErrorCode.hpp"
 #include "VpnServer.hpp" // IWYU pragma: keep
 
@@ -83,7 +81,7 @@ static void VpnServerStart(lua_State* L) {
   interface.Schedule([srv](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await srv->Start();
     if (err) {
-      throw boost::system::system_error(err, "vpn_server start error");
+      throw std::system_error(err, "vpn_server start error");
     }
     co_return 0;
   });

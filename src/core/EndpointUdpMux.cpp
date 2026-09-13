@@ -12,6 +12,7 @@
 #include <boost/asio/buffer.hpp>
 #include <boost/lexical_cast.hpp>
 #include <boost/log/trivial.hpp>
+#include <boost/system/system_error.hpp>
 
 #include "Cancel.hpp"
 #include "ErrorCode.hpp"
@@ -39,12 +40,22 @@ auto UdpMux::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
     _Socket.set_option(boost::asio::ip::v6_only(false));
     _Socket.bind(_Local);
     BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") bound at " << _Socket.local_endpoint();
-  } catch (const SystemError& e) {
+  } catch (const boost::system::system_error& e) {
     BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") start failed: " << e.what();
     ec = e.code();
+  } catch (const std::system_error& e) {
+    BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") start failed: " << e.what();
+    ec = e.code();
+  } catch (const std::exception& e) {
+    BOOST_LOG_TRIVIAL(info) << "UdpMux(" << this << ") start failed: " << e.what();
+    ec = std::make_error_code(std::errc::io_error);
   }
 
   if (ec) {
+    if (_Socket.is_open()) {
+      boost::system::error_code ignoreEc;
+      _Socket.close(ignoreEc);
+    }
     _ChannelRpc.DiscardAndClose();
     co_return ec;
   }

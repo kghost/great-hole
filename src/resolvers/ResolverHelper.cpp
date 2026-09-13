@@ -32,14 +32,12 @@ auto FindResolverIp(const std::string& input, ResolveFor& target) -> std::shared
     stripped = stripped.substr(1, stripped.size() - 2);
   }
 
-  try {
-    // Try to parse as static IP
-    auto address = boost::asio::ip::make_address(stripped);
+  boost::system::error_code err;
+  auto address = boost::asio::ip::make_address(stripped, err);
+  if (!err) {
     return std::make_shared<ResolverStaticIp>(MapToV6(address));
-  } catch (const boost::system::system_error&) {
-    // If not a static IP, treat as DNS host name
-    return std::make_shared<ResolverIpDns>(target.GetExecutor(), input);
   }
+  return std::make_shared<ResolverIpDns>(target.GetExecutor(), input);
 }
 
 auto FindResolverPort(const std::string& input, ResolveFor& target) -> std::shared_ptr<ResolverPort> {

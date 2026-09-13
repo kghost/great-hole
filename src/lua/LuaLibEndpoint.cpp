@@ -1,7 +1,5 @@
 #include "LuaLibCommon.hpp"
 
-#include <boost/system/system_error.hpp>
-
 #include "EndpointTun.hpp"
 #include "ErrorCode.hpp"
 
@@ -14,7 +12,7 @@ static void EndpointStart(lua_State* L) {
   interface.Schedule([ep](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await ep->Start();
     if (err) {
-      throw boost::system::system_error(err, "tun start error");
+      throw std::system_error(err, "tun start error");
     }
     co_return 0;
   });

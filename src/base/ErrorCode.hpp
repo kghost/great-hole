@@ -1,8 +1,7 @@
 #pragma once
 
 #include <array>
-#include <boost/system/error_code.hpp>
-#include <boost/system/system_error.hpp>
+#include <system_error>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -10,12 +9,9 @@
 
 namespace gh {
 
-using ErrorCode = boost::system::error_code;
-using ErrorCategory = boost::system::error_category;
-using ErrorCondition = boost::system::error_condition;
-using SystemError = boost::system::system_error;
-
-using boost::system::system_category;
+using ErrorCode = std::error_code;
+using ErrorCategory = std::error_category;
+using ErrorCondition = std::error_condition;
 
 class AppErrorCategory : public ErrorCategory {
 public:
@@ -98,9 +94,9 @@ template <> struct CategoryOfCode<AppMinorErrorCategory::Codes> {
 auto Error(auto code) -> ErrorCode { return ErrorCode{code, CategoryOfCode<decltype(code)>::Category::kErrorCategory}; }
 
 #ifndef _WIN32
-inline auto SysError(int err) -> ErrorCode { return ErrorCode{err, system_category()}; }
+inline auto SysError(int err) -> ErrorCode { return ErrorCode{err, std::system_category()}; }
 #else
-inline auto SysError(DWORD err) -> ErrorCode { return ErrorCode{static_cast<int>(err), system_category()}; }
+inline auto SysError(DWORD err) -> ErrorCode { return ErrorCode{static_cast<int>(err), std::system_category()}; }
 #endif
 
 } // namespace gh

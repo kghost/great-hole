@@ -47,7 +47,8 @@ void PrintInterfaces(
                     << "): " << FormatIpAddress(dns) << "\n";
         }
         if (info.V4Info->OriginalDnsServers.has_value()) {
-          std::cout << "    Original DNS (IsDhcp=" << (info.V4Info->OriginalDnsServers->IsDhcp ? "Yes" : "No") << "):\n";
+          std::cout << "    Original DNS (IsDhcp=" << (info.V4Info->OriginalDnsServers->IsDhcp ? "Yes" : "No")
+                    << "):\n";
           for (const auto& dns : info.V4Info->OriginalDnsServers->Servers) {
             std::cout << "      " << FormatIpAddress(dns) << "\n";
           }
@@ -66,7 +67,8 @@ void PrintInterfaces(
                     << "): " << FormatIpAddress(dns) << "\n";
         }
         if (info.V6Info->OriginalDnsServers.has_value()) {
-          std::cout << "    Original DNS (IsDhcp=" << (info.V6Info->OriginalDnsServers->IsDhcp ? "Yes" : "No") << "):\n";
+          std::cout << "    Original DNS (IsDhcp=" << (info.V6Info->OriginalDnsServers->IsDhcp ? "Yes" : "No")
+                    << "):\n";
           for (const auto& dns : info.V6Info->OriginalDnsServers->Servers) {
             std::cout << "      " << FormatIpAddress(dns) << "\n";
           }
@@ -102,15 +104,14 @@ auto main(int argc, char* argv[]) -> int {
       boost::asio::steady_timer timer(ioContext, std::chrono::seconds(10));
       co_await Omni::Fiber::Select(
           Omni::Fiber::SelectPair(cancel.GetFiberCancelEvent(), [] -> void {}),
-          Omni::Fiber::SelectPair(timer.async_wait(cancel.AsioSlot()()),
-                                  Omni::Fiber::AsioApply([](auto) -> void {})));
+          Omni::Fiber::SelectPair(timer.async_wait(cancel.AsioSlot()()), Omni::Fiber::AsioApply([](auto) -> void {})));
     }
 
     co_await monitor->Stop();
   });
 
   boost::asio::signal_set signals(ioContext, SIGINT, SIGTERM);
-  signals.async_wait([&](const boost::system::error_code&, int) -> void {
+  signals.async_wait([&](const std::error_code&, int) -> void {
     std::cout << "\nStopping InterfaceMonitor...\n";
     cancel.Trigger();
   });

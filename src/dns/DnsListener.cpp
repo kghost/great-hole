@@ -3,6 +3,7 @@
 #include <utility>
 
 #include <boost/log/trivial.hpp>
+#include <boost/system/system_error.hpp>
 
 #include "Asio.hpp"
 #include "DnsRouter.hpp"
@@ -33,24 +34,29 @@ auto DnsListener::SendResponse(boost::asio::ip::udp::endpoint sender, std::vecto
 }
 
 auto DnsListener::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
-  boost::system::error_code err;
-  _Socket.open(_LocalEndpoint.protocol(), err);
-  if (err) {
-    co_return err;
+  try {
+    _Socket.open(_LocalEndpoint.protocol());
+    _Socket.bind(_LocalEndpoint);
+    _LocalEndpoint = _Socket.local_endpoint();
+  } catch (const boost::system::system_error& e) {
+    if (_Socket.is_open()) {
+      boost::system::error_code ignoreEc;
+      _Socket.close(ignoreEc);
+    }
+    co_return e.code();
+  } catch (const std::system_error& e) {
+    if (_Socket.is_open()) {
+      boost::system::error_code ignoreEc;
+      _Socket.close(ignoreEc);
+    }
+    co_return e.code();
+  } catch (const std::exception& e) {
+    if (_Socket.is_open()) {
+      boost::system::error_code ignoreEc;
+      _Socket.close(ignoreEc);
+    }
+    co_return std::make_error_code(std::errc::io_error);
   }
-
-  _Socket.bind(_LocalEndpoint, err);
-  if (err) {
-    _Socket.close();
-    co_return err;
-  }
-
-  boost::system::error_code epErr;
-  auto localEp = _Socket.local_endpoint(epErr);
-  if (!epErr) {
-    _LocalEndpoint = localEp;
-  }
-
   co_return ErrorCode{};
 }
 
@@ -80,8 +86,7 @@ auto DnsListener::DoWork() -> Omni::Fiber::Coroutine<void> {
 }
 
 auto DnsListener::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
-  boost::system::error_code err;
-  _Socket.close(err);
+  _Socket.close();
   co_return ErrorCode{};
 }
 

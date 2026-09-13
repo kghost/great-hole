@@ -1,7 +1,6 @@
 #include "ResolverStaticIp.hpp"
 
 #include <boost/lexical_cast.hpp>
-#include <boost/system/system_error.hpp>
 
 namespace gh {
 

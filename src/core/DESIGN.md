@@ -68,3 +68,13 @@ graph LR
 ### Graceful Stop & Pipe Teardown Deadlock Prevention
 - **The Issue**: Previously, during `DoGracefulStop()`, channels and endpoints called `co_await GetProducer().Close()`. However, `Close()` blocks if the pipe is full (cooperatively waiting for the consumer to read). Since the consumer loop has already exited, the pipe will never be read, causing an indefinite block. If `ReadLoop` was also blocked on `Put()`, a deadlock occurred and blocked all incoming UDP packets.
 - **The Solution**: We introduced `Consumer::DiscardAndClose()` on the `Pipe`, which synchronously and immediately sets the pipe state to `Closed`, discards any buffered data, and wakes up all blocked readers/writers (who return `PipeClosed`). All channel/endpoint stop routines now use `DiscardAndClose()` to prevent deadlocks and ensure non-blocking cleanup. We also renamed the cooperative producer-side `Close()` to `Shutdown()`.
+
+---
+
+## 4. UDP Endpoint Startup Error Handling & Resource Cleanup
+
+During `DoStart()` in `EndpointUdp`, `EndpointUdpMux`, and `EndpointUdpDynMux`:
+- Sockets execute `_Socket.open()`, `_Socket.set_option()`, and `_Socket.bind(_Local)`.
+- If `bind()` fails (for example on duplicate bind attempt with `WSAEADDRINUSE`), Boost.Asio throws `boost::system::system_error` (wrapped in `boost::wrapexcept`). Because `boost::system::system_error` inherits from `std::runtime_error` rather than `std::system_error`, catching `const std::system_error&` will fail to catch it.
+- Sockets explicitly catch `boost::system::system_error`, extract the underlying error code, and ensure that if the socket was already opened prior to `bind()`, `_Socket.close()` is called to prevent descriptor or port handle leaks on failed startup.
+

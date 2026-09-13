@@ -11,11 +11,11 @@ class FilterXor : public Filter {
 public:
   explicit FilterXor(std::vector<char> key) : _Key(std::move(key)) {}
 
-  auto Pipe(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<boost::system::error_code> override {
+  auto Pipe(Packet& p, Cancel& c) -> Omni::Fiber::Coroutine<std::error_code> override {
     for (std::size_t i = 0; i < p._Length; ++i) {
       p._Data.data()[p._Offset + i] ^= _Key[i % _Key.size()];
     }
-    co_return boost::system::error_code{};
+    co_return std::error_code{};
   }
 
 private:

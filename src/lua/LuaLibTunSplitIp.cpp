@@ -1,7 +1,5 @@
 #include "LuaLibCommon.hpp"
 
-#include <boost/system/system_error.hpp>
-
 #include "EndpointTunSplitIp.hpp"
 #include "ErrorCode.hpp"
 
@@ -27,7 +25,7 @@ static void TunSplitIpStart(lua_State* L) {
   interface.Schedule([tun](this auto self, lua_State* L, int nres) -> Omni::Fiber::Coroutine<int> {
     ErrorCode err = co_await tun->Start();
     if (err) {
-      throw boost::system::system_error(err, "tun_split_ip start error");
+      throw std::system_error(err, "tun_split_ip start error");
     }
     co_return 0;
   });
