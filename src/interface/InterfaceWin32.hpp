@@ -32,9 +32,11 @@ template <AddressTypes AddressType> struct IpInterfaceInfo {
   std::optional<DnsInfo<AddressType>> OriginalDnsServers;
 };
 
+using InterfaceLuid = uint64_t;
+
 struct InterfaceInfo {
   uint32_t InterfaceIndex{0};
-  uint64_t InterfaceLuid{0};
+  InterfaceLuid InterfaceLuid{0};
   std::optional<std::string> InterfaceName;
   std::optional<IpInterfaceInfo<Ip4Address>> V4Info;
   std::optional<IpInterfaceInfo<Ip6Address>> V6Info;
@@ -96,6 +98,11 @@ public:
   virtual auto GetConnections() -> std::vector<TrackedConnectionInfo> = 0;
   virtual auto GetProcessTree() -> std::vector<ProcessInfo> = 0;
   virtual auto GetInterfaces(bool refresh) -> std::vector<InterfaceInfo> = 0;
+
+  // DNS Interface Override
+  virtual auto OverrideDnsServers(InterfaceLuid interfaceLuid, const std::vector<IpAddress>& dnsServers)
+      -> std::expected<void, std::string> = 0;
+  virtual auto RestoreDnsServers(InterfaceLuid interfaceLuid) -> std::expected<void, std::string> = 0;
 
   // Logging Interface
   virtual void SetProcessTreeTrackerLogLevel(LogLevel level) = 0;

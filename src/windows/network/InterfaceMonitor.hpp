@@ -28,7 +28,8 @@ namespace gh::windows::network {
 
 class InterfaceMonitor : public ServiceBase, public WindowsLocalAddressMonitor {
 public:
-  using InterfaceKey = NET_IFINDEX;
+  using InterfaceLuid = Interface::InterfaceLuid;
+  using InterfaceKey = InterfaceLuid;
   template <Interface::AddressTypes AddressType> using InterfaceAddress = Interface::InterfaceAddress<AddressType>;
   using IpInterfaceCommon = Interface::IpInterfaceCommon;
   template <Interface::AddressTypes AddressType> using IpInterfaceInfo = Interface::IpInterfaceInfo<AddressType>;
@@ -51,10 +52,9 @@ public:
   // Refreshes cached snapshots of IP interfaces and addresses while preserving OriginalDnsServers.
   void Refresh();
 
-  template <Interface::AddressTypes AddressType>
-  auto OverrideDnsServers(InterfaceKey interfaceIndex, const std::vector<AddressType>& dnsServers)
+  auto OverrideDnsServers(InterfaceLuid interfaceLuid, const std::vector<Interface::IpAddress>& dnsServers)
       -> std::expected<void, std::string>;
-  auto RestoreDnsServers(InterfaceKey interfaceIndex) -> std::expected<void, std::string>;
+  auto RestoreDnsServers(InterfaceLuid interfaceLuid) -> std::expected<void, std::string>;
 
 protected:
   auto DoStart() -> Omni::Fiber::Coroutine<ErrorCode> override;

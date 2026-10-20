@@ -46,12 +46,18 @@ public:
   virtual void AddPathPolicy(const std::string& path, const PolicyRule& policy) = 0;
   virtual void RemovePathPolicy(const std::string& path) = 0;
   virtual auto GetAllPolicies() -> std::unordered_map<std::string, PolicyRule> = 0;
-  virtual void AddPidPolicy(uint32_t pid, const PolicyRule& policy) = 0;
+  virtual auto AddProcessPolicy(ProcessSequence process, const PolicyRule& policy) -> std::expected<void, std::string> = 0;
   virtual void SetDefaultAction(const PolicyRule::RoutingAction& action) = 0;
   virtual auto GetDefaultAction() -> PolicyRule::RoutingAction = 0;
   virtual auto LaunchWithPolicy(const std::string& imagePath, const std::optional<std::string>& commandLine, const PolicyRule& policy) -> std::expected<ProcessSequence, std::string> = 0;
   virtual auto GetFlows() -> std::vector<FlowInfo> = 0;
+  virtual auto GetConnections() -> std::vector<TrackedConnectionInfo> = 0;
+  virtual auto GetProcessTree() -> std::vector<ProcessInfo> = 0;
+  virtual auto GetInterfaces(bool refresh) -> std::vector<InterfaceInfo> = 0;
 
+  // DNS Interface Override (using 64-bit InterfaceLuid)
+  virtual auto OverrideDnsServers(InterfaceLuid interfaceLuid, const std::vector<IpAddress>& dnsServers) -> std::expected<void, std::string> = 0;
+  virtual auto RestoreDnsServers(InterfaceLuid interfaceLuid) -> std::expected<void, std::string> = 0;
 
   // Logging Interface
   virtual void SetLogLevel(LogLevel level) = 0;

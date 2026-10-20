@@ -1,4 +1,3 @@
-#include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -24,16 +23,17 @@ auto FormatIpAddress(const gh::Interface::Ip6Address& addr) -> std::string {
 void PrintInterfaceState(
     const std::string& stepName,
     const std::map<gh::windows::network::InterfaceMonitor::InterfaceKey, gh::Interface::InterfaceInfo>& interfaces,
-    gh::windows::network::InterfaceMonitor::InterfaceKey targetIndex) {
+    gh::windows::network::InterfaceMonitor::InterfaceKey targetLuid) {
   std::cout << "--- " << stepName << " ---" << std::endl;
-  auto iterator = interfaces.find(targetIndex);
+  auto iterator = interfaces.find(targetLuid);
   if (iterator == interfaces.end()) {
-    std::cout << "Target interface " << targetIndex << " not found in snapshot." << std::endl;
+    std::cout << "Target interface LUID " << targetLuid << " not found in snapshot." << std::endl;
     return;
   }
 
   const auto& info = iterator->second;
-  std::cout << "Interface " << info.InterfaceIndex << " (" << info.InterfaceName.value_or("Unnamed") << ")\n";
+  std::cout << "Interface LUID " << info.InterfaceLuid << " [Index: " << info.InterfaceIndex << "] ("
+            << info.InterfaceName.value_or("Unnamed") << ")\n";
   if (info.V4Info) {
     std::cout << "  IPv4: MTU=" << info.V4Info->Common.NlMtu << ", Metric=" << info.V4Info->Common.Metric
               << ", Connected=" << (info.V4Info->Common.Connected ? "Yes" : "No")
@@ -77,9 +77,9 @@ auto main(int argc, char* argv[]) -> int {
   Omni::Fiber::AsioExecutor executor(ioContext.get_executor());
   Omni::Fiber::Manager manager(executor);
 
-  uint32_t selectedIndex = 0;
+  uint64_t selectedLuid = 0;
   if (argc > 1) {
-    selectedIndex = static_cast<uint32_t>(std::stoul(argv[1]));
+    selectedLuid = std::stoull(argv[1]);
   }
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
@@ -98,30 +98,30 @@ auto main(int argc, char* argv[]) -> int {
       co_return;
     }
 
-    if (selectedIndex == 0) {
+    if (selectedLuid == 0) {
       for (const auto& [key, info] : interfaces) {
         if (info.V4Info && info.V4Info->Common.Connected) {
-          selectedIndex = key;
+          selectedLuid = key;
           break;
         }
       }
-      if (selectedIndex == 0) {
-        selectedIndex = interfaces.begin()->first;
+      if (selectedLuid == 0) {
+        selectedLuid = interfaces.begin()->first;
       }
     }
 
-    std::cout << "=== DNS Verification Cycle for Interface Index " << selectedIndex << " ===" << std::endl;
+    std::cout << "=== DNS Verification Cycle for Interface LUID " << selectedLuid << " ===" << std::endl;
 
     // Step 1: Initial Read
-    PrintInterfaceState("1. Initial Read", monitor->GetInterfaces(true), selectedIndex);
+    PrintInterfaceState("1. Initial Read", monitor->GetInterfaces(true), selectedLuid);
 
     // Step 2: Override DNS Servers
-    std::vector<gh::Interface::Ip4Address> testDns{
+    std::vector<gh::Interface::IpAddress> testDns{
         gh::Interface::Ip4Address{.Bytes = {1, 1, 1, 1}},
         gh::Interface::Ip4Address{.Bytes = {1, 0, 0, 1}},
     };
     std::cout << "\nExecuting OverrideDnsServers to 1.1.1.1, 1.0.0.1..." << std::endl;
-    auto overrideRes = monitor->OverrideDnsServers(selectedIndex, testDns);
+    auto overrideRes = monitor->OverrideDnsServers(selectedLuid, testDns);
     if (overrideRes) {
       std::cout << "OverrideDnsServers succeeded." << std::endl;
     } else {
@@ -129,11 +129,11 @@ auto main(int argc, char* argv[]) -> int {
     }
 
     // Step 3: Read after Override
-    PrintInterfaceState("2. Read After Override", monitor->GetInterfaces(true), selectedIndex);
+    PrintInterfaceState("2. Read After Override", monitor->GetInterfaces(true), selectedLuid);
 
     // Step 4: Restore DNS Servers
     std::cout << "\nExecuting RestoreDnsServers..." << std::endl;
-    auto restoreRes = monitor->RestoreDnsServers(selectedIndex);
+    auto restoreRes = monitor->RestoreDnsServers(selectedLuid);
     if (restoreRes) {
       std::cout << "RestoreDnsServers succeeded." << std::endl;
     } else {
@@ -141,7 +141,7 @@ auto main(int argc, char* argv[]) -> int {
     }
 
     // Step 5: Read after Restore
-    PrintInterfaceState("3. Read After Restore", monitor->GetInterfaces(true), selectedIndex);
+    PrintInterfaceState("3. Read After Restore", monitor->GetInterfaces(true), selectedLuid);
 
     std::cout << "\n=== DNS Verification Cycle Complete ===" << std::endl;
     co_await monitor->Stop();

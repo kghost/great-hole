@@ -68,6 +68,9 @@ public:
   auto GetConnections() -> std::vector<TrackedConnectionInfo> override;
   auto GetProcessTree() -> std::vector<ProcessInfo> override;
   auto GetInterfaces(bool refresh) -> std::vector<InterfaceInfo> override;
+  auto OverrideDnsServers(InterfaceLuid interfaceLuid, const std::vector<IpAddress>& dnsServers)
+      -> std::expected<void, std::string> override;
+  auto RestoreDnsServers(InterfaceLuid interfaceLuid) -> std::expected<void, std::string> override;
 
   // Logging Interface
   void SetLogLevel(LogLevel level) override;
@@ -472,6 +475,27 @@ auto PlatformImpl::GetInterfaces(bool refresh) -> std::vector<InterfaceInfo> {
       result.push_back(info);
     }
     promise.set_value(std::move(result));
+    co_return;
+  });
+  return future.get();
+}
+
+auto PlatformImpl::OverrideDnsServers(InterfaceLuid interfaceLuid, const std::vector<IpAddress>& dnsServers)
+    -> std::expected<void, std::string> {
+  std::promise<std::expected<void, std::string>> promise;
+  auto future = promise.get_future();
+  _TaskQueue.Push([&promise, interfaceLuid, dnsServers](auto& context) -> Omni::Fiber::Coroutine<void> {
+    promise.set_value(context.InterfaceMonitor->OverrideDnsServers(interfaceLuid, dnsServers));
+    co_return;
+  });
+  return future.get();
+}
+
+auto PlatformImpl::RestoreDnsServers(InterfaceLuid interfaceLuid) -> std::expected<void, std::string> {
+  std::promise<std::expected<void, std::string>> promise;
+  auto future = promise.get_future();
+  _TaskQueue.Push([&promise, interfaceLuid](auto& context) -> Omni::Fiber::Coroutine<void> {
+    promise.set_value(context.InterfaceMonitor->RestoreDnsServers(interfaceLuid));
     co_return;
   });
   return future.get();

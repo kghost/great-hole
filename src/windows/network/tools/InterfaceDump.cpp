@@ -31,9 +31,9 @@ void PrintInterfaces(
   if (interfaces.empty()) {
     std::cout << "No interfaces found." << std::endl;
   } else {
-    for (const auto& [index, info] : interfaces) {
-      std::cout << "Interface " << index << " (" << info.InterfaceName.value_or("Unnamed")
-                << ") [LUID: " << info.InterfaceLuid << "]\n";
+    for (const auto& [luid, info] : interfaces) {
+      std::cout << "Interface LUID " << luid << " [Index: " << info.InterfaceIndex << "] ("
+                << info.InterfaceName.value_or("Unnamed") << ")\n";
       if (info.V4Info) {
         std::cout << "  IPv4: MTU=" << info.V4Info->Common.NlMtu << ", Metric=" << info.V4Info->Common.Metric
                   << ", Connected=" << (info.V4Info->Common.Connected ? "Yes" : "No")

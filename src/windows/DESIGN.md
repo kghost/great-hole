@@ -63,3 +63,6 @@ Located in `src/interface/Interface.hpp`, this is a pure virtual C++ interface. 
 Located in `src/windows/Interface.cpp`, this is the concrete Windows implementation. It inherits from `gh::Interface::PlatformInterface`.
 - It implements the virtual interface functions.
 - It instantiates and owns the `boost::asio::io_context` and runs the dedicated Asio runner thread.
+
+### 2.3. Network Interface & DNS Server Control via LUID
+`PlatformImpl` exposes interface querying and DNS overriding (`OverrideDnsServers` / `RestoreDnsServers`) to the client thread using the persistent 64-bit `InterfaceLuid` as the interface identifier. Calls are marshaled through `Omni::Fiber::ExternalQueue` to execute inside the fiber runtime on `context.InterfaceMonitor`, preserving original adapter DNS settings and ensuring synchronization with IP Helper event loops.

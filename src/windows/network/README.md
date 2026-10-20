@@ -32,8 +32,8 @@ The module is housed in namespace `gh::windows::network`.
   - `DnsInfo<AddressType> DnsServers`: Configured DNS server IP addresses and DHCP state.
   - `std::optional<DnsInfo<AddressType>> OriginalDnsServers`: Original DNS servers and DHCP state captured prior to any override.
 - **`InterfaceInfo`**:
-  - `InterfaceKey InterfaceIndex`: Windows interface index (`NET_IFINDEX`).
-  - `NET_LUID InterfaceLuid`: Interface LUID value (`NET_LUID`).
+  - `uint32_t InterfaceIndex`: Windows interface index (`NET_IFINDEX`).
+  - `InterfaceLuid InterfaceLuid`: Persistent 64-bit interface LUID (`NET_LUID::Value`).
   - `std::optional<std::string> InterfaceName`: Interface alias name.
   - `std::optional<IpInterfaceInfo<boost::asio::ip::address_v4>> V4Info`: IPv4 configuration and assigned addresses.
   - `std::optional<IpInterfaceInfo<boost::asio::ip::address_v6>> V6Info`: IPv6 configuration and assigned addresses.
@@ -51,7 +51,7 @@ public:
 
 ### `InterfaceMonitor` Service
 
-`InterfaceMonitor` inherits from `gh::ServiceBase` and manages background Windows IP Helper notifications.
+`InterfaceMonitor` inherits from `gh::ServiceBase` and manages background Windows IP Helper notifications. Interfaces are indexed by persistent 64-bit `InterfaceLuid` (`InterfaceKey = uint64_t`).
 
 ```cpp
 #include "InterfaceMonitor.hpp"
@@ -62,17 +62,17 @@ auto monitor = std::make_shared<gh::windows::network::InterfaceMonitor>(ioContex
 // Lifecycle management
 co_await monitor->Start();
 
-// Query active cached snapshot
-std::vector<gh::windows::network::InterfaceInfo> interfaces = monitor->GetInterfaces();
+// Query active cached snapshot (keyed by InterfaceLuid)
+const auto& interfaces = monitor->GetInterfaces(false);
 
 // Re-query interfaces and addresses while preserving OriginalDnsServers
 monitor->Refresh();
 
-// Override interface DNS servers (returns std::expected<void, std::string>)
-auto overrideRes = monitor->OverrideDnsServers(ifIndex, newDnsServers);
+// Override interface DNS servers by LUID with std::vector<gh::Interface::IpAddress> (IPv4, IPv6, or both)
+auto overrideRes = monitor->OverrideDnsServers(ifLuid, newDnsServers);
 
-// Restore interface DNS servers (returns std::expected<void, std::string>)
-auto restoreRes = monitor->RestoreDnsServers(ifIndex);
+// Restore interface DNS servers by LUID (returns std::expected<void, std::string>)
+auto restoreRes = monitor->RestoreDnsServers(ifLuid);
 
 // Stop service
 co_await monitor->Stop();

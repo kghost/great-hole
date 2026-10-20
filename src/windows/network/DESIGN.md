@@ -45,14 +45,18 @@ The `InterfaceMonitor` module provides non-blocking, event-driven network interf
 
 ### 2.3 IP Address Synchronization in `IpInterfaceInfo`
 
-- **Initial Query (`QueryAddresses`)**: Iterates all unicast IP addresses returned by `GetAdaptersAddresses`. Beyond populating `_Addresses`, `QueryAddresses` populates the `Addresses` set (`std::set<InterfaceAddress<AddressType>>`) within `_Interfaces[ifIndex].V4Info` (IPv4) and `_Interfaces[ifIndex].V6Info` (IPv6). `InterfaceAddress` provides a defaulted `operator<=>` for ordered set storage.
-- **Event-Driven Synchronization (`HandleAddressChangeEvent`)**: On `MibAddInstance`, `MibDeleteInstance`, or `MibParameterNotification` events, `HandleAddressChangeEvent` dynamically updates both `_Addresses` and the corresponding `Addresses` set in `_Interfaces[ifIndex].V4Info` or `_Interfaces[ifIndex].V6Info`. Address movement between interfaces or prefix length updates are handled by removing stale entries before inserting new ones.
+- **Interface Keying by LUID**: `InterfaceMonitor` indexes `_Interfaces` by persistent 64-bit `InterfaceLuid` (`NET_LUID::Value`). Because both IPv4 and IPv6 network layers on Windows share the exact same adapter LUID, this keying reliably merges dual-stack configurations into a single unified `InterfaceInfo` record containing both `V4Info` and `V6Info`.
+- **Initial Query (`QueryAddresses`)**: Iterates all unicast IP addresses returned by `GetAdaptersAddresses`. Beyond populating `_Addresses`, `QueryAddresses` populates the `Addresses` set (`std::set<InterfaceAddress<AddressType>>`) within `_Interfaces[luid].V4Info` (IPv4) and `_Interfaces[luid].V6Info` (IPv6). `InterfaceAddress` provides a defaulted `operator<=>` for ordered set storage.
+- **Event-Driven Synchronization (`HandleAddressChangeEvent`)**: On `MibAddInstance`, `MibDeleteInstance`, or `MibParameterNotification` events, `HandleAddressChangeEvent` dynamically updates both `_Addresses` and the corresponding `Addresses` set in `_Interfaces[luid].V4Info` or `_Interfaces[luid].V6Info`. Address movement between interfaces or prefix length updates are handled by converting the event or row interface information to LUID and removing stale entries before inserting new ones.
 
-### 2.4 DNS Server Overriding (`OverrideDnsServers`)
+### 2.4 DNS Server Overriding & Restoration (`OverrideDnsServers` / `RestoreDnsServers`)
 
-- **Original DNS Preservation**: Before modifying DNS configuration, `OverrideDnsServers` checks if `OriginalDnsServers` (`std::optional<std::vector<AddressType>>`) has a value. If uninitialized (`!OriginalDnsServers.has_value()`), current `DnsServers` are saved into `OriginalDnsServers`. If `OriginalDnsServers` already has a value, this step is skipped to preserve initial adapter state across multiple override calls.
+- **Interface Identification by LUID**: DNS overriding and restoring operations take `InterfaceLuid` (`uint64_t`) as their primary interface identifier. The 64-bit LUID is converted to `GUID` via `ConvertInterfaceLuidToGuid` before interacting with the system DNS settings.
+- **Unified Single API for IPv4 & IPv6**: `OverrideDnsServers` accepts a single list `std::vector<Interface::IpAddress>` which may contain IPv4 addresses (`Ip4Address`), IPv6 addresses (`Ip6Address`), or both. The method partitions addresses by family and overrides IPv4 and/or IPv6 DNS servers as appropriate on the target adapter in a single call.
+- **Original DNS Preservation**: Before modifying DNS configuration, `OverrideDnsServers` checks if `OriginalDnsServers` (`std::optional<DnsInfo<AddressType>>`) has a value. If uninitialized (`!OriginalDnsServers.has_value()`), current `DnsServers` are saved into `OriginalDnsServers`. If `OriginalDnsServers` already has a value, this step is skipped to preserve initial adapter state across multiple override calls.
 - **OS Configuration**: Uses `SetInterfaceDnsSettings` from `netioapi.h` with `DNS_INTERFACE_SETTINGS_VERSION1` and `DNS_SETTING_NAMESERVER` (plus `DNS_SETTING_IPV6` for IPv6) to configure system DNS servers for the target interface.
-- **Cache Update**: Updates `DnsServers` in `IpInterfaceInfo` with the new target DNS servers.
+- **Cache Update**: Updates `DnsServers` in `IpInterfaceInfo` with the new target DNS servers upon successful configuration.
+- **Restoration**: `RestoreDnsServers` retrieves the captured `OriginalDnsServers`, restores them using `SetInterfaceDnsSettings`, resets `OriginalDnsServers` to `std::nullopt`, and restores DHCP or static settings accordingly.
 
 ---
 

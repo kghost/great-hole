@@ -97,7 +97,7 @@ public:
   auto Select(const ConnectionTracker::ConnectionKey& key) -> ConnectionTracker::Selector::Action override;
 #ifdef _WIN32
   auto WinDivertRouteOutbound(Packet& packet) -> WinDivertRouteCallback::Result override;
-  auto WinDivertRouteInbound(Packet& packet) -> std::optional<uint32_t> override;
+  auto WinDivertRouteInbound(Packet& packet) -> std::optional<WinDivertRouteCallback::InterfaceIndex> override;
   [[nodiscard]] auto GetConnections() const -> std::vector<Interface::TrackedConnectionInfo>;
 #endif
 

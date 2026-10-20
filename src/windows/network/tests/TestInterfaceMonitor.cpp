@@ -86,7 +86,7 @@ TEST_F(InterfaceMonitorTest, IpInterfaceCheck) {
 
     bool foundAddress = false;
     for (const auto& [key, info] : interfaces) {
-      EXPECT_EQ(key, info.InterfaceIndex);
+      EXPECT_EQ(key, info.InterfaceLuid);
       EXPECT_TRUE(info.V4Info.has_value() || info.V6Info.has_value());
       if (info.V4Info.has_value() && !info.V4Info->Addresses.empty()) {
         foundAddress = true;
@@ -135,7 +135,11 @@ TEST_F(InterfaceMonitorTest, OverrideDnsServers) {
       EXPECT_FALSE(initialInfo.V4Info->OriginalDnsServers.has_value());
       auto initialDns = initialInfo.V4Info->DnsServers;
 
-      std::vector<gh::Interface::Ip4Address> override1{
+      std::vector<gh::Interface::Ip4Address> expected1{
+          gh::Interface::Ip4Address{.Bytes = {1, 1, 1, 1}},
+          gh::Interface::Ip4Address{.Bytes = {1, 0, 0, 1}},
+      };
+      std::vector<gh::Interface::IpAddress> override1{
           gh::Interface::Ip4Address{.Bytes = {1, 1, 1, 1}},
           gh::Interface::Ip4Address{.Bytes = {1, 0, 0, 1}},
       };
@@ -155,7 +159,7 @@ TEST_F(InterfaceMonitorTest, OverrideDnsServers) {
       if (updatedInfo1.V4Info.has_value()) {
         EXPECT_TRUE(updatedInfo1.V4Info->OriginalDnsServers.has_value());
         EXPECT_EQ(updatedInfo1.V4Info->OriginalDnsServers.value(), initialDns);
-        EXPECT_EQ(updatedInfo1.V4Info->DnsServers.Servers, override1);
+        EXPECT_EQ(updatedInfo1.V4Info->DnsServers.Servers, expected1);
       }
 
       // Test Refresh API preserves OriginalDnsServers
@@ -168,7 +172,10 @@ TEST_F(InterfaceMonitorTest, OverrideDnsServers) {
       }
 
       // Second override should skip modifying OriginalDnsServers
-      std::vector<gh::Interface::Ip4Address> override2{
+      std::vector<gh::Interface::Ip4Address> expected2{
+          gh::Interface::Ip4Address{.Bytes = {8, 8, 8, 8}},
+      };
+      std::vector<gh::Interface::IpAddress> override2{
           gh::Interface::Ip4Address{.Bytes = {8, 8, 8, 8}},
       };
 
@@ -182,7 +189,7 @@ TEST_F(InterfaceMonitorTest, OverrideDnsServers) {
       if (updatedInfo2.V4Info.has_value()) {
         EXPECT_TRUE(updatedInfo2.V4Info->OriginalDnsServers.has_value());
         EXPECT_EQ(updatedInfo2.V4Info->OriginalDnsServers.value(), initialDns);
-        EXPECT_EQ(updatedInfo2.V4Info->DnsServers.Servers, override2);
+        EXPECT_EQ(updatedInfo2.V4Info->DnsServers.Servers, expected2);
       }
 
       // Restore DNS servers

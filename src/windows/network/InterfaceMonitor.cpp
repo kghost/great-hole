@@ -146,8 +146,9 @@ auto InterfaceMonitor::ConvertSockaddrInet(const SOCKADDR_INET& addr) -> std::op
 
 namespace {
 void RemoveAddressFromInterface(std::map<InterfaceMonitor::InterfaceKey, InterfaceMonitor::InterfaceInfo>& interfaces,
-                                const InterfaceMonitor::Address& address, InterfaceMonitor::InterfaceKey ifIndex) {
-  auto iterator = interfaces.find(ifIndex);
+                                const InterfaceMonitor::Address& address,
+                                InterfaceMonitor::InterfaceKey luidValue) {
+  auto iterator = interfaces.find(luidValue);
   if (iterator == interfaces.end()) {
     return;
   }
@@ -170,14 +171,15 @@ void RemoveAddressFromInterface(std::map<InterfaceMonitor::InterfaceKey, Interfa
 
 void AddAddressToInterface(std::map<InterfaceMonitor::InterfaceKey, InterfaceMonitor::InterfaceInfo>& interfaces,
                            const InterfaceMonitor::Address& address, uint8_t prefixLength,
-                           InterfaceMonitor::InterfaceKey ifIndex) {
-  auto iterator = interfaces.find(ifIndex);
+                           InterfaceMonitor::InterfaceKey luidValue, NET_IFINDEX ifIndex) {
+  auto iterator = interfaces.find(luidValue);
   if (iterator == interfaces.end()) {
     NET_LUID luid{};
+    luid.Value = luidValue;
     iterator = interfaces
-                   .try_emplace(ifIndex, InterfaceMonitor::InterfaceInfo{.InterfaceIndex = ifIndex,
-                                                                         .InterfaceLuid = luid.Value,
-                                                                         .InterfaceName = GetInterfaceAlias(luid)})
+                   .try_emplace(luidValue, InterfaceMonitor::InterfaceInfo{.InterfaceIndex = ifIndex,
+                                                                           .InterfaceLuid = luidValue,
+                                                                           .InterfaceName = GetInterfaceAlias(luid)})
                    .first;
   }
   if (std::holds_alternative<boost::asio::ip::address_v4>(address)) {
@@ -200,14 +202,16 @@ void AddAddressToInterface(std::map<InterfaceMonitor::InterfaceKey, InterfaceMon
 }
 
 void AddDnsServerToInterface(std::map<InterfaceMonitor::InterfaceKey, InterfaceMonitor::InterfaceInfo>& interfaces,
-                             const InterfaceMonitor::Address& address, InterfaceMonitor::InterfaceKey ifIndex) {
-  auto iterator = interfaces.find(ifIndex);
+                             const InterfaceMonitor::Address& address,
+                             InterfaceMonitor::InterfaceKey luidValue, NET_IFINDEX ifIndex) {
+  auto iterator = interfaces.find(luidValue);
   if (iterator == interfaces.end()) {
     NET_LUID luid{};
+    luid.Value = luidValue;
     iterator = interfaces
-                   .try_emplace(ifIndex, InterfaceMonitor::InterfaceInfo{.InterfaceIndex = ifIndex,
-                                                                         .InterfaceLuid = luid.Value,
-                                                                         .InterfaceName = GetInterfaceAlias(luid)})
+                   .try_emplace(luidValue, InterfaceMonitor::InterfaceInfo{.InterfaceIndex = ifIndex,
+                                                                           .InterfaceLuid = luidValue,
+                                                                           .InterfaceName = GetInterfaceAlias(luid)})
                    .first;
   }
   if (std::holds_alternative<boost::asio::ip::address_v4>(address)) {
@@ -253,27 +257,36 @@ auto InterfaceMonitor::HandleAddressChangeEvent(AddressChangeEvent& event) -> bo
       return false;
     }
 
+    NET_LUID newLuid = event.Row.InterfaceLuid;
+    if (newLuid.Value == 0) {
+      ConvertInterfaceIndexToLuid(event.Row.InterfaceIndex, &newLuid);
+    }
+
     auto iterator = _Addresses.find(address);
     if (iterator != _Addresses.end()) {
       auto oldIfIndex = iterator->second.InterfaceIndex;
-      RemoveAddressFromInterface(_Interfaces, address, oldIfIndex);
-      if (oldIfIndex != event.Row.InterfaceIndex) {
-        RemoveAddressFromInterface(_Interfaces, address, event.Row.InterfaceIndex);
+      NET_LUID oldLuid{};
+      ConvertInterfaceIndexToLuid(oldIfIndex, &oldLuid);
+      RemoveAddressFromInterface(_Interfaces, address, oldLuid.Value);
+      if (oldLuid.Value != newLuid.Value) {
+        RemoveAddressFromInterface(_Interfaces, address, newLuid.Value);
       }
       iterator->second.PrefixLength = event.Row.OnLinkPrefixLength;
       iterator->second.InterfaceIndex = event.Row.InterfaceIndex;
-      AddAddressToInterface(_Interfaces, address, event.Row.OnLinkPrefixLength, event.Row.InterfaceIndex);
+      AddAddressToInterface(_Interfaces, address, event.Row.OnLinkPrefixLength, newLuid.Value,
+                            event.Row.InterfaceIndex);
       BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
           << "Address " << FormatAddress(address) << "/" << static_cast<int>(iterator->second.PrefixLength)
-          << " updated on interface, " << iterator->second.InterfaceIndex;
+          << " updated on interface, LUID " << newLuid.Value << " (index " << iterator->second.InterfaceIndex << ")";
       return true;
     } else {
       _Addresses.try_emplace(address, IpAddressInfo{.PrefixLength = event.Row.OnLinkPrefixLength,
                                                     .InterfaceIndex = event.Row.InterfaceIndex});
-      AddAddressToInterface(_Interfaces, address, event.Row.OnLinkPrefixLength, event.Row.InterfaceIndex);
+      AddAddressToInterface(_Interfaces, address, event.Row.OnLinkPrefixLength, newLuid.Value,
+                            event.Row.InterfaceIndex);
       BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
           << "Address " << FormatAddress(address) << "/" << static_cast<int>(event.Row.OnLinkPrefixLength)
-          << " added on interface, " << event.Row.InterfaceIndex;
+          << " added on interface, LUID " << newLuid.Value << " (index " << event.Row.InterfaceIndex << ")";
       return true;
     }
   }
@@ -281,15 +294,22 @@ auto InterfaceMonitor::HandleAddressChangeEvent(AddressChangeEvent& event) -> bo
     auto iterator = _Addresses.find(address);
     if (iterator != _Addresses.end()) {
       auto oldIfIndex = iterator->second.InterfaceIndex;
-      RemoveAddressFromInterface(_Interfaces, address, oldIfIndex);
-      if (oldIfIndex != event.Row.InterfaceIndex) {
-        RemoveAddressFromInterface(_Interfaces, address, event.Row.InterfaceIndex);
+      NET_LUID oldLuid{};
+      ConvertInterfaceIndexToLuid(oldIfIndex, &oldLuid);
+      RemoveAddressFromInterface(_Interfaces, address, oldLuid.Value);
+      NET_LUID eventLuid = event.Row.InterfaceLuid;
+      if (eventLuid.Value != 0 && eventLuid.Value != oldLuid.Value) {
+        RemoveAddressFromInterface(_Interfaces, address, eventLuid.Value);
       }
       _Addresses.erase(iterator);
       BOOST_LOG_SEV(_Logger, boost::log::trivial::info) << "Address " << FormatAddress(address) << " removed";
       return true;
     } else {
-      RemoveAddressFromInterface(_Interfaces, address, event.Row.InterfaceIndex);
+      NET_LUID eventLuid = event.Row.InterfaceLuid;
+      if (eventLuid.Value == 0) {
+        ConvertInterfaceIndexToLuid(event.Row.InterfaceIndex, &eventLuid);
+      }
+      RemoveAddressFromInterface(_Interfaces, address, eventLuid.Value);
       return false;
     }
   }
@@ -305,19 +325,27 @@ auto InterfaceMonitor::HandleAddressChangeEvent(AddressChangeEvent& event) -> bo
     if (iterator == _Addresses.end()) {
       return false;
     }
+    NET_LUID newLuid = event.Row.InterfaceLuid;
+    if (newLuid.Value == 0) {
+      ConvertInterfaceIndexToLuid(event.Row.InterfaceIndex, &newLuid);
+    }
     if (iterator->second.PrefixLength != event.Row.OnLinkPrefixLength ||
         iterator->second.InterfaceIndex != event.Row.InterfaceIndex) {
-      RemoveAddressFromInterface(_Interfaces, address, iterator->second.InterfaceIndex);
-      RemoveAddressFromInterface(_Interfaces, address, event.Row.InterfaceIndex);
+      NET_LUID oldLuid{};
+      ConvertInterfaceIndexToLuid(iterator->second.InterfaceIndex, &oldLuid);
+      RemoveAddressFromInterface(_Interfaces, address, oldLuid.Value);
+      RemoveAddressFromInterface(_Interfaces, address, newLuid.Value);
       iterator->second.PrefixLength = event.Row.OnLinkPrefixLength;
       iterator->second.InterfaceIndex = event.Row.InterfaceIndex;
-      AddAddressToInterface(_Interfaces, address, event.Row.OnLinkPrefixLength, event.Row.InterfaceIndex);
+      AddAddressToInterface(_Interfaces, address, event.Row.OnLinkPrefixLength, newLuid.Value,
+                            event.Row.InterfaceIndex);
       BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
           << "Address " << FormatAddress(address) << "/" << static_cast<int>(iterator->second.PrefixLength)
-          << " updated on interface, " << iterator->second.InterfaceIndex;
+          << " updated on interface, LUID " << newLuid.Value << " (index " << iterator->second.InterfaceIndex << ")";
       return true;
     }
-    AddAddressToInterface(_Interfaces, address, event.Row.OnLinkPrefixLength, event.Row.InterfaceIndex);
+    AddAddressToInterface(_Interfaces, address, event.Row.OnLinkPrefixLength, newLuid.Value,
+                          event.Row.InterfaceIndex);
     return false;
   }
   default:
@@ -340,14 +368,18 @@ void InterfaceMonitor::HandleInterfaceChangeEvent(InterfaceChangeEvent& event) {
     }
 
     auto [iterator, inserted] = _Interfaces.try_emplace(
-        event.Row.InterfaceIndex, InterfaceInfo{.InterfaceIndex = event.Row.InterfaceIndex,
-                                                .InterfaceLuid = event.Row.InterfaceLuid.Value,
-                                                .InterfaceName = GetInterfaceAlias(event.Row.InterfaceLuid)});
+        event.Row.InterfaceLuid.Value, InterfaceInfo{.InterfaceIndex = event.Row.InterfaceIndex,
+                                                     .InterfaceLuid = event.Row.InterfaceLuid.Value,
+                                                     .InterfaceName = GetInterfaceAlias(event.Row.InterfaceLuid)});
 
     if (!inserted) {
       iterator->second.InterfaceLuid = event.Row.InterfaceLuid.Value;
-      iterator->second.InterfaceIndex = event.Row.InterfaceIndex;
-      iterator->second.InterfaceName = GetInterfaceAlias(event.Row.InterfaceLuid);
+      if (iterator->second.InterfaceIndex == 0) {
+        iterator->second.InterfaceIndex = event.Row.InterfaceIndex;
+      }
+      if (!iterator->second.InterfaceName.has_value()) {
+        iterator->second.InterfaceName = GetInterfaceAlias(event.Row.InterfaceLuid);
+      }
     }
 
     if (event.Row.Family == AF_INET) {
@@ -408,7 +440,11 @@ void InterfaceMonitor::HandleInterfaceChangeEvent(InterfaceChangeEvent& event) {
     return;
   }
   case MibDeleteInstance: {
-    auto iterator = _Interfaces.find(event.Row.InterfaceIndex);
+    NET_LUID luid = event.Row.InterfaceLuid;
+    if (luid.Value == 0) {
+      ConvertInterfaceIndexToLuid(event.Row.InterfaceIndex, &luid);
+    }
+    auto iterator = _Interfaces.find(luid.Value);
     if (iterator == _Interfaces.end()) {
       return;
     }
@@ -422,12 +458,12 @@ void InterfaceMonitor::HandleInterfaceChangeEvent(InterfaceChangeEvent& event) {
     if (!iterator->second.V4Info.has_value() && !iterator->second.V6Info.has_value()) {
       _Interfaces.erase(iterator);
       BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
-          << "Interface " << event.Row.InterfaceIndex << " (" << (event.Row.Family == AF_INET ? "IPv4" : "IPv6")
-          << ") fully removed";
+          << "Interface LUID " << luid.Value << " (index " << event.Row.InterfaceIndex << ", "
+          << (event.Row.Family == AF_INET ? "IPv4" : "IPv6") << ") fully removed";
     } else {
       BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
-          << "Interface " << event.Row.InterfaceIndex << " (" << (event.Row.Family == AF_INET ? "IPv4" : "IPv6")
-          << ") address family removed";
+          << "Interface LUID " << luid.Value << " (index " << event.Row.InterfaceIndex << ", "
+          << (event.Row.Family == AF_INET ? "IPv4" : "IPv6") << ") address family removed";
     }
     return;
   }
@@ -471,20 +507,26 @@ auto InterfaceMonitor::QueryAddresses() -> std::map<Address, IpAddressInfo> {
   }
 
   for (const auto* pCurr = pAddresses; pCurr != nullptr; pCurr = pCurr->Next) {
-    // NOLINTBEGIN(cppcoreguidelines-pro-type-union-access)
-    NET_IFINDEX v4IfIndex = pCurr->IfIndex;
-    auto v4It = _Interfaces.find(v4IfIndex);
-    if (v4It != _Interfaces.end() && v4It->second.V4Info.has_value()) {
-      v4It->second.V4Info->DnsServers.IsDhcp = (pCurr->Dhcpv4Enabled != 0);
+    NET_LUID luid = pCurr->Luid;
+    if (luid.Value == 0) {
+      ConvertInterfaceIndexToLuid(pCurr->IfIndex, &luid);
     }
 
-    NET_IFINDEX v6IfIndex = (pCurr->Ipv6IfIndex != 0) ? pCurr->Ipv6IfIndex : pCurr->IfIndex;
-    auto v6It = _Interfaces.find(v6IfIndex);
-    if (v6It != _Interfaces.end() && v6It->second.V6Info.has_value()) {
-      v6It->second.V6Info->DnsServers.IsDhcp =
-          (pCurr->Ipv6OtherStatefulConfig != 0 || pCurr->Ipv6ManagedAddressConfigurationSupported != 0 ||
-           pCurr->Dhcpv6Server.lpSockaddr != nullptr);
+    auto it = _Interfaces.find(luid.Value);
+    if (it != _Interfaces.end()) {
+      if (it->second.V4Info.has_value()) {
+        it->second.V4Info->DnsServers.IsDhcp = (pCurr->Dhcpv4Enabled != 0);
+      }
+      if (it->second.V6Info.has_value()) {
+        it->second.V6Info->DnsServers.IsDhcp =
+            (pCurr->Ipv6OtherStatefulConfig != 0 || pCurr->Ipv6ManagedAddressConfigurationSupported != 0 ||
+             pCurr->Dhcpv6Server.lpSockaddr != nullptr);
+      }
     }
+
+    // NOLINTBEGIN(cppcoreguidelines-pro-type-union-access)
+    NET_IFINDEX v4IfIndex = pCurr->IfIndex;
+    NET_IFINDEX v6IfIndex = (pCurr->Ipv6IfIndex != 0) ? pCurr->Ipv6IfIndex : pCurr->IfIndex;
     // NOLINTEND(cppcoreguidelines-pro-type-union-access)
 
     for (const auto* pUnicast = pCurr->FirstUnicastAddress; pUnicast != nullptr; pUnicast = pUnicast->Next) {
@@ -503,7 +545,7 @@ auto InterfaceMonitor::QueryAddresses() -> std::map<Address, IpAddressInfo> {
                                                                   .PrefixLength = pUnicast->OnLinkPrefixLength,
                                                                   .InterfaceIndex = ifIndex,
                                                               });
-      AddAddressToInterface(_Interfaces, address, pUnicast->OnLinkPrefixLength, ifIndex);
+      AddAddressToInterface(_Interfaces, address, pUnicast->OnLinkPrefixLength, luid.Value, ifIndex);
 
       if (inserted) {
         BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
@@ -529,7 +571,7 @@ auto InterfaceMonitor::QueryAddresses() -> std::map<Address, IpAddressInfo> {
       const auto& address = addressOpt.value();
       NET_IFINDEX ifIndex = std::holds_alternative<boost::asio::ip::address_v6>(address) ? v6IfIndex : v4IfIndex;
 
-      AddDnsServerToInterface(_Interfaces, address, ifIndex);
+      AddDnsServerToInterface(_Interfaces, address, luid.Value, ifIndex);
       BOOST_LOG_SEV(_Logger, boost::log::trivial::info)
           << "DNS server " << FormatAddress(address) << " discovered on interface, " << ifIndex;
     }
@@ -549,11 +591,19 @@ auto InterfaceMonitor::QueryIpInterfaces() -> std::map<InterfaceKey, InterfaceIn
 
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-array-to-pointer-decay)
   for (const auto& row : std::span(pTable->Table, pTable->NumEntries)) {
-    InterfaceKey key = row.InterfaceIndex;
+    InterfaceKey key = row.InterfaceLuid.Value;
     auto [iterator, inserted] =
         result.try_emplace(key, InterfaceInfo{.InterfaceIndex = row.InterfaceIndex,
                                               .InterfaceLuid = row.InterfaceLuid.Value,
                                               .InterfaceName = GetInterfaceAlias(row.InterfaceLuid)});
+    if (!inserted) {
+      if (iterator->second.InterfaceIndex == 0) {
+        iterator->second.InterfaceIndex = row.InterfaceIndex;
+      }
+      if (!iterator->second.InterfaceName.has_value()) {
+        iterator->second.InterfaceName = GetInterfaceAlias(row.InterfaceLuid);
+      }
+    }
     IpInterfaceCommon ipInfo{
         .NlMtu = row.NlMtu,
         .Metric = row.Metric,
@@ -621,142 +671,167 @@ void WINAPI InterfaceMonitor::OnIpInterfaceChangedCallback(PVOID context, PMIB_I
   future.wait();
 }
 
-template <Interface::AddressTypes AddressType>
-auto InterfaceMonitor::OverrideDnsServers(InterfaceKey interfaceIndex, const std::vector<AddressType>& dnsServers)
+auto InterfaceMonitor::OverrideDnsServers(InterfaceLuid interfaceLuid,
+                                          const std::vector<Interface::IpAddress>& dnsServers)
     -> std::expected<void, std::string> {
-  auto iterator = _Interfaces.find(interfaceIndex);
+  if (dnsServers.empty()) {
+    return std::unexpected("No DNS servers provided to override for interface LUID " + std::to_string(interfaceLuid));
+  }
+
+  auto iterator = _Interfaces.find(interfaceLuid);
   if (iterator == _Interfaces.end()) {
     NET_LUID luid{};
-    if (ConvertInterfaceIndexToLuid(interfaceIndex, &luid) != NO_ERROR) {
-      BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
-          << "Failed to find or convert interface index " << interfaceIndex;
-      return std::unexpected("Failed to find or convert interface index " + std::to_string(interfaceIndex));
-    }
+    luid.Value = interfaceLuid;
+    NET_IFINDEX ifIndex = 0;
+    ConvertInterfaceLuidToIndex(&luid, &ifIndex);
     iterator = _Interfaces
-                   .try_emplace(interfaceIndex, InterfaceInfo{.InterfaceIndex = interfaceIndex,
-                                                              .InterfaceLuid = luid.Value,
-                                                              .InterfaceName = GetInterfaceAlias(luid)})
+                   .try_emplace(interfaceLuid, InterfaceInfo{.InterfaceIndex = ifIndex,
+                                                             .InterfaceLuid = interfaceLuid,
+                                                             .InterfaceName = GetInterfaceAlias(luid)})
                    .first;
   }
 
-  std::optional<IpInterfaceInfo<AddressType>>* targetInfo = nullptr;
-  if constexpr (std::is_same_v<AddressType, Interface::Ip4Address>) {
-    targetInfo = &iterator->second.V4Info;
-  } else {
-    targetInfo = &iterator->second.V6Info;
-  }
-
-  if (!targetInfo->has_value()) {
-    targetInfo->emplace();
-  }
-
-  if (!(*targetInfo)->OriginalDnsServers.has_value()) {
-    (*targetInfo)->OriginalDnsServers = (*targetInfo)->DnsServers;
-  }
-
   NET_LUID luid{};
-  luid.Value = iterator->second.InterfaceLuid;
-  if (luid.Value == 0) {
-    ConvertInterfaceIndexToLuid(interfaceIndex, &luid);
-  }
+  luid.Value = interfaceLuid;
   GUID guid{};
   if (ConvertInterfaceLuidToGuid(&luid, &guid) != NO_ERROR) {
     BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
-        << "Failed to convert LUID to GUID for interface " << interfaceIndex;
-    return std::unexpected("Failed to convert LUID to GUID for interface " + std::to_string(interfaceIndex));
+        << "Failed to convert LUID to GUID for interface LUID " << interfaceLuid;
+    return std::unexpected("Failed to convert LUID to GUID for interface LUID " + std::to_string(interfaceLuid));
   }
 
-  std::wstring dnsString;
-  for (size_t i = 0; i < dnsServers.size(); ++i) {
-    if (i > 0) {
-      dnsString += L",";
-    }
-    if constexpr (std::is_same_v<AddressType, Interface::Ip4Address>) {
-      auto ipStr = boost::asio::ip::address_v4(dnsServers[i].Bytes).to_string();
-      dnsString += std::wstring(ipStr.begin(), ipStr.end());
-    } else {
-      auto ipStr = boost::asio::ip::address_v6(dnsServers[i].Bytes).to_string();
-      dnsString += std::wstring(ipStr.begin(), ipStr.end());
+  std::vector<Interface::Ip4Address> v4Servers;
+  std::vector<Interface::Ip6Address> v6Servers;
+  for (const auto& addr : dnsServers) {
+    if (std::holds_alternative<Interface::Ip4Address>(addr)) {
+      v4Servers.push_back(std::get<Interface::Ip4Address>(addr));
+    } else if (std::holds_alternative<Interface::Ip6Address>(addr)) {
+      v6Servers.push_back(std::get<Interface::Ip6Address>(addr));
     }
   }
 
-  DNS_INTERFACE_SETTINGS settings{};
-  settings.Version = DNS_INTERFACE_SETTINGS_VERSION1;
-  if constexpr (std::is_same_v<AddressType, Interface::Ip4Address>) {
+  std::string errorMsg;
+
+  if (!v4Servers.empty()) {
+    auto& targetInfo = iterator->second.V4Info;
+    if (!targetInfo.has_value()) {
+      targetInfo.emplace();
+    }
+    if (!targetInfo->OriginalDnsServers.has_value()) {
+      targetInfo->OriginalDnsServers = targetInfo->DnsServers;
+    }
+
+    std::wstring dnsString;
+    for (size_t i = 0; i < v4Servers.size(); ++i) {
+      if (i > 0) {
+        dnsString += L",";
+      }
+      auto ipStr = boost::asio::ip::address_v4(v4Servers[i].Bytes).to_string();
+      dnsString += std::wstring(ipStr.begin(), ipStr.end());
+    }
+
+    DNS_INTERFACE_SETTINGS settings{};
+    settings.Version = DNS_INTERFACE_SETTINGS_VERSION1;
     settings.Flags = DNS_SETTING_NAMESERVER;
-  } else {
+    settings.NameServer = dnsString.data();
+
+    DWORD status = SetInterfaceDnsSettings(guid, &settings);
+    if (status != NO_ERROR) {
+      BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
+          << "SetInterfaceDnsSettings failed for interface LUID " << interfaceLuid << " (IPv4) with error: " << status;
+      errorMsg += "SetInterfaceDnsSettings IPv4 failed for interface LUID " + std::to_string(interfaceLuid) +
+                  " with error: " + std::to_string(status) + "; ";
+    } else {
+      targetInfo->DnsServers.Servers = v4Servers;
+      targetInfo->DnsServers.IsDhcp = false;
+    }
+  }
+
+  if (!v6Servers.empty()) {
+    auto& targetInfo = iterator->second.V6Info;
+    if (!targetInfo.has_value()) {
+      targetInfo.emplace();
+    }
+    if (!targetInfo->OriginalDnsServers.has_value()) {
+      targetInfo->OriginalDnsServers = targetInfo->DnsServers;
+    }
+
+    std::wstring dnsString;
+    for (size_t i = 0; i < v6Servers.size(); ++i) {
+      if (i > 0) {
+        dnsString += L",";
+      }
+      auto ipStr = boost::asio::ip::address_v6(v6Servers[i].Bytes).to_string();
+      dnsString += std::wstring(ipStr.begin(), ipStr.end());
+    }
+
+    DNS_INTERFACE_SETTINGS settings{};
+    settings.Version = DNS_INTERFACE_SETTINGS_VERSION1;
     settings.Flags = DNS_SETTING_NAMESERVER | DNS_SETTING_IPV6;
-  }
-  settings.NameServer = dnsString.data();
+    settings.NameServer = dnsString.data();
 
-  DWORD status = SetInterfaceDnsSettings(guid, &settings);
-  if (status != NO_ERROR) {
-    BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
-        << "SetInterfaceDnsSettings failed for interface " << interfaceIndex << " with error: " << status;
-    return std::unexpected("SetInterfaceDnsSettings failed for interface " + std::to_string(interfaceIndex) +
-                           " with error: " + std::to_string(status));
+    DWORD status = SetInterfaceDnsSettings(guid, &settings);
+    if (status != NO_ERROR) {
+      BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
+          << "SetInterfaceDnsSettings failed for interface LUID " << interfaceLuid << " (IPv6) with error: " << status;
+      errorMsg += "SetInterfaceDnsSettings IPv6 failed for interface LUID " + std::to_string(interfaceLuid) +
+                  " with error: " + std::to_string(status) + "; ";
+    } else {
+      targetInfo->DnsServers.Servers = v6Servers;
+      targetInfo->DnsServers.IsDhcp = false;
+    }
   }
 
+  if (!errorMsg.empty()) {
+    return std::unexpected(errorMsg);
+  }
   return {};
 }
 
-template auto
-InterfaceMonitor::OverrideDnsServers<Interface::Ip4Address>(InterfaceKey interfaceIndex,
-                                                            const std::vector<Interface::Ip4Address>& dnsServers)
-    -> std::expected<void, std::string>;
-template auto
-InterfaceMonitor::OverrideDnsServers<Interface::Ip6Address>(InterfaceKey interfaceIndex,
-                                                            const std::vector<Interface::Ip6Address>& dnsServers)
-    -> std::expected<void, std::string>;
-
-auto InterfaceMonitor::RestoreDnsServers(InterfaceKey interfaceIndex) -> std::expected<void, std::string> {
-  auto iterator = _Interfaces.find(interfaceIndex);
+auto InterfaceMonitor::RestoreDnsServers(InterfaceLuid interfaceLuid) -> std::expected<void, std::string> {
+  auto iterator = _Interfaces.find(interfaceLuid);
   if (iterator == _Interfaces.end()) {
-    return std::unexpected("Interface " + std::to_string(interfaceIndex) + " not found");
+    return std::unexpected("Interface LUID " + std::to_string(interfaceLuid) + " not found");
   }
 
   bool hasOriginal = (iterator->second.V4Info.has_value() && iterator->second.V4Info->OriginalDnsServers.has_value()) ||
                      (iterator->second.V6Info.has_value() && iterator->second.V6Info->OriginalDnsServers.has_value());
   if (!hasOriginal) {
-    return std::unexpected("No original DNS servers saved for interface " + std::to_string(interfaceIndex));
+    return std::unexpected("No original DNS servers saved for interface LUID " + std::to_string(interfaceLuid));
   }
 
   std::string errorMsg;
+  NET_LUID luid{};
+  luid.Value = interfaceLuid;
+  GUID guid{};
+  if (ConvertInterfaceLuidToGuid(&luid, &guid) != NO_ERROR) {
+    return std::unexpected("ConvertInterfaceLuidToGuid failed for interface LUID " + std::to_string(interfaceLuid));
+  }
 
   if (iterator->second.V4Info.has_value() && iterator->second.V4Info->OriginalDnsServers.has_value()) {
     auto originalDnsInfo = iterator->second.V4Info->OriginalDnsServers.value();
 
-    NET_LUID luid{};
-    luid.Value = iterator->second.InterfaceLuid;
-    if (luid.Value == 0) {
-      ConvertInterfaceIndexToLuid(interfaceIndex, &luid);
-    }
-    GUID guid{};
-    if (ConvertInterfaceLuidToGuid(&luid, &guid) == NO_ERROR) {
-      std::wstring dnsString;
-      if (!originalDnsInfo.IsDhcp) {
-        for (size_t i = 0; i < originalDnsInfo.Servers.size(); ++i) {
-          if (i > 0) {
-            dnsString += L",";
-          }
-          auto ipStr = boost::asio::ip::address_v4(originalDnsInfo.Servers[i].Bytes).to_string();
-          dnsString += std::wstring(ipStr.begin(), ipStr.end());
+    std::wstring dnsString;
+    if (!originalDnsInfo.IsDhcp) {
+      for (size_t i = 0; i < originalDnsInfo.Servers.size(); ++i) {
+        if (i > 0) {
+          dnsString += L",";
         }
+        auto ipStr = boost::asio::ip::address_v4(originalDnsInfo.Servers[i].Bytes).to_string();
+        dnsString += std::wstring(ipStr.begin(), ipStr.end());
       }
+    }
 
-      DNS_INTERFACE_SETTINGS settings{};
-      settings.Version = DNS_INTERFACE_SETTINGS_VERSION1;
-      settings.Flags = DNS_SETTING_NAMESERVER;
-      settings.NameServer = dnsString.data();
+    DNS_INTERFACE_SETTINGS settings{};
+    settings.Version = DNS_INTERFACE_SETTINGS_VERSION1;
+    settings.Flags = DNS_SETTING_NAMESERVER;
+    settings.NameServer = dnsString.data();
 
-      DWORD status = SetInterfaceDnsSettings(guid, &settings);
-      if (status != NO_ERROR) {
-        BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
-            << "SetInterfaceDnsSettings failed for interface " << interfaceIndex << " (IPv4) with error: " << status;
-        errorMsg += "SetInterfaceDnsSettings IPv4 failed with error " + std::to_string(status) + "; ";
-      }
-    } else {
-      errorMsg += "ConvertInterfaceLuidToGuid IPv4 failed; ";
+    DWORD status = SetInterfaceDnsSettings(guid, &settings);
+    if (status != NO_ERROR) {
+      BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
+          << "SetInterfaceDnsSettings failed for interface LUID " << interfaceLuid << " (IPv4) with error: " << status;
+      errorMsg += "SetInterfaceDnsSettings IPv4 failed with error " + std::to_string(status) + "; ";
     }
 
     iterator->second.V4Info->OriginalDnsServers.reset();
@@ -765,37 +840,27 @@ auto InterfaceMonitor::RestoreDnsServers(InterfaceKey interfaceIndex) -> std::ex
   if (iterator->second.V6Info.has_value() && iterator->second.V6Info->OriginalDnsServers.has_value()) {
     auto originalDnsInfo = iterator->second.V6Info->OriginalDnsServers.value();
 
-    NET_LUID luid{};
-    luid.Value = iterator->second.InterfaceLuid;
-    if (luid.Value == 0) {
-      ConvertInterfaceIndexToLuid(interfaceIndex, &luid);
-    }
-    GUID guid{};
-    if (ConvertInterfaceLuidToGuid(&luid, &guid) == NO_ERROR) {
-      std::wstring dnsString;
-      if (!originalDnsInfo.IsDhcp) {
-        for (size_t i = 0; i < originalDnsInfo.Servers.size(); ++i) {
-          if (i > 0) {
-            dnsString += L",";
-          }
-          auto ipStr = boost::asio::ip::address_v6(originalDnsInfo.Servers[i].Bytes).to_string();
-          dnsString += std::wstring(ipStr.begin(), ipStr.end());
+    std::wstring dnsString;
+    if (!originalDnsInfo.IsDhcp) {
+      for (size_t i = 0; i < originalDnsInfo.Servers.size(); ++i) {
+        if (i > 0) {
+          dnsString += L",";
         }
+        auto ipStr = boost::asio::ip::address_v6(originalDnsInfo.Servers[i].Bytes).to_string();
+        dnsString += std::wstring(ipStr.begin(), ipStr.end());
       }
+    }
 
-      DNS_INTERFACE_SETTINGS settings{};
-      settings.Version = DNS_INTERFACE_SETTINGS_VERSION1;
-      settings.Flags = DNS_SETTING_NAMESERVER | DNS_SETTING_IPV6;
-      settings.NameServer = dnsString.data();
+    DNS_INTERFACE_SETTINGS settings{};
+    settings.Version = DNS_INTERFACE_SETTINGS_VERSION1;
+    settings.Flags = DNS_SETTING_NAMESERVER | DNS_SETTING_IPV6;
+    settings.NameServer = dnsString.data();
 
-      DWORD status = SetInterfaceDnsSettings(guid, &settings);
-      if (status != NO_ERROR) {
-        BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
-            << "SetInterfaceDnsSettings failed for interface " << interfaceIndex << " (IPv6) with error: " << status;
-        errorMsg += "SetInterfaceDnsSettings IPv6 failed with error " + std::to_string(status) + "; ";
-      }
-    } else {
-      errorMsg += "ConvertInterfaceLuidToGuid IPv6 failed; ";
+    DWORD status = SetInterfaceDnsSettings(guid, &settings);
+    if (status != NO_ERROR) {
+      BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
+          << "SetInterfaceDnsSettings failed for interface LUID " << interfaceLuid << " (IPv6) with error: " << status;
+      errorMsg += "SetInterfaceDnsSettings IPv6 failed with error " + std::to_string(status) + "; ";
     }
 
     iterator->second.V6Info->OriginalDnsServers.reset();
