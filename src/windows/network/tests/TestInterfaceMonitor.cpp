@@ -146,7 +146,8 @@ TEST_F(InterfaceMonitorTest, OverrideDnsServers) {
 
       auto res1 = monitor->OverrideDnsServers(targetKey, override1);
       if (!res1) {
-        // When running unit tests without administrator privileges, SetInterfaceDnsSettings returns ERROR_ACCESS_DENIED (5)
+        // When running unit tests without administrator privileges, SetInterfaceDnsSettings returns ERROR_ACCESS_DENIED
+        // (5)
         EXPECT_NE(res1.error().find("error: 5"), std::string::npos);
         co_await monitor->Stop();
         co_return;
@@ -207,6 +208,70 @@ TEST_F(InterfaceMonitorTest, OverrideDnsServers) {
     }
 
     co_await monitor->Stop();
+  });
+  _IoContext.run();
+}
+
+TEST_F(InterfaceMonitorTest, DestructorRestoresDnsServers) {
+  Omni::Fiber::AsioExecutor executor(_IoContext.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  manager.SpawnRoot("root", [this]() -> Omni::Fiber::Coroutine<void> {
+    gh::Interface::InterfaceLuid targetKey = 0;
+    gh::Interface::DnsInfo<gh::Interface::Ip4Address> initialDns;
+    bool hasV4 = false;
+
+    {
+      auto monitor = std::make_shared<InterfaceMonitor>(_IoContext.get_executor());
+      auto err = co_await monitor->Start();
+      EXPECT_FALSE(err);
+
+      const auto& interfaces = monitor->GetInterfaces(false);
+      EXPECT_FALSE(interfaces.empty());
+
+      targetKey = interfaces.begin()->first;
+      auto initialInfo = interfaces.begin()->second;
+
+      if (initialInfo.V4Info.has_value()) {
+        hasV4 = true;
+        initialDns = initialInfo.V4Info->DnsServers;
+
+        std::vector<gh::Interface::IpAddress> overrideDns{
+            gh::Interface::Ip4Address{.Bytes = {1, 1, 1, 1}},
+        };
+
+        auto res = monitor->OverrideDnsServers(targetKey, overrideDns);
+        if (!res) {
+          // When running unit tests without administrator privileges, SetInterfaceDnsSettings returns
+          // ERROR_ACCESS_DENIED (5)
+          EXPECT_NE(res.error().find("error: 5"), std::string::npos);
+          co_await monitor->Stop();
+          co_return;
+        }
+
+        EXPECT_TRUE(monitor->GetInterfaces(false).at(targetKey).V4Info->OriginalDnsServers.has_value());
+      }
+
+      co_await monitor->Stop();
+      // monitor is destroyed here when shared_ptr goes out of scope
+    }
+
+    if (hasV4) {
+      // Create a fresh monitor to verify that DNS was restored by the destructor
+      auto freshMonitor = std::make_shared<InterfaceMonitor>(_IoContext.get_executor());
+      auto err = co_await freshMonitor->Start();
+      EXPECT_FALSE(err);
+
+      const auto& freshInterfaces = freshMonitor->GetInterfaces(false);
+      auto iterator = freshInterfaces.find(targetKey);
+      EXPECT_NE(iterator, freshInterfaces.end());
+      if (iterator->second.V4Info.has_value()) {
+        EXPECT_FALSE(iterator->second.V4Info->OriginalDnsServers.has_value());
+        EXPECT_EQ(iterator->second.V4Info->DnsServers, initialDns);
+      }
+
+      co_await freshMonitor->Stop();
+    }
   });
   _IoContext.run();
 }

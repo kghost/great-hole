@@ -57,6 +57,7 @@ The `InterfaceMonitor` module provides non-blocking, event-driven network interf
 - **OS Configuration**: Uses `SetInterfaceDnsSettings` from `netioapi.h` with `DNS_INTERFACE_SETTINGS_VERSION1` and `DNS_SETTING_NAMESERVER` (plus `DNS_SETTING_IPV6` for IPv6) to configure system DNS servers for the target interface.
 - **Cache Update**: Updates `DnsServers` in `IpInterfaceInfo` with the new target DNS servers upon successful configuration.
 - **Restoration**: `RestoreDnsServers` retrieves the captured `OriginalDnsServers`, restores them using `SetInterfaceDnsSettings`, resets `OriginalDnsServers` to `std::nullopt`, and restores DHCP or static settings accordingly.
+- **Automatic RAII Cleanup in Destructor**: In `InterfaceMonitor::~InterfaceMonitor()`, the monitor iterates over all tracked interfaces and automatically calls `RestoreDnsServers(luid)` for any interface that has active `OriginalDnsServers` (IPv4 or IPv6), ensuring no DNS overrides leak if the service or application terminates without explicit restoration.
 
 ---
 

@@ -76,6 +76,8 @@ auto restoreRes = monitor->RestoreDnsServers(ifLuid);
 
 // Stop service
 co_await monitor->Stop();
+
+// On destruction (~InterfaceMonitor), any remaining active DNS overrides are automatically restored
 ```
 
 ---

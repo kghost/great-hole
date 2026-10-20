@@ -40,7 +40,23 @@ auto GetInterfaceAlias(const NET_LUID& luid) -> std::optional<std::string> {
 
 InterfaceMonitor::InterfaceMonitor(boost::asio::any_io_executor executor) : _TaskQueue(std::move(executor)) {}
 
-InterfaceMonitor::~InterfaceMonitor() {}
+InterfaceMonitor::~InterfaceMonitor() {
+  std::vector<InterfaceLuid> luidsToRestore;
+  for (const auto& [luid, info] : _Interfaces) {
+    bool hasOriginal = (info.V4Info.has_value() && info.V4Info->OriginalDnsServers.has_value()) ||
+                       (info.V6Info.has_value() && info.V6Info->OriginalDnsServers.has_value());
+    if (hasOriginal) {
+      luidsToRestore.push_back(luid);
+    }
+  }
+  for (auto luid : luidsToRestore) {
+    auto result = RestoreDnsServers(luid);
+    if (!result.has_value()) {
+      BOOST_LOG_SEV(_Logger, boost::log::trivial::warning)
+          << "Failed to restore DNS servers for interface LUID " << luid << " in destructor: " << result.error();
+    }
+  }
+}
 
 auto InterfaceMonitor::GetAddressInfo(const Address& address) const -> std::optional<IpAddressInfo> {
   auto iterator = _Addresses.find(address);
@@ -146,8 +162,7 @@ auto InterfaceMonitor::ConvertSockaddrInet(const SOCKADDR_INET& addr) -> std::op
 
 namespace {
 void RemoveAddressFromInterface(std::map<InterfaceMonitor::InterfaceKey, InterfaceMonitor::InterfaceInfo>& interfaces,
-                                const InterfaceMonitor::Address& address,
-                                InterfaceMonitor::InterfaceKey luidValue) {
+                                const InterfaceMonitor::Address& address, InterfaceMonitor::InterfaceKey luidValue) {
   auto iterator = interfaces.find(luidValue);
   if (iterator == interfaces.end()) {
     return;
@@ -202,8 +217,8 @@ void AddAddressToInterface(std::map<InterfaceMonitor::InterfaceKey, InterfaceMon
 }
 
 void AddDnsServerToInterface(std::map<InterfaceMonitor::InterfaceKey, InterfaceMonitor::InterfaceInfo>& interfaces,
-                             const InterfaceMonitor::Address& address,
-                             InterfaceMonitor::InterfaceKey luidValue, NET_IFINDEX ifIndex) {
+                             const InterfaceMonitor::Address& address, InterfaceMonitor::InterfaceKey luidValue,
+                             NET_IFINDEX ifIndex) {
   auto iterator = interfaces.find(luidValue);
   if (iterator == interfaces.end()) {
     NET_LUID luid{};
@@ -344,8 +359,7 @@ auto InterfaceMonitor::HandleAddressChangeEvent(AddressChangeEvent& event) -> bo
           << " updated on interface, LUID " << newLuid.Value << " (index " << iterator->second.InterfaceIndex << ")";
       return true;
     }
-    AddAddressToInterface(_Interfaces, address, event.Row.OnLinkPrefixLength, newLuid.Value,
-                          event.Row.InterfaceIndex);
+    AddAddressToInterface(_Interfaces, address, event.Row.OnLinkPrefixLength, newLuid.Value, event.Row.InterfaceIndex);
     return false;
   }
   default:
