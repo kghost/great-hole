@@ -20,32 +20,36 @@ inline auto GetDnsForwarderConfig() -> Interface::DnsForwarderConfiguration {
       .Upstreams =
           {
               {
-                  .Name = "google_dns",
-                  .ServerEndpoints =
-                      {
-                          Interface::DnsEndpoint{
-                              .Address = Interface::Ip4Address{.Bytes = {8, 8, 8, 8}},
-                              .Port = 53,
+                  "google_dns",
+                  Interface::DnsUpstreamConfiguration{
+                      .ServerEndpoints =
+                          {
+                              Interface::DnsEndpoint{
+                                  .Address = Interface::Ip4Address{.Bytes = {8, 8, 8, 8}},
+                                  .Port = 53,
+                              },
+                              Interface::DnsEndpoint{
+                                  .Address = Interface::Ip4Address{.Bytes = {8, 8, 4, 4}},
+                                  .Port = 53,
+                              },
                           },
-                          Interface::DnsEndpoint{
-                              .Address = Interface::Ip4Address{.Bytes = {8, 8, 4, 4}},
-                              .Port = 53,
-                          },
-                      },
+                  },
               },
               {
-                  .Name = "local_dns",
-                  .ServerEndpoints =
-                      {
-                          Interface::DnsEndpoint{
-                              .Address = Interface::Ip4Address{.Bytes = {223, 5, 5, 5}},
-                              .Port = 53,
+                  "local_dns",
+                  Interface::DnsUpstreamConfiguration{
+                      .ServerEndpoints =
+                          {
+                              Interface::DnsEndpoint{
+                                  .Address = Interface::Ip4Address{.Bytes = {223, 5, 5, 5}},
+                                  .Port = 53,
+                              },
+                              Interface::DnsEndpoint{
+                                  .Address = Interface::Ip4Address{.Bytes = {223, 6, 6, 6}},
+                                  .Port = 53,
+                              },
                           },
-                          Interface::DnsEndpoint{
-                              .Address = Interface::Ip4Address{.Bytes = {223, 6, 6, 6}},
-                              .Port = 53,
-                          },
-                      },
+                  },
               },
           },
       .DefaultRoute = "local_dns",

@@ -280,7 +280,7 @@ The `DnsForwarder` module provides a multi-upstream DNS forwarding service desig
   - `_Listeners`: `std::vector<std::shared_ptr<DnsListener>>`.
   - `_Upstreams`: `std::unordered_map<std::string, std::shared_ptr<DnsUpstream>>`.
 - **Construction Initialization**:
-  - Instantiates `DnsUpstream` instances for each entry in `config.Upstreams`, mapping each by `Name`.
+  - Instantiates `DnsUpstream` instances for each key-value pair in `config.Upstreams`, keyed by upstream name.
   - Builds `DnsRouter::Configuration` resolving upstream names to `std::weak_ptr<DnsUpstream>` for the default route (`config.DefaultRoute`) and domain suffix rules (`config.Routes`).
   - Instantiates `DnsRouter` with the prepared configuration and forwarded `callbacks` reference (`DnsForwarderCallbacks&`).
   - Instantiates `DnsListener` instances for each entry in `config.Listeners`, connecting each listener to `_Router`.

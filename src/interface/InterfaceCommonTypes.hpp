@@ -109,14 +109,13 @@ struct DnsListenerConfiguration {
 };
 
 struct DnsUpstreamConfiguration {
-  std::string Name;
   std::vector<DnsEndpoint> ServerEndpoints;
   uint16_t LocalPort{0};
 };
 
 struct DnsForwarderConfiguration {
   std::vector<DnsListenerConfiguration> Listeners;
-  std::vector<DnsUpstreamConfiguration> Upstreams;
+  std::unordered_map<std::string, DnsUpstreamConfiguration> Upstreams;
   std::optional<std::string> DefaultRoute;
   std::unordered_map<std::string, std::string> Routes;
 };

@@ -45,8 +45,8 @@ void PrintConfiguration(const gh::Interface::DnsForwarderConfiguration& config) 
   }
 
   std::cout << "\nUpstream Resolvers:\n";
-  for (const auto& upstream : config.Upstreams) {
-    std::cout << "  - [" << upstream.Name << "] Ephemeral Source Port: " << upstream.LocalPort << "\n";
+  for (const auto& [name, upstream] : config.Upstreams) {
+    std::cout << "  - [" << name << "] Ephemeral Source Port: " << upstream.LocalPort << "\n";
     std::cout << "    Servers:\n";
     for (const auto& server : upstream.ServerEndpoints) {
       std::cout << "      * " << FormatEndpoint(server) << "\n";

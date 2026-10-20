@@ -237,7 +237,7 @@ TEST(DnsForwarderIntegrationTest, EndToEndForwardingAndRouting) {
 
     Interface::DnsForwarderConfiguration config{
         .Listeners = {{.LocalEndpoint = ToDnsEndpoint(forwarderBindEp)}},
-        .Upstreams = {{.Name = "mock", .ServerEndpoints = {ToDnsEndpoint(mockUpstreamEp)}}},
+        .Upstreams = {{"mock", {.ServerEndpoints = {ToDnsEndpoint(mockUpstreamEp)}}}},
         .DefaultRoute = "mock",
     };
 
@@ -384,8 +384,8 @@ TEST(DnsForwarderTest, ConstructWithMultipleUpstreamsAndDomainRouting) {
         .Listeners = {{.LocalEndpoint = ToDnsEndpoint(forwarderBindEp)}},
         .Upstreams =
             {
-                {.Name = "default_upstream", .ServerEndpoints = {ToDnsEndpoint(defaultMockEp)}},
-                {.Name = "corp_upstream", .ServerEndpoints = {ToDnsEndpoint(corpMockEp)}},
+                {"default_upstream", {.ServerEndpoints = {ToDnsEndpoint(defaultMockEp)}}},
+                {"corp_upstream", {.ServerEndpoints = {ToDnsEndpoint(corpMockEp)}}},
             },
         .DefaultRoute = "default_upstream",
         .Routes = {{"internal.company.com", "corp_upstream"}},
@@ -458,8 +458,8 @@ TEST(DnsForwarderTest, ExposeConfigurationOfForwarderAndComponents) {
         .Listeners = {{.LocalEndpoint = ToDnsEndpoint(ep1)}, {.LocalEndpoint = ToDnsEndpoint(ep2)}},
         .Upstreams =
             {
-                {.Name = "u1", .ServerEndpoints = {ToDnsEndpoint(srv1), ToDnsEndpoint(srv2)}},
-                {.Name = "u2", .ServerEndpoints = {ToDnsEndpoint(srv3)}},
+                {"u1", {.ServerEndpoints = {ToDnsEndpoint(srv1), ToDnsEndpoint(srv2)}}},
+                {"u2", {.ServerEndpoints = {ToDnsEndpoint(srv3)}}},
             },
         .DefaultRoute = "u1",
         .Routes = {{"company.com", "u2"}, {"internal.company.com", "u2"}},
@@ -494,33 +494,32 @@ TEST(DnsForwarderTest, ExposeConfigurationOfForwarderAndComponents) {
 
     // Check upstreams and server endpoints
     EXPECT_EQ(config.Upstreams.size(), 2u);
-    bool foundU1 = false;
-    bool foundU2 = false;
-    for (const auto& u : config.Upstreams) {
-      EXPECT_GT(u.LocalPort, 0u);
-      if (u.Name == "u1") {
-        foundU1 = true;
-        EXPECT_EQ(u.ServerEndpoints.size(), 2u);
-        if (u.ServerEndpoints.size() == 2u) {
-          EXPECT_EQ(u.ServerEndpoints[0].Port, 53u);
-          EXPECT_EQ(std::get<Interface::Ip4Address>(u.ServerEndpoints[0].Address).Bytes,
-                    (std::array<uint8_t, 4>{8, 8, 8, 8}));
-          EXPECT_EQ(u.ServerEndpoints[1].Port, 53u);
-          EXPECT_EQ(std::get<Interface::Ip4Address>(u.ServerEndpoints[1].Address).Bytes,
-                    (std::array<uint8_t, 4>{8, 8, 4, 4}));
-        }
-      } else if (u.Name == "u2") {
-        foundU2 = true;
-        EXPECT_EQ(u.ServerEndpoints.size(), 1u);
-        if (u.ServerEndpoints.size() == 1u) {
-          EXPECT_EQ(u.ServerEndpoints[0].Port, 53u);
-          EXPECT_EQ(std::get<Interface::Ip4Address>(u.ServerEndpoints[0].Address).Bytes,
-                    (std::array<uint8_t, 4>{10, 0, 0, 1}));
-        }
+    auto itU1 = config.Upstreams.find("u1");
+    EXPECT_NE(itU1, config.Upstreams.end());
+    if (itU1 != config.Upstreams.end()) {
+      EXPECT_GT(itU1->second.LocalPort, 0u);
+      EXPECT_EQ(itU1->second.ServerEndpoints.size(), 2u);
+      if (itU1->second.ServerEndpoints.size() == 2u) {
+        EXPECT_EQ(itU1->second.ServerEndpoints[0].Port, 53u);
+        EXPECT_EQ(std::get<Interface::Ip4Address>(itU1->second.ServerEndpoints[0].Address).Bytes,
+                  (std::array<uint8_t, 4>{8, 8, 8, 8}));
+        EXPECT_EQ(itU1->second.ServerEndpoints[1].Port, 53u);
+        EXPECT_EQ(std::get<Interface::Ip4Address>(itU1->second.ServerEndpoints[1].Address).Bytes,
+                  (std::array<uint8_t, 4>{8, 8, 4, 4}));
       }
     }
-    EXPECT_TRUE(foundU1);
-    EXPECT_TRUE(foundU2);
+
+    auto itU2 = config.Upstreams.find("u2");
+    EXPECT_NE(itU2, config.Upstreams.end());
+    if (itU2 != config.Upstreams.end()) {
+      EXPECT_GT(itU2->second.LocalPort, 0u);
+      EXPECT_EQ(itU2->second.ServerEndpoints.size(), 1u);
+      if (itU2->second.ServerEndpoints.size() == 1u) {
+        EXPECT_EQ(itU2->second.ServerEndpoints[0].Port, 53u);
+        EXPECT_EQ(std::get<Interface::Ip4Address>(itU2->second.ServerEndpoints[0].Address).Bytes,
+                  (std::array<uint8_t, 4>{10, 0, 0, 1}));
+      }
+    }
 
     // Check default route
     EXPECT_TRUE(config.DefaultRoute.has_value());
@@ -599,7 +598,7 @@ TEST(DnsForwarderIntegrationTest, HandleMultipleSequentialQueries) {
 
     Interface::DnsForwarderConfiguration config{
         .Listeners = {{.LocalEndpoint = ToDnsEndpoint(forwarderBindEp)}},
-        .Upstreams = {{.Name = "mock", .ServerEndpoints = {ToDnsEndpoint(mockUpstreamEp)}}},
+        .Upstreams = {{"mock", {.ServerEndpoints = {ToDnsEndpoint(mockUpstreamEp)}}}},
         .DefaultRoute = "mock",
     };
 
@@ -726,7 +725,7 @@ TEST(DnsForwarderCallbacksTest, NotifyAAndAaaaQueriesWithResults) {
 
     Interface::DnsForwarderConfiguration config{
         .Listeners = {{.LocalEndpoint = ToDnsEndpoint(forwarderBindEp)}},
-        .Upstreams = {{.Name = "test_upstream", .ServerEndpoints = {ToDnsEndpoint(mockEp)}}},
+        .Upstreams = {{"test_upstream", {.ServerEndpoints = {ToDnsEndpoint(mockEp)}}}},
         .DefaultRoute = "test_upstream",
     };
 

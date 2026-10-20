@@ -37,19 +37,23 @@ inline auto GetDnsForwarderConfig() -> Interface::DnsForwarderConfiguration {
                   },
           },
       },
-      // Upstream DNS server pools
+      // Upstream DNS server pools (name -> configuration)
       .Upstreams = {
           {
-              .Name = "public_dns",
-              .ServerEndpoints = {
-                  Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {8, 8, 8, 8}}, .Port = 53},
-                  Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {1, 1, 1, 1}}, .Port = 53},
+              "public_dns",
+              Interface::DnsUpstreamConfiguration{
+                  .ServerEndpoints = {
+                      Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {8, 8, 8, 8}}, .Port = 53},
+                      Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {1, 1, 1, 1}}, .Port = 53},
+                  },
               },
           },
           {
-              .Name = "corp_dns",
-              .ServerEndpoints = {
-                  Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {10, 0, 0, 1}}, .Port = 53},
+              "corp_dns",
+              Interface::DnsUpstreamConfiguration{
+                  .ServerEndpoints = {
+                      Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {10, 0, 0, 1}}, .Port = 53},
+                  },
               },
           },
       },

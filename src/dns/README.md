@@ -86,19 +86,23 @@ Interface::DnsForwarderConfiguration config{
        .Port = 53,
     }},
   },
-  // Upstream DNS servers
+  // Upstream DNS servers (name -> configuration)
   .Upstreams = {
     {
-      .Name = "public_dns",
-      .ServerEndpoints = {
-        Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {8, 8, 8, 8}}, .Port = 53},
-        Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {8, 8, 4, 4}}, .Port = 53},
+      "public_dns",
+      Interface::DnsUpstreamConfiguration{
+        .ServerEndpoints = {
+          Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {8, 8, 8, 8}}, .Port = 53},
+          Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {8, 8, 4, 4}}, .Port = 53},
+        },
       },
     },
     {
-      .Name = "corp_dns",
-      .ServerEndpoints = {
-        Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {10, 0, 0, 1}}, .Port = 53},
+      "corp_dns",
+      Interface::DnsUpstreamConfiguration{
+        .ServerEndpoints = {
+          Interface::DnsEndpoint{.Address = Interface::Ip4Address{.Bytes = {10, 0, 0, 1}}, .Port = 53},
+        },
       },
     },
   },
@@ -131,7 +135,7 @@ if (err) {
 
 // 5. Query runtime configuration snapshot (includes allocated ephemeral ports)
 auto runtimeConfig = forwarder.GetConfiguration();
-for (const auto& upstream : runtimeConfig.Upstreams) {
+for (const auto& [name, upstream] : runtimeConfig.Upstreams) {
   // upstream.LocalPort contains the OS-assigned ephemeral source port
 }
 
@@ -156,8 +160,8 @@ for (const auto& listener : config.Listeners) {
 }
 
 // 2. Upstreams, remote server endpoints, and ephemeral local ports
-for (const auto& upstream : config.Upstreams) {
-  // upstream.Name: std::string
+for (const auto& [name, upstream] : config.Upstreams) {
+  // name: std::string
   // upstream.ServerEndpoints: std::vector<gh::Interface::DnsEndpoint>
   // upstream.LocalPort: uint16_t (bound ephemeral UDP source port)
 }

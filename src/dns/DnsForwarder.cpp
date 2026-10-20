@@ -44,15 +44,15 @@ DnsForwarder::DnsForwarder(boost::asio::any_io_executor executor, Interface::Dns
     : _Executor(std::move(executor)) {
   std::unordered_map<std::string, std::shared_ptr<DnsUpstream>> upstreamsByName;
   _Upstreams.reserve(config.Upstreams.size());
-  for (const auto& upstreamConfig : config.Upstreams) {
+  for (const auto& [name, upstreamConfig] : config.Upstreams) {
     std::vector<boost::asio::ip::udp::endpoint> servers;
     servers.reserve(upstreamConfig.ServerEndpoints.size());
     for (const auto& serverEndpoint : upstreamConfig.ServerEndpoints) {
       servers.push_back(FromDnsEndpoint(serverEndpoint));
     }
-    auto upstream = std::make_shared<DnsUpstream>(_Executor, upstreamConfig.Name, std::move(servers));
+    auto upstream = std::make_shared<DnsUpstream>(_Executor, name, std::move(servers));
     _Upstreams.push_back(upstream);
-    upstreamsByName[upstreamConfig.Name] = upstream;
+    upstreamsByName[name] = upstream;
   }
 
   DnsRouter::Configuration routerConfig;
@@ -102,8 +102,7 @@ auto DnsForwarder::GetConfiguration() const -> Interface::DnsForwarderConfigurat
     for (const auto& serverEndpoint : upstream->GetUpstreamServers()) {
       serverEndpoints.push_back(ToDnsEndpoint(serverEndpoint));
     }
-    config.Upstreams.push_back(Interface::DnsUpstreamConfiguration{
-        .Name = upstream->GetUpstreamName(),
+    config.Upstreams.emplace(upstream->GetUpstreamName(), Interface::DnsUpstreamConfiguration{
         .ServerEndpoints = std::move(serverEndpoints),
         .LocalPort = upstream->GetLocalPort(),
     });
