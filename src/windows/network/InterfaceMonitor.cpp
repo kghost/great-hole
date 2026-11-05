@@ -144,16 +144,10 @@ auto InterfaceMonitor::ConvertSockaddrInet(const SOCKADDR_INET& addr) -> std::op
   if (addr.si_family == AF_INET) {
     auto address =
         boost::asio::ip::address_v4(std::bit_cast<boost::asio::ip::address_v4::bytes_type>(addr.Ipv4.sin_addr));
-    if (address.is_loopback() || address.is_unspecified()) {
-      return std::nullopt;
-    }
     return address;
   } else if (addr.si_family == AF_INET6) {
     auto address =
         boost::asio::ip::address_v6(std::bit_cast<boost::asio::ip::address_v6::bytes_type>(addr.Ipv6.sin6_addr));
-    if (address.is_loopback() || address.is_unspecified() || address.is_link_local()) {
-      return std::nullopt;
-    }
     return address;
   } else {
     return std::nullopt;

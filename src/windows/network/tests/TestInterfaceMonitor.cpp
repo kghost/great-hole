@@ -34,27 +34,6 @@ TEST_F(InterfaceMonitorTest, StartStopLifecycle) {
   _IoContext.run();
 }
 
-TEST_F(InterfaceMonitorTest, UnicastAddressCheck) {
-  Omni::Fiber::AsioExecutor executor(_IoContext.get_executor());
-  Omni::Fiber::Manager manager(executor);
-
-  manager.SpawnRoot("root", [this]() -> Omni::Fiber::Coroutine<void> {
-    auto monitor = std::make_shared<InterfaceMonitor>(_IoContext.get_executor());
-    auto err = co_await monitor->Start();
-    EXPECT_FALSE(err);
-
-    // Loopback addresses are intentionally filtered out by ConvertSockaddrInet
-    auto loopbackV4 = monitor->GetAddressInfo(boost::asio::ip::make_address_v4("127.0.0.1"));
-    auto loopbackV6 = monitor->GetAddressInfo(boost::asio::ip::make_address_v6("::1"));
-
-    EXPECT_FALSE(loopbackV4.has_value());
-    EXPECT_FALSE(loopbackV6.has_value());
-
-    co_await monitor->Stop();
-  });
-  _IoContext.run();
-}
-
 TEST_F(InterfaceMonitorTest, GetAddressInfoNonExistent) {
   Omni::Fiber::AsioExecutor executor(_IoContext.get_executor());
   Omni::Fiber::Manager manager(executor);
@@ -88,11 +67,19 @@ TEST_F(InterfaceMonitorTest, IpInterfaceCheck) {
     for (const auto& [key, info] : interfaces) {
       EXPECT_EQ(key, info.InterfaceLuid);
       EXPECT_TRUE(info.V4Info.has_value() || info.V6Info.has_value());
+      NET_LUID luid{};
+      luid.Value = info.InterfaceLuid;
+      bool isLoopback = (luid.Info.IfType == IF_TYPE_SOFTWARE_LOOPBACK) ||
+                        (info.InterfaceName.has_value() && info.InterfaceName->find("Loopback") != std::string::npos);
       if (info.V4Info.has_value() && !info.V4Info->Addresses.empty()) {
         foundAddress = true;
         for (const auto& addr : info.V4Info->Addresses) {
           EXPECT_GT(addr.PrefixLength, 0);
-          EXPECT_NE(addr.Address.Bytes, (std::array<uint8_t, 4>{127, 0, 0, 1}));
+          if (isLoopback) {
+            EXPECT_EQ(addr.Address.Bytes, (std::array<uint8_t, 4>{127, 0, 0, 1}));
+          } else {
+            EXPECT_NE(addr.Address.Bytes, (std::array<uint8_t, 4>{127, 0, 0, 1}));
+          }
         }
         for (const auto& dns : info.V4Info->DnsServers.Servers) {
           EXPECT_NE(dns.Bytes, (std::array<uint8_t, 4>{127, 0, 0, 1}));
@@ -102,7 +89,11 @@ TEST_F(InterfaceMonitorTest, IpInterfaceCheck) {
         foundAddress = true;
         for (const auto& addr : info.V6Info->Addresses) {
           EXPECT_GT(addr.PrefixLength, 0);
-          EXPECT_NE(addr.Address.Bytes, (std::array<uint8_t, 16>{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}));
+          if (isLoopback) {
+            EXPECT_EQ(addr.Address.Bytes, (std::array<uint8_t, 16>{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}));
+          } else {
+            EXPECT_NE(addr.Address.Bytes, (std::array<uint8_t, 16>{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}));
+          }
         }
         for (const auto& dns : info.V6Info->DnsServers.Servers) {
           EXPECT_NE(dns.Bytes, (std::array<uint8_t, 16>{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}));
@@ -163,13 +154,14 @@ TEST_F(InterfaceMonitorTest, OverrideDnsServers) {
         EXPECT_EQ(updatedInfo1.V4Info->DnsServers.Servers, expected1);
       }
 
-      // Test Refresh API preserves OriginalDnsServers
+      // Test Refresh API preserves OriginalDnsServers and overridden DnsServers
       monitor->Refresh();
       const auto& refreshedInterfaces = monitor->GetInterfaces(false);
       const auto& refreshedInfo = refreshedInterfaces.at(targetKey);
       if (refreshedInfo.V4Info.has_value()) {
         EXPECT_TRUE(refreshedInfo.V4Info->OriginalDnsServers.has_value());
         EXPECT_EQ(refreshedInfo.V4Info->OriginalDnsServers.value(), initialDns);
+        EXPECT_EQ(refreshedInfo.V4Info->DnsServers.Servers, expected1);
       }
 
       // Second override should skip modifying OriginalDnsServers
