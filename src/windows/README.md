@@ -11,8 +11,8 @@ The implementation manages the lifecycle of the packet-redirection backend, the 
 The platform interface exposes a synchronous interface to consumers while running the core network components asynchronously inside a Boost.Asio event loop (integrated with Omni fibers).
 
 On Windows, the platform module enables:
-1. **Lifecycle Control**: Starting and stopping the VPN data plane (`TunnelDataPlane`) using WinDivert packet capture.
-2. **Channel Management**: Registering and managing VPN session endpoints.
+1. **Lifecycle Control**: Starting and stopping the engine (`StartEngine` / `StopEngine`) and VPN data plane (`StartVpn` / `StopVpn`) using WinDivert packet capture.
+2. **Channel Management**: Registering (`AddEndpoint`) and removing (`RemoveEndpoint`) VPN session endpoints as soon as `StartEngine()` is running, persisting across `StartVpn()` / `StopVpn()` cycles, and starting/stopping channels (`StartEndpoint` / `StopEndpoint`) when the VPN data plane is active.
 3. **Application Routing Policies**: Dynamically applying path-based and process-based redirection/bypass rules to the Windows Policy Engine.
 
 ---
@@ -28,7 +28,7 @@ public:
 
   virtual auto GetVersion() -> std::string;
   virtual auto StartEngine() -> std::error_code = 0;
-  virtual auto StartVpn(int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code = 0;
+  virtual auto StartVpn(std::span<IpAddress> addresses, int32_t mtu, std::span<uint8_t> encryption_key) -> std::error_code = 0;
   virtual auto StopEngine() -> std::error_code = 0;
   virtual auto StopVpn() -> std::error_code = 0;
 

@@ -67,7 +67,7 @@ class TunnelDataPlane : public ConnectionTracker::Selector
 public:
 #ifdef _WIN32
   TunnelDataPlane(boost::asio::any_io_executor executor, TunnelDataPlanePolicyResolverCallback& policyResolver,
-                  Interface::DataPlaneCallbacks& callbacks, std::span<Interface::IpAddress> addresses, int32_t mtu,
+                  Interface::DataPlaneCallbacks& callbacks,
                   WindowsLocalAddressMonitor& windowsLocalAddressMonitor);
 #else
   TunnelDataPlane(boost::asio::any_io_executor executor, TunnelDataPlanePolicyResolverCallback& policyResolver,
@@ -81,7 +81,8 @@ public:
   auto operator=(TunnelDataPlane&&) -> TunnelDataPlane& = delete;
 
 #ifdef _WIN32
-  auto Start(std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>;
+  auto Start(std::span<Interface::IpAddress> addresses, int32_t mtu, std::vector<char> encryptionKey)
+      -> Omni::Fiber::Coroutine<ErrorCode>;
 #else
   auto Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>;
   auto MigrateTun(int tunFd) -> Omni::Fiber::Coroutine<void>;

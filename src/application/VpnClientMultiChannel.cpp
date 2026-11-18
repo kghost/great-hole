@@ -263,7 +263,7 @@ auto VpnClientMultiChannel::ChannelSideEndpoint::Write(Packet& packet, Cancel& c
   if (cancel.IsTriggered()) {
     co_return Error(AppErrorCategory::kOperationAborted);
   }
-  auto result = co_await _Parent._TunSide->PushIncoming(std::move(packet), _Session);
+  auto result = co_await _Parent._RunningContext->TunSide->PushIncoming(std::move(packet), _Session);
   if (!result.has_value()) {
     BOOST_LOG_TRIVIAL(info) << GetName() << " PushIncoming: TunSide is closed";
     co_return Error(AppErrorCategory::kOperationAborted);
@@ -271,63 +271,86 @@ auto VpnClientMultiChannel::ChannelSideEndpoint::Write(Packet& packet, Cancel& c
   co_return ErrorCode{};
 }
 
-VpnClientMultiChannel::VpnClientMultiChannel(boost::asio::any_io_executor executor,
-                                             Interface::DataPlaneCallbacks& callbacks, std::shared_ptr<Endpoint> tun,
-                                             std::shared_ptr<UdpDynMux> udpDynMux,
-                                             std::shared_ptr<ConnectionTracker> tracker,
-                                             ConnectionTracker::Selector& selector,
-                                             std::vector<std::shared_ptr<Filter>> filters)
-    : _Executor(std::move(executor)), _Callbacks(callbacks), _Tun(std::move(tun)), _UdpDynMux(std::move(udpDynMux)),
-      _ConnectionTracker(std::move(tracker)), _Filters(std::move(filters)) {
-  _TunSide = std::make_shared<TunSideEndpoint>(*this, *_ConnectionTracker, selector);
-  _UdpDynMux->SetChannelNotification(*this);
+VpnClientMultiChannel::RunningContext::RunningContext(VpnClientMultiChannel& parent, std::shared_ptr<Endpoint> tun,
+                                                      std::shared_ptr<gh::UdpDynMux> udpDynMux,
+                                                      std::vector<std::shared_ptr<Filter>> filters)
+    : Tun(std::move(tun)), UdpDynMux(std::move(udpDynMux)), Filters(std::move(filters)),
+      TunSide(std::make_shared<TunSideEndpoint>(parent, *parent._ConnectionTracker, parent._Selector)) {
+  UdpDynMux->SetChannelNotification(parent);
 }
 
-VpnClientMultiChannel::~VpnClientMultiChannel() { assert(_Sessions.empty()); }
+VpnClientMultiChannel::VpnClientMultiChannel(boost::asio::any_io_executor executor,
+                                             Interface::DataPlaneCallbacks& callbacks,
+                                             std::shared_ptr<ConnectionTracker> tracker,
+                                             ConnectionTracker::Selector& selector)
+    : _Executor(std::move(executor)), _Callbacks(callbacks), _ConnectionTracker(std::move(tracker)),
+      _Selector(selector) {}
+
+VpnClientMultiChannel::~VpnClientMultiChannel() {
+  for (const auto& session : _Sessions) {
+    assert(session->State.IsState<VpnClientMultiChannelSession::State::kNone>());
+  }
+}
 
 auto VpnClientMultiChannel::GetName() const -> std::string {
-  return std::format("VpnClientMultiChannel:[{}]", _UdpDynMux->GetName());
+  return std::format("VpnClientMultiChannel:[{}]", _RunningContext ? _RunningContext->UdpDynMux->GetName() : "stopped");
+}
+
+auto VpnClientMultiChannel::Start(std::shared_ptr<Endpoint> tun, std::shared_ptr<UdpDynMux> udpDynMux,
+                                  std::vector<std::shared_ptr<Filter>> filters) -> Omni::Fiber::Coroutine<ErrorCode> {
+  assert(!_RunningContext.has_value());
+  _RunningContext.emplace(*this, std::move(tun), std::move(udpDynMux), std::move(filters));
+  co_return co_await ServiceBase::Start();
 }
 
 auto VpnClientMultiChannel::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
+  assert(_RunningContext.has_value());
+
   auto err = co_await _ConnectionTracker->Start();
   if (err) {
     BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start ConnectionTracker: " << err.message();
+    _RunningContext.reset();
     co_return err;
   }
 
-  err = co_await _Tun->Start();
+  err = co_await _RunningContext->Tun->Start();
   if (err) {
     BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start Tun: " << err.message();
     co_await _ConnectionTracker->Stop();
+    _RunningContext.reset();
     co_return err;
   }
 
-  err = co_await _UdpDynMux->Start();
+  err = co_await _RunningContext->UdpDynMux->Start();
   if (err) {
     BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start UdpDynMux: " << err.message();
-    co_await _Tun->Stop();
+    co_await _RunningContext->Tun->Stop();
     co_await _ConnectionTracker->Stop();
+    _RunningContext.reset();
     co_return err;
   }
 
-  err = co_await _TunSide->Start();
+  err = co_await _RunningContext->TunSide->Start();
   if (err) {
     BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start TunSideEndpoint: " << err.message();
-    co_await _UdpDynMux->Stop();
-    co_await _Tun->Stop();
+    co_await _RunningContext->UdpDynMux->Stop();
+    co_await _RunningContext->Tun->Stop();
     co_await _ConnectionTracker->Stop();
+    _RunningContext.reset();
     co_return err;
   }
 
-  _TunPipeline = std::make_shared<Pipeline>(_Tun, std::vector<std::shared_ptr<Filter>>{}, _TunSide);
-  err = co_await _TunPipeline->Start();
+  _RunningContext->TunPipeline =
+      std::make_shared<Pipeline>(_RunningContext->Tun, std::vector<std::shared_ptr<Filter>>{}, _RunningContext->TunSide);
+  err = co_await _RunningContext->TunPipeline->Start();
   if (err) {
     BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start TUN pipeline: " << err.message();
-    co_await _TunSide->Stop();
-    co_await _UdpDynMux->Stop();
-    co_await _Tun->Stop();
+    _RunningContext->TunPipeline.reset();
+    co_await _RunningContext->TunSide->Stop();
+    co_await _RunningContext->UdpDynMux->Stop();
+    co_await _RunningContext->Tun->Stop();
     co_await _ConnectionTracker->Stop();
+    _RunningContext.reset();
     co_return err;
   }
   co_return ErrorCode{};
@@ -340,7 +363,7 @@ auto VpnClientMultiChannel::DoWork() -> Omni::Fiber::Coroutine<void> {
   while (!stopped) {
     auto [stopResult, rpcResult] = co_await Omni::Fiber::Select(
         Omni::Fiber::SelectPair(_Service.value()._Stop.GetFiberCancelEvent(), [] -> void {}),
-        Omni::Fiber::SelectPair(_ChannelCall.GetServiceAwaitor(), Omni::Fiber::RemoteCall::HandleRequest));
+        Omni::Fiber::SelectPair(_RunningContext->ChannelCall.GetServiceAwaitor(), Omni::Fiber::RemoteCall::HandleRequest));
     if (stopResult) {
       stopped = true;
     }
@@ -353,29 +376,34 @@ auto VpnClientMultiChannel::DoWork() -> Omni::Fiber::Coroutine<void> {
 }
 
 auto VpnClientMultiChannel::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
-  BOOST_LOG_TRIVIAL(info) << GetName() << " stopping";
+  auto name = GetName();
+  BOOST_LOG_TRIVIAL(info) << name << " stopping";
 
-  if (_TunPipeline) {
-    co_await _TunPipeline->Stop();
-    _TunPipeline.reset();
+  assert(_RunningContext.has_value());
+  if (_RunningContext->TunPipeline) {
+    co_await _RunningContext->TunPipeline->Stop();
+    _RunningContext->TunPipeline.reset();
   }
 
   for (const auto& session : _Sessions) {
     co_await StopChannel(session);
   }
-  _Sessions.clear();
-  co_await _TunSide->Stop();
-  co_await _UdpDynMux->Stop();
-  co_await _Tun->Stop();
+  co_await _RunningContext->TunSide->Stop();
+  co_await _RunningContext->UdpDynMux->Stop();
+  co_await _RunningContext->Tun->Stop();
   co_await _ConnectionTracker->Stop();
-  _ChannelCall.DiscardAndClose();
+  _RunningContext->ChannelCall.DiscardAndClose();
+  _RunningContext.reset();
 
-  BOOST_LOG_TRIVIAL(info) << GetName() << " stopped";
+  BOOST_LOG_TRIVIAL(info) << name << " stopped";
   co_return ErrorCode{};
 }
 
 auto VpnClientMultiChannel::StartChannel(const std::weak_ptr<VpnClientMultiChannelSession>& weak)
     -> Omni::Fiber::Coroutine<void> {
+  if (_State != State::kRunning) {
+    co_return;
+  }
   auto session = weak.lock();
   assert(session);
 
@@ -383,8 +411,8 @@ auto VpnClientMultiChannel::StartChannel(const std::weak_ptr<VpnClientMultiChann
       [&](C<VpnClientMultiChannelSession::State::kNone>, auto& /*data*/) ->
       typename decltype(session->State)::CoroutineActionResult<VpnClientMultiChannelSession::State::kNone> {
         _Callbacks.OnEndpointStateChanged(session, Interface::TunnelState::Starting, "");
-        auto channel = co_await _UdpDynMux->CreateChannel(session->psk, *session,
-                                                          FindResolverEndpoint(session->address, *_UdpDynMux));
+        auto channel = co_await _RunningContext->UdpDynMux->CreateChannel(
+            session->psk, *session, FindResolverEndpoint(session->address, *_RunningContext->UdpDynMux));
         if (channel) {
           co_return VpnClientMultiChannelSession::ActionStart{.Channel = std::move(channel)};
         } else {
@@ -428,10 +456,10 @@ auto VpnClientMultiChannel::StopChannel(const std::weak_ptr<VpnClientMultiChanne
     // action, otherwise it will deadlock. Instead we do it here.
     if (session->State.IsState<VpnClientMultiChannelSession::State::kStopping>()) {
       auto& data = session->State.GetData<VpnClientMultiChannelSession::State::kStopping>();
-      co_await _UdpDynMux->RemoveChannel(data.Channel);
+      co_await _RunningContext->UdpDynMux->RemoveChannel(data.Channel);
     } else if (session->State.IsState<VpnClientMultiChannelSession::State::kStartInterrupted>()) {
       auto& data = session->State.GetData<VpnClientMultiChannelSession::State::kStartInterrupted>();
-      co_await _UdpDynMux->RemoveChannel(data.Channel);
+      co_await _RunningContext->UdpDynMux->RemoveChannel(data.Channel);
     } else {
       assert(false);
     }
@@ -481,7 +509,7 @@ auto VpnClientMultiChannel::OnChannelEstablished(UdpDynMux::ChannelNotificationT
           co_return std::monostate{};
         }
 
-        auto sessionPipeline = std::make_shared<Pipeline>(channelSide, _Filters, data.Channel);
+        auto sessionPipeline = std::make_shared<Pipeline>(channelSide, _RunningContext->Filters, data.Channel);
         auto err = co_await sessionPipeline->Start();
         if (err) {
           BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to start channel pipeline for " << data.Channel->GetName();
@@ -524,7 +552,11 @@ auto VpnClientMultiChannel::OnChannelClosed(UdpDynMux::ChannelNotificationTarget
 }
 
 auto VpnClientMultiChannel::MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni::Fiber::Coroutine<ErrorCode> {
-  auto err = co_await _ChannelCall.Call([this, newTun]() -> Omni::Fiber::Coroutine<ErrorCode> {
+  if (!_RunningContext.has_value()) {
+    BOOST_LOG_TRIVIAL(error) << GetName() << ": Failed to migrate TUN endpoint: _RunningContext not active";
+    co_return Error(AppErrorCategory::kOperationAborted);
+  }
+  auto err = co_await _RunningContext->ChannelCall.Call([this, newTun]() -> Omni::Fiber::Coroutine<ErrorCode> {
     BOOST_LOG_TRIVIAL(info) << GetName() << ": migrating TUN endpoint";
 
     auto err = co_await newTun->Start();
@@ -533,23 +565,24 @@ auto VpnClientMultiChannel::MigrateTun(std::shared_ptr<Endpoint> newTun) -> Omni
       co_return err;
     }
 
-    if (_TunPipeline) {
-      co_await _TunPipeline->Stop();
-      _TunPipeline.reset();
+    if (_RunningContext->TunPipeline) {
+      co_await _RunningContext->TunPipeline->Stop();
+      _RunningContext->TunPipeline.reset();
     }
 
-    if (_Tun) {
-      co_await _Tun->Stop();
+    if (_RunningContext->Tun) {
+      co_await _RunningContext->Tun->Stop();
     }
 
-    _Tun = newTun;
-    _TunPipeline = std::make_shared<Pipeline>(_Tun, std::vector<std::shared_ptr<Filter>>{}, _TunSide);
-    auto errPipeline = co_await _TunPipeline->Start();
+    _RunningContext->Tun = newTun;
+    _RunningContext->TunPipeline = std::make_shared<Pipeline>(
+        _RunningContext->Tun, std::vector<std::shared_ptr<Filter>>{}, _RunningContext->TunSide);
+    auto errPipeline = co_await _RunningContext->TunPipeline->Start();
     if (errPipeline) {
       BOOST_LOG_TRIVIAL(error) << GetName()
                                << ": Failed to start new TUN pipeline during migration: " << errPipeline.message();
-      co_await _Tun->Stop();
-      _Tun.reset();
+      co_await _RunningContext->Tun->Stop();
+      _RunningContext->Tun.reset();
       co_return errPipeline;
     }
     co_return ErrorCode{};

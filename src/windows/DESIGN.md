@@ -37,17 +37,24 @@ sequenceDiagram
     Asio->>Queue: co_await Task
     Queue-->>Asio: Pop Task
     Asio->>PE: Start()
+    Asio->>DP: Construct TunnelDataPlane & VpnClientMultiChannel
     Asio->>Client: promise.set_value() (Unblocks)
     Client-->>Client: Returns std::error_code
 
-    Note over Client, Asio: Stage 2: Starting the VPN Data Plane
-    Client->>Impl: StartVpn(mtu, key)
+    Note over Client, Asio: Stage 2: Registering Endpoints (Anytime after StartEngine)
+    Client->>Impl: AddEndpoint(psk, address)
+    Impl->>Queue: Push(lambda task)
+    Asio->>DP: AddEndpoint(psk, address)
+    DP-->>Client: Returns VpnEndpoint (weak_ptr<VpnClientMultiChannelSession>)
+
+    Note over Client, Asio: Stage 3: Starting the VPN Data Plane
+    Client->>Impl: StartVpn(addresses, mtu, key)
     Impl->>Queue: Push(lambda task)
     Client->>Client: future.get() (Blocks)
     
     Asio->>Queue: co_await Task
     Queue-->>Asio: Pop Task
-    Asio->>DP: Start(mtu, key)
+    Asio->>DP: Start(addresses, mtu, key)
     Asio->>Client: promise.set_value() (Unblocks)
     Client-->>Client: Returns std::error_code
 ```
@@ -63,6 +70,8 @@ Located in `src/interface/Interface.hpp`, this is a pure virtual C++ interface. 
 Located in `src/windows/Interface.cpp`, this is the concrete Windows implementation. It inherits from `gh::Interface::PlatformInterface`.
 - It implements the virtual interface functions.
 - It instantiates and owns the `boost::asio::io_context` and runs the dedicated Asio runner thread.
+- `StartEngine()` initializes and starts `PolicyEngine` and `InterfaceMonitor`, and constructs `context.DataPlane` (`gh::TunnelDataPlane`), which in turn constructs `_Client` (`gh::VpnClientMultiChannel`) once for the engine's lifetime.
+- `StopVpn()` stops `context.DataPlane` without destroying it, preserving registered `VpnEndpoint` sessions across `StartVpn()` / `StopVpn()` cycles until `StopEngine()` destroys `context.DataPlane`.
 
 ### 2.3. Network Interface & DNS Server Control via LUID
 `PlatformImpl` exposes interface querying and DNS overriding (`OverrideDnsServers` / `RestoreDnsServers`) to the client thread using the persistent 64-bit `InterfaceLuid` as the interface identifier. Calls are marshaled through `Omni::Fiber::ExternalQueue` to execute inside the fiber runtime on `context.InterfaceMonitor`, preserving original adapter DNS settings and ensuring synchronization with IP Helper event loops.

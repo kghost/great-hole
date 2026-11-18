@@ -151,6 +151,7 @@ auto PlatformImpl::StartEngine() -> std::error_code {
   _TaskQueue.Push([this, &promise](auto& context) -> Omni::Fiber::Coroutine<void> {
     assert(!context.PolicyEngine);
     assert(!context.InterfaceMonitor);
+    assert(!context.DataPlane);
     context.PolicyEngine = std::make_shared<gh::policy::PolicyEngine>(_IoContext.get_executor());
     context.InterfaceMonitor = std::make_shared<gh::windows::network::InterfaceMonitor>(_IoContext.get_executor());
     auto err = co_await context.PolicyEngine->Start();
@@ -168,6 +169,8 @@ auto PlatformImpl::StartEngine() -> std::error_code {
       promise.set_value(err);
       co_return;
     }
+    context.DataPlane = std::make_unique<gh::TunnelDataPlane>(
+        _IoContext.get_executor(), context.PolicyEngine->GetPolicySelector(), _Callbacks, *context.InterfaceMonitor);
     promise.set_value(ErrorCode{});
     co_return;
   });
@@ -184,6 +187,13 @@ auto PlatformImpl::StopEngine() -> std::error_code {
         BOOST_LOG_TRIVIAL(error) << "Failed to stop dns forwarder: " << errDns.message();
       }
       context.DnsForwarder.reset();
+    }
+    if (context.DataPlane) {
+      auto errDp = co_await context.DataPlane->Stop();
+      if (errDp) {
+        BOOST_LOG_TRIVIAL(error) << "Failed to stop data plane: " << errDp.message();
+      }
+      context.DataPlane.reset();
     }
     auto err = co_await context.InterfaceMonitor->Stop();
     if (err) {
@@ -207,11 +217,8 @@ auto PlatformImpl::StartVpn(std::span<IpAddress> addresses, int32_t mtu, std::sp
   auto future = promise.get_future();
   std::vector<char> key(encryption_key.begin(), encryption_key.end());
   _TaskQueue.Push(
-      [this, &promise, key = std::move(key), addresses, mtu](auto& context) -> Omni::Fiber::Coroutine<void> {
-        context.DataPlane =
-            std::make_unique<gh::TunnelDataPlane>(_IoContext.get_executor(), context.PolicyEngine->GetPolicySelector(),
-                                                  _Callbacks, addresses, mtu, *context.InterfaceMonitor);
-        auto err = co_await context.DataPlane->Start(key);
+      [&promise, key = std::move(key), addresses, mtu](auto& context) -> Omni::Fiber::Coroutine<void> {
+        auto err = co_await context.DataPlane->Start(addresses, mtu, key);
         if (err) {
           promise.set_value(err);
           co_return;
@@ -227,7 +234,6 @@ auto PlatformImpl::StopVpn() -> std::error_code {
   auto future = promise.get_future();
   _TaskQueue.Push([&promise](auto& context) -> Omni::Fiber::Coroutine<void> {
     auto err = co_await context.DataPlane->Stop();
-    context.DataPlane.reset();
     if (err) {
       promise.set_value(err);
       co_return;

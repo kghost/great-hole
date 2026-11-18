@@ -78,20 +78,28 @@ Rather than returning a variant (which requires runtime overhead and `std::visit
 
 ---
 
-## VpnClientMultiChannel Architecture
+## VpnClientMultiChannel & TunnelDataPlane Architecture
 
-`VpnClientMultiChannel` manages multiple parallel VPN connection sessions mapped to virtual network interfaces or specific remote endpoints.
+`TunnelDataPlane` constructs and owns a single `VpnClientMultiChannel` (`_Client`) instance alongside `ConnectionTracker` (`_ConnectionTracker`) for the entire lifetime of the `TunnelDataPlane` object. `VpnClientMultiChannel` manages multiple parallel VPN connection sessions (`_Sessions`) mapped to virtual network interfaces or specific remote endpoints.
+
+### Multi-Run Service Lifecycle (`Start` / `Stop`)
+
+- **Construction**: `VpnClientMultiChannel(executor, callbacks, tracker, selector)` initializes the persistent session registry (`_Sessions`) without requiring `tun`, `udpDynMux`, or `filters`.
+- **`RunningContext` (`std::optional<RunningContext> _RunningContext`)**: Groups all objects whose lifecycle is bounded by a single `Start()` / `Stop()` run (`Tun`, `UdpDynMux`, `Filters`, `TunSide`, `TunPipeline`, and `ChannelCall`).
+- **`Start(tun, udpDynMux, filters)`**: Emplaces `_RunningContext` with the per-run `Endpoint` (`WinDivert` or `Tun`), `UdpDynMux`, `Filter` list, a fresh `TunSideEndpoint`, and `ChannelCall` (`Omni::Fiber::RemoteCall`), and starts `_ConnectionTracker`, `Tun`, `UdpDynMux`, `TunSide`, and `TunPipeline`.
+- **`DoGracefulStop()`**: Stops `TunPipeline`, stops all active channels in `_Sessions` via `StopChannel(session)` (transitioning every session back to `State::kNone`), stops `TunSide`, `UdpDynMux`, `Tun`, and `_ConnectionTracker`, closes `ChannelCall`, and resets `_RunningContext`. Crucially, `_Sessions` is **not** cleared on `Stop()`, so registered `VpnClientMultiChannelSession` instances and external `std::weak_ptr<VpnClientMultiChannelSession>` (`VpnEndpoint`) handles remain valid across `Start()` / `Stop()` cycles.
 
 ### Session Lifecycle & State Machine
 
-Sessions are represented by `VpnClientMultiChannelSession`, which manages its state via an explicit `StateMachine` (`State::kNone`, `State::kStarting`, `State::kRunning`, `State::kStopping`):
+Sessions are represented by `VpnClientMultiChannelSession`, which manages its state via an explicit `StateMachine` (`State::kNone`, `State::kStarting`, `State::kStartInterrupted`, `State::kRunning`, `State::kStopping`):
 
 #### 1. Registration (`RegisterChannel`)
-- When a client or routing engine requests channel registration, `RegisterChannel` creates a new `VpnClientMultiChannelSession` in state `State::kNone`.
-- The session `std::shared_ptr` is inserted into `_Sessions` (a `std::set` using `std::owner_less`).
+- Can be called at any time (before `Start()`, while running, or after `Stop()`).
+- Creates a new `VpnClientMultiChannelSession` in state `State::kNone` and inserts the `std::shared_ptr` into `_Sessions` (a `std::set` using `std::owner_less`).
 
 #### 2. Channel Start (`StartChannel`)
-- Calling `StartChannel` transitions state `kNone` -> `kStarting` via `ActionStart` and notifies `DataPlaneCallbacks` via `OnEndpointStateChanged` (`Starting`).
+- Requires `VpnClientMultiChannel` to be in `State::kRunning`.
+- Transitions session state `kNone` -> `kStarting` via `ActionStart` and notifies `DataPlaneCallbacks` via `OnEndpointStateChanged` (`Starting`).
 - Creates a `UdpDynMux::Channel` targeting the remote endpoint. If channel creation fails, `OnEndpointStateChanged` (`Failed`) is emitted.
 
 #### 3. Channel Establishment (`OnChannelEstablished`)
@@ -102,7 +110,7 @@ Sessions are represented by `VpnClientMultiChannelSession`, which manages its st
 - If the network channel drops while in `kRunning`, `OnChannelClosed` tears down the pipeline and transitions state back to `kStarting` via `ActionStopped`, notifying `DataPlaneCallbacks` via `OnEndpointStateChanged` (`Starting`) to trigger auto-reconnection.
 
 #### 5. Stop & Unregister (`StopChannel` / `UnregisterChannel`)
-- `StopChannel` transitions state `kRunning` -> `kStopping` via `ActionStop`, notifying `DataPlaneCallbacks` via `OnEndpointStateChanged` (`Stopping`).
+- `StopChannel` transitions state `kRunning` -> `kStopping` via `ActionStop` (or `kStarting` -> `kStartInterrupted` -> `kNone`), notifying `DataPlaneCallbacks` via `OnEndpointStateChanged` (`Stopping`).
 - Erases the channel from `UdpDynMux`, triggering `OnChannelClosed` which transitions `kStopping` -> `kNone` via `ActionStopped` and notifies `DataPlaneCallbacks` via `OnEndpointStateChanged` (`Stopped`).
-- `UnregisterChannel` requires state `kNone` and erases the session from `_Sessions`.
+- `UnregisterChannel` requires state `kNone` and erases the session from `_Sessions` (can be called before `Start()`, while running after `StopChannel`, or after `Stop()`).
 

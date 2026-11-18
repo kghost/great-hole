@@ -38,11 +38,40 @@ using TunnelState = Interface::TunnelState;
 #ifdef _WIN32
 TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor,
                                  TunnelDataPlanePolicyResolverCallback& policyResolver,
-                                 Interface::DataPlaneCallbacks& callbacks, std::span<Interface::IpAddress> addresses,
-                                 int32_t mtu, WindowsLocalAddressMonitor& windowsLocalAddressMonitor)
+                                 Interface::DataPlaneCallbacks& callbacks,
+                                 WindowsLocalAddressMonitor& windowsLocalAddressMonitor)
     : _Executor(std::move(executor)), _PolicyResolver(policyResolver), _Callbacks(callbacks),
       _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor)),
-      _WindowsLocalAddressMonitor(windowsLocalAddressMonitor) {
+      _WindowsLocalAddressMonitor(windowsLocalAddressMonitor),
+      _Client(std::make_shared<VpnClientMultiChannel>(_Executor, _Callbacks, _ConnectionTracker, *this)) {}
+
+#else
+TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor,
+                                 TunnelDataPlanePolicyResolverCallback& policyResolver,
+                                 Interface::DataPlaneCallbacks& callbacks)
+    : _Executor(std::move(executor)), _PolicyResolver(policyResolver), _Callbacks(callbacks),
+      _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor)),
+      _Client(std::make_shared<VpnClientMultiChannel>(_Executor, _Callbacks, _ConnectionTracker, *this)) {}
+#endif
+
+TunnelDataPlane::~TunnelDataPlane() { assert(!_Running); }
+
+#ifndef _WIN32
+auto TunnelDataPlane::Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>
+#else
+auto TunnelDataPlane::Start(std::span<Interface::IpAddress> addresses, int32_t mtu, std::vector<char> encryptionKey)
+    -> Omni::Fiber::Coroutine<ErrorCode>
+#endif
+{
+  if (_Running) {
+    co_return ErrorCode{};
+  }
+  _Running = true;
+  _Callbacks.OnVpnStateChanged(TunnelState::Starting, "VPN starting");
+
+#ifdef _WIN32
+  _NatContext._Ip4Addresses.clear();
+  _NatContext._Ip6Addresses.clear();
   for (const auto& address : addresses) {
     std::visit(Overload{[this](const Interface::Ip4Address& address) -> void {
                           _NatContext._Ip4Addresses.emplace_back(address.Bytes);
@@ -53,31 +82,6 @@ TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor,
                address);
   }
   _NatContext._Mtu = mtu;
-}
-
-#else
-TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor,
-                                 TunnelDataPlanePolicyResolverCallback& policyResolver,
-                                 Interface::DataPlaneCallbacks& callbacks)
-    : _Executor(std::move(executor)), _PolicyResolver(policyResolver), _Callbacks(callbacks),
-      _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor)) {}
-#endif
-
-TunnelDataPlane::~TunnelDataPlane() { assert(!_Running); }
-
-#ifndef _WIN32
-auto TunnelDataPlane::Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>
-#else
-auto TunnelDataPlane::Start(std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>
-#endif
-{
-  if (_Running) {
-    co_return ErrorCode{};
-  }
-  _Running = true;
-  _Callbacks.OnVpnStateChanged(TunnelState::Starting, "VPN starting");
-
-#ifdef _WIN32
   auto tun = std::make_shared<WinDivert>(_Executor, "WinDivert", *this);
 #else
   auto tun = std::make_shared<Tun>(_Executor, "AndroidTun", tunFd);
@@ -85,9 +89,7 @@ auto TunnelDataPlane::Start(std::vector<char> encryptionKey) -> Omni::Fiber::Cor
 
   auto udpDynMux = std::make_shared<UdpDynMux>(_Executor);
   auto filter = std::make_shared<FilterXor>(std::move(encryptionKey));
-  _Client = std::make_shared<VpnClientMultiChannel>(_Executor, _Callbacks, tun, udpDynMux, _ConnectionTracker, *this,
-                                                    std::vector<std::shared_ptr<Filter>>{filter});
-  auto err = co_await _Client->Start();
+  auto err = co_await _Client->Start(tun, udpDynMux, std::vector<std::shared_ptr<Filter>>{filter});
   if (err) {
     BOOST_LOG_TRIVIAL(error) << "Failed to start VpnClientMultiChannel: " << err.message();
     _Callbacks.OnVpnStateChanged(TunnelState::Failed, err.message());
@@ -127,7 +129,6 @@ auto TunnelDataPlane::Stop() -> Omni::Fiber::Coroutine<ErrorCode> {
     co_return err;
   }
 
-  _Client.reset();
   _Callbacks.OnVpnStateChanged(TunnelState::Stopped, "VPN tunnel stopped");
   co_return ErrorCode{};
 }

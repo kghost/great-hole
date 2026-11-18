@@ -4,6 +4,7 @@
 #include <boost/asio/any_io_executor.hpp>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -62,9 +63,7 @@ public:
   };
 
   VpnClientMultiChannel(boost::asio::any_io_executor executor, Interface::DataPlaneCallbacks& callbacks,
-                        std::shared_ptr<Endpoint> tun, std::shared_ptr<UdpDynMux> udpDynMux,
-                        std::shared_ptr<ConnectionTracker> tracker, ConnectionTracker::Selector& selector,
-                        std::vector<std::shared_ptr<Filter>> filters);
+                        std::shared_ptr<ConnectionTracker> tracker, ConnectionTracker::Selector& selector);
   ~VpnClientMultiChannel() override;
 
   VpnClientMultiChannel(const VpnClientMultiChannel&) = delete;
@@ -73,6 +72,9 @@ public:
   auto operator=(VpnClientMultiChannel&&) -> VpnClientMultiChannel& = delete;
 
   auto GetName() const -> std::string override;
+
+  auto Start(std::shared_ptr<Endpoint> tun, std::shared_ptr<UdpDynMux> udpDynMux,
+             std::vector<std::shared_ptr<Filter>> filters) -> Omni::Fiber::Coroutine<ErrorCode>;
 
   auto RegisterChannel(const UdpDynMux::PskType& psk, const std::string& address)
       -> std::weak_ptr<VpnClientMultiChannelSession>;
@@ -95,19 +97,25 @@ protected:
   auto DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> override;
 
 private:
+  struct RunningContext {
+    RunningContext(VpnClientMultiChannel& parent, std::shared_ptr<Endpoint> tun,
+                   std::shared_ptr<gh::UdpDynMux> udpDynMux, std::vector<std::shared_ptr<Filter>> filters);
+
+    std::shared_ptr<Endpoint> Tun;
+    std::shared_ptr<gh::UdpDynMux> UdpDynMux;
+    std::vector<std::shared_ptr<Filter>> Filters;
+    std::shared_ptr<TunSideEndpoint> TunSide;
+    std::shared_ptr<Pipeline> TunPipeline;
+    Omni::Fiber::RemoteCall ChannelCall;
+  };
+
   boost::asio::any_io_executor _Executor;
   Interface::DataPlaneCallbacks& _Callbacks;
-
-  std::shared_ptr<Endpoint> _Tun;
-  std::shared_ptr<UdpDynMux> _UdpDynMux;
   std::shared_ptr<ConnectionTracker> _ConnectionTracker;
-  std::vector<std::shared_ptr<Filter>> _Filters;
-
-  std::shared_ptr<TunSideEndpoint> _TunSide;
-  std::shared_ptr<Pipeline> _TunPipeline;
+  ConnectionTracker::Selector& _Selector;
 
   std::set<std::shared_ptr<VpnClientMultiChannelSession>, std::owner_less<>> _Sessions;
-  Omni::Fiber::RemoteCall _ChannelCall;
+  std::optional<RunningContext> _RunningContext;
 };
 
 class VpnClientMultiChannelSession : public UdpDynMux::ChannelNotificationTarget,
