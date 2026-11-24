@@ -5,10 +5,11 @@ param(
     [string]$DesktopHoleDir
 )
 
-$Headers = @(
+$InterfaceFiles = @(
     "Interface.hpp",
     "InterfaceWin32.hpp",
-    "InterfaceCommonTypes.hpp"
+    "InterfaceCommonTypes.hpp",
+    "README.md"
 )
 $DestHeaderDir = "$DesktopHoleDir\src-tauri\src\cxxbridge"
 $DestBinDir = "$DesktopHoleDir\src-tauri\libs"
@@ -18,12 +19,12 @@ if (!(Test-Path -Path $DestHeaderDir)) {
     New-Item -ItemType Directory -Force -Path $DestHeaderDir | Out-Null
 }
 
-# Copy interface headers
-foreach ($Header in $Headers) {
-    $SrcHeader = "$GreatHoleDir\src\interface\$Header"
-    $DestHeader = "$DestHeaderDir\$Header"
-    Write-Host "Copying $Header..."
-    Copy-Item -Path $SrcHeader -Destination $DestHeader -Force
+# Copy interface headers and documentation
+foreach ($InterfaceFile in $InterfaceFiles) {
+    $SrcFile = "$GreatHoleDir\src\interface\$InterfaceFile"
+    $DestFile = "$DestHeaderDir\$InterfaceFile"
+    Write-Host "Copying $InterfaceFile..."
+    Copy-Item -Path $SrcFile -Destination $DestFile -Force
 }
 
 # Build variants to process (standard and ASan-instrumented)

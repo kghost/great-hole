@@ -49,6 +49,9 @@ Documentation in this project is split into two categories based on target audie
 - **libs/omni-timetravel**:
   - [libs/omni-timetravel/README.md](../../libs/omni-timetravel/README.md) - Public API reference (time virtualization, event loop integration).
   - [libs/omni-timetravel/DESIGN.md](../../libs/omni-timetravel/DESIGN.md) - Internal design specs (time namespaces, robust IPC protocol, Stop-Warp-Continue model).
+- **src/interface**:
+  - [src/interface/README.md](../../src/interface/README.md) - Public C++23 platform interface (`PlatformInterface`, `PlatformInterfaceWin32`), shared types, callbacks, and CMake integration.
+  - [src/interface/DESIGN.md](../../src/interface/DESIGN.md) - Internal design specs for dependency layering, opaque handles, conditional Win32 inheritance, DLL visibility, and build-time version injection.
 - **src/base**:
   - [src/base/README.md](../../src/base/README.md) - ServiceBase subclassing interface and thread-safety details.
   - [src/base/DESIGN.md](../../src/base/DESIGN.md) - Internal design details and ServiceContextPtr race protection.
