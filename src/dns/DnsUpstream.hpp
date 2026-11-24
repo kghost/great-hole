@@ -14,6 +14,7 @@
 #include "DnsPacket.hpp"
 #include "ErrorCode.hpp"
 #include "Event.hpp"
+#include "InterfaceCommonTypes.hpp"
 #include "ServiceBase.hpp"
 
 namespace gh::dns {
@@ -21,7 +22,8 @@ namespace gh::dns {
 class DnsUpstream : public ServiceBase {
 public:
   explicit DnsUpstream(const boost::asio::any_io_executor& executor, std::string name,
-                       std::vector<boost::asio::ip::udp::endpoint> upstreamServers);
+                       std::vector<boost::asio::ip::udp::endpoint> upstreamServers,
+                       Interface::PolicyRule::RoutingAction action);
   ~DnsUpstream() override;
 
   DnsUpstream(const DnsUpstream&) = delete;
@@ -32,6 +34,7 @@ public:
   [[nodiscard]] auto GetName() const -> std::string override { return "DnsUpstream[" + _Name + "]"; }
   [[nodiscard]] auto GetUpstreamName() const -> const std::string& { return _Name; }
   [[nodiscard]] auto GetLocalPort() const -> uint16_t { return _LocalPort; }
+  [[nodiscard]] auto GetAction() const -> const Interface::PolicyRule::RoutingAction& { return _Action; }
   [[nodiscard]] auto GetUpstreamServers() const -> const std::vector<boost::asio::ip::udp::endpoint>& {
     return _UpstreamServers;
   }
@@ -52,6 +55,7 @@ private:
   const std::string _Name;
   boost::asio::ip::udp::socket _Socket;
   uint16_t _LocalPort{0};
+  Interface::PolicyRule::RoutingAction _Action;
 
   std::vector<boost::asio::ip::udp::endpoint> _UpstreamServers;
   std::unordered_map<uint16_t, PendingQuery> _PendingQueries;

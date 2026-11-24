@@ -61,6 +61,13 @@ auto PolicyActionToString(const PolicyRule::RoutingAction& action) -> std::strin
                             return "Endpoint[Invalid]";
                           }
                         },
+                        [](const PolicyRule::VpnSplitRoute& route) -> std::string {
+                          if (route.Rules.lock()) {
+                            return "VpnSplit";
+                          } else {
+                            return "VpnSplit[Invalid]";
+                          }
+                        },
                     },
                     action);
 }

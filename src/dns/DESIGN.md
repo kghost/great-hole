@@ -273,21 +273,25 @@ The `DnsForwarder` module provides a multi-upstream DNS forwarding service desig
 
 ### 3.5 Composite Service & Construction-Time Configuration (`DnsForwarder`)
 
-`DnsForwarder` is the top-level composite `gh::ServiceBase` subclass that coordinates all subordinate components. It is configured deterministically upon construction via `gh::Interface::DnsForwarderConfiguration` and remains immutable during execution.
+`DnsForwarder` is the top-level composite `gh::ServiceBase` subclass (and `gh::VpnSplitRule::Callback` implementation) that coordinates all subordinate components. It is configured deterministically upon construction via `gh::Interface::DnsForwarderConfiguration` (and an optional `std::weak_ptr<VpnSplitRule>`) and remains immutable during execution.
 
 - **Component Ownership**:
   - `_Router`: `std::shared_ptr<DnsRouter>`.
   - `_Listeners`: `std::vector<std::shared_ptr<DnsListener>>`.
-  - `_Upstreams`: `std::unordered_map<std::string, std::shared_ptr<DnsUpstream>>`.
+  - `_Upstreams`: `std::vector<std::shared_ptr<DnsUpstream>>`.
+  - `_VpnSplitRule`: `std::weak_ptr<VpnSplitRule>`.
 - **Construction Initialization**:
-  - Instantiates `DnsUpstream` instances for each key-value pair in `config.Upstreams`, keyed by upstream name.
+  - Instantiates `DnsUpstream` instances for each key-value pair in `config.Upstreams`, forwarding `upstreamConfig.Action` (`PolicyRule::RoutingAction`).
   - Builds `DnsRouter::Configuration` resolving upstream names to `std::weak_ptr<DnsUpstream>` for the default route (`config.DefaultRoute`) and domain suffix rules (`config.Routes`).
   - Instantiates `DnsRouter` with the prepared configuration and forwarded `callbacks` reference (`DnsForwarderCallbacks&`).
   - Instantiates `DnsListener` instances for each entry in `config.Listeners`, connecting each listener to `_Router`.
+- **`VpnSplitRule::Callback` Integration**:
+  - Implements `Resolve(const ConnectionTracker::ConnectionKey& key)` to match UDP `LocalPort` (`Ip4UdpKey` / `Ip6UdpKey`) against each `DnsUpstream::GetLocalPort()` and return `upstream->GetAction()`.
+  - Registers `*this` with `_VpnSplitRule` via `AddCallback` in `DoStart()` after all upstreams have bound their sockets, and unregisters via `RemoveCallback` in `DoGracefulStop()`.
 - **Configuration Exposure (`GetConfiguration`)**:
   - Returns `gh::Interface::DnsForwarderConfiguration` containing:
     - Active listener local endpoints.
-    - Upstream server endpoints alongside actual OS-assigned ephemeral source ports (`upstream->GetLocalPort()`).
+    - Upstream server endpoints alongside actual OS-assigned ephemeral source ports (`upstream->GetLocalPort()`) and configured routing actions (`upstream->GetAction()`).
     - Default route and domain suffix routes.
 - **Service Lifecycle Coordination**:
   - `DoStart()`:

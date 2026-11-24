@@ -12,6 +12,7 @@
 
 namespace gh {
 
+class VpnSplitRule;
 class VpnClientMultiChannelSession;
 
 namespace Interface {
@@ -90,8 +91,11 @@ struct PolicyRule {
   struct EndpointRoute {
     VpnEndpoint Endpoint;
   };
+  struct VpnSplitRoute {
+    std::weak_ptr<VpnSplitRule> Rules;
+  };
 
-  using RoutingAction = std::variant<ByPassRoute, DiscardRoute, EndpointRoute>;
+  using RoutingAction = std::variant<ByPassRoute, DiscardRoute, EndpointRoute, VpnSplitRoute>;
 
   RoutingAction Action;
   PolicyScope Scope = PolicyScope::SingleProcess;
@@ -111,6 +115,7 @@ struct DnsListenerConfiguration {
 struct DnsUpstreamConfiguration {
   std::vector<DnsEndpoint> ServerEndpoints;
   uint16_t LocalPort{0};
+  PolicyRule::RoutingAction Action = PolicyRule::ByPassRoute{};
 };
 
 struct DnsForwarderConfiguration {

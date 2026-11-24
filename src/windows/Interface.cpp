@@ -23,6 +23,7 @@
 #include "PolicyEngine.hpp"
 #include "TunnelDataPlane.hpp"
 #include "VpnClientMultiChannel.hpp"
+#include "VpnSplitRule.hpp"
 
 namespace gh::Interface {
 
@@ -83,6 +84,7 @@ private:
   void JoinThread();
 
   struct PlatformContext {
+    std::shared_ptr<gh::VpnSplitRule> VpnSplitRule;
     std::shared_ptr<gh::policy::PolicyEngine> PolicyEngine;
     std::shared_ptr<gh::windows::network::InterfaceMonitor> InterfaceMonitor;
     std::shared_ptr<gh::dns::DnsForwarder> DnsForwarder;
@@ -149,15 +151,18 @@ auto PlatformImpl::StartEngine() -> std::error_code {
   std::promise<ErrorCode> promise;
   auto future = promise.get_future();
   _TaskQueue.Push([this, &promise](auto& context) -> Omni::Fiber::Coroutine<void> {
+    assert(!context.VpnSplitRule);
     assert(!context.PolicyEngine);
     assert(!context.InterfaceMonitor);
     assert(!context.DataPlane);
-    context.PolicyEngine = std::make_shared<gh::policy::PolicyEngine>(_IoContext.get_executor());
+    context.VpnSplitRule = std::make_shared<gh::VpnSplitRule>();
+    context.PolicyEngine = std::make_shared<gh::policy::PolicyEngine>(_IoContext.get_executor(), context.VpnSplitRule);
     context.InterfaceMonitor = std::make_shared<gh::windows::network::InterfaceMonitor>(_IoContext.get_executor());
     auto err = co_await context.PolicyEngine->Start();
     if (err) {
       context.PolicyEngine.reset();
       context.InterfaceMonitor.reset();
+      context.VpnSplitRule.reset();
       promise.set_value(err);
       co_return;
     }
@@ -166,11 +171,13 @@ auto PlatformImpl::StartEngine() -> std::error_code {
       co_await context.PolicyEngine->Stop();
       context.PolicyEngine.reset();
       context.InterfaceMonitor.reset();
+      context.VpnSplitRule.reset();
       promise.set_value(err);
       co_return;
     }
-    context.DataPlane = std::make_unique<gh::TunnelDataPlane>(
-        _IoContext.get_executor(), context.PolicyEngine->GetPolicySelector(), _Callbacks, *context.InterfaceMonitor);
+    context.DataPlane = std::make_unique<gh::TunnelDataPlane>(_IoContext.get_executor(),
+                                                              context.PolicyEngine->GetPolicySelector(), _Callbacks,
+                                                              *context.InterfaceMonitor, context.VpnSplitRule);
     promise.set_value(ErrorCode{});
     co_return;
   });
@@ -205,6 +212,7 @@ auto PlatformImpl::StopEngine() -> std::error_code {
       BOOST_LOG_TRIVIAL(error) << "Failed to stop policy engine: " << err.message();
     }
     context.PolicyEngine.reset();
+    context.VpnSplitRule.reset();
     promise.set_value(ErrorCode{});
     co_return;
   });
@@ -306,7 +314,8 @@ auto PlatformImpl::StartDnsForwarder(const DnsForwarderConfiguration& config, Dn
       promise.set_value(std::make_error_code(std::errc::already_connected));
       co_return;
     }
-    context.DnsForwarder = std::make_shared<gh::dns::DnsForwarder>(_IoContext.get_executor(), config, callbacks);
+    context.DnsForwarder =
+        std::make_shared<gh::dns::DnsForwarder>(_IoContext.get_executor(), config, callbacks, context.VpnSplitRule);
     auto err = co_await context.DnsForwarder->Start();
     if (err) {
       context.DnsForwarder.reset();

@@ -25,6 +25,7 @@ foreach(suffix "" "-asan")
     omni-base${suffix}
     omni-fiber${suffix}
     great-hole-interface${suffix}
+    great-hole-application${suffix}
   )
 
   if(suffix STREQUAL "-asan")

@@ -109,7 +109,8 @@ auto main() -> int {
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
     gh::Cancel stopSignal;
     DnsForwarderToolCallbacks callbacks;
-    auto forwarder = std::make_shared<gh::dns::DnsForwarder>(ioContext.get_executor(), std::move(config), callbacks);
+    auto forwarder = std::make_shared<gh::dns::DnsForwarder>(ioContext.get_executor(), std::move(config), callbacks,
+                                                             std::weak_ptr<gh::VpnSplitRule>{});
 
     auto& current = co_await Omni::Fiber::GetCurrentOmniFiber();
 

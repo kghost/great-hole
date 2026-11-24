@@ -8,12 +8,14 @@
 #include "Logger.hpp"
 #include "ProcessTreeTracker.hpp"
 #include "TunnelDataPlane.hpp"
+#include "VpnSplitRule.hpp"
 
 namespace gh::policy {
 
 class PolicySelector : public TunnelDataPlanePolicyResolverCallback {
 public:
-  explicit PolicySelector(boost::asio::any_io_executor& executor, PolicyRegistry& registry);
+  explicit PolicySelector(boost::asio::any_io_executor& executor, PolicyRegistry& registry,
+                          std::weak_ptr<VpnSplitRule> vpnSplitRule);
   ~PolicySelector() override = default;
 
   PolicySelector(const PolicySelector&) = delete;

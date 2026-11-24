@@ -15,6 +15,7 @@
 #include "ErrorCode.hpp"
 #include "InterfaceCommonTypes.hpp"
 #include "VpnClientMultiChannel.hpp"
+#include "VpnSplitRule.hpp"
 
 #ifdef _WIN32
 #include "EndpointWinDivert.hpp"
@@ -58,7 +59,8 @@ public:
       -> Interface::PolicyRule::RoutingAction = 0;
 };
 
-class TunnelDataPlane : public ConnectionTracker::Selector
+class TunnelDataPlane : public ConnectionTracker::Selector,
+                        public VpnSplitRule::Callback
 #ifdef _WIN32
     ,
                         public WinDivertRouteCallback
@@ -67,13 +69,13 @@ class TunnelDataPlane : public ConnectionTracker::Selector
 public:
 #ifdef _WIN32
   TunnelDataPlane(boost::asio::any_io_executor executor, TunnelDataPlanePolicyResolverCallback& policyResolver,
-                  Interface::DataPlaneCallbacks& callbacks,
-                  WindowsLocalAddressMonitor& windowsLocalAddressMonitor);
+                  Interface::DataPlaneCallbacks& callbacks, WindowsLocalAddressMonitor& windowsLocalAddressMonitor,
+                  std::weak_ptr<VpnSplitRule> vpnSplitRule);
 #else
   TunnelDataPlane(boost::asio::any_io_executor executor, TunnelDataPlanePolicyResolverCallback& policyResolver,
-                  Interface::DataPlaneCallbacks& callbacks);
+                  Interface::DataPlaneCallbacks& callbacks, std::weak_ptr<VpnSplitRule> vpnSplitRule);
 #endif
-  ~TunnelDataPlane();
+  ~TunnelDataPlane() override;
 
   TunnelDataPlane(const TunnelDataPlane&) = delete;
   auto operator=(const TunnelDataPlane&) -> TunnelDataPlane& = delete;
@@ -96,6 +98,8 @@ public:
   auto StopEndpoint(const std::weak_ptr<VpnClientMultiChannelSession>& weak) -> Omni::Fiber::Coroutine<void>;
 
   auto Select(const ConnectionTracker::ConnectionKey& key) -> ConnectionTracker::Selector::Action override;
+  [[nodiscard]] auto Resolve(const ConnectionTracker::ConnectionKey& key) const
+      -> std::optional<Interface::PolicyRule::RoutingAction> override;
 #ifdef _WIN32
   auto WinDivertRouteOutbound(Packet& packet) -> WinDivertRouteCallback::Result override;
   auto WinDivertRouteInbound(Packet& packet) -> std::optional<WinDivertRouteCallback::InterfaceIndex> override;
@@ -119,6 +123,7 @@ private:
   } _NatContext;
 #endif
   std::shared_ptr<VpnClientMultiChannel> _Client;
+  std::weak_ptr<VpnSplitRule> _VpnSplitRule;
   bool _Running = false;
 };
 

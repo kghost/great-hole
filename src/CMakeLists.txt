@@ -1,9 +1,9 @@
 add_subdirectory(interface)
 add_subdirectory(base)
 add_subdirectory(resolvers)
-add_subdirectory(dns)
 add_subdirectory(core)
 add_subdirectory(application)
+add_subdirectory(dns)
 
 if(ANDROID)
   add_subdirectory(android)

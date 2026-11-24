@@ -9,13 +9,14 @@
 #include "PolicyRegistry.hpp"
 #include "PolicySelector.hpp"
 #include "ServiceBase.hpp"
+#include "VpnSplitRule.hpp"
 #include "WinDivertFlowSniffer.hpp"
 
 namespace gh::policy {
 
 class PolicyEngine : public ServiceBase {
 public:
-  explicit PolicyEngine(boost::asio::any_io_executor executor);
+  explicit PolicyEngine(boost::asio::any_io_executor executor, std::weak_ptr<VpnSplitRule> vpnSplitRule);
   ~PolicyEngine() override;
 
   PolicyEngine(const PolicyEngine&) = delete;

@@ -159,11 +159,12 @@ for (const auto& listener : config.Listeners) {
   // listener.LocalEndpoint: gh::Interface::DnsEndpoint { Address, Port }
 }
 
-// 2. Upstreams, remote server endpoints, and ephemeral local ports
+// 2. Upstreams, remote server endpoints, ephemeral local ports, and routing action
 for (const auto& [name, upstream] : config.Upstreams) {
   // name: std::string
   // upstream.ServerEndpoints: std::vector<gh::Interface::DnsEndpoint>
   // upstream.LocalPort: uint16_t (bound ephemeral UDP source port)
+  // upstream.Action: gh::Interface::PolicyRule::RoutingAction (defaults to ByPassRoute)
 }
 
 // 3. Default route and domain routing rules

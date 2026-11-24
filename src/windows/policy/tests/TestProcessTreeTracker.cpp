@@ -23,7 +23,8 @@ protected:
   PolicyRegistry registry;
   ProcessTreeTracker tracker;
 
-  TestProcessTreeTracker() : ioContext(), registry(), tracker(ioContext.get_executor(), registry) {}
+  TestProcessTreeTracker()
+      : ioContext(), registry(), tracker(ioContext.get_executor(), registry, std::weak_ptr<VpnSplitRule>{}) {}
 
   void RunPending() {
     ioContext.restart();
@@ -200,6 +201,33 @@ TEST_F(TestProcessTreeTracker, QueryActionForLiveProcessByOpenProcess) {
 
   auto action = tracker.GetAction(currentPid);
   ASSERT_TRUE(action.has_value());
+}
+
+TEST_F(TestProcessTreeTracker, RegisterPolicyForVpnProcessRequiresVpnSplitRouteAndSubtree) {
+  DWORD currentPid = GetCurrentProcessId();
+  auto currentSeqOpt = gh::GetProcessSequence(currentPid);
+  ASSERT_TRUE(currentSeqOpt.has_value());
+  auto currentSeq = currentSeqOpt.value();
+
+  tracker.AddProcess(currentSeq, 0, currentPid, "C:\\App\\vpn.exe");
+
+  // Reject ByPassRoute on _CurrentProcess
+  auto resBypass = tracker.RegisterProcessPolicy(
+      currentSeq, PolicyRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::ProcessSubtree});
+  EXPECT_FALSE(resBypass.has_value());
+
+  // Reject VpnSplitRoute with SingleProcess scope on _CurrentProcess
+  auto splitRule = std::make_shared<VpnSplitRule>();
+  auto resSingle = tracker.RegisterProcessPolicy(
+      currentSeq,
+      PolicyRule{.Action = PolicyRule::VpnSplitRoute{.Rules = splitRule}, .Scope = PolicyScope::SingleProcess});
+  EXPECT_FALSE(resSingle.has_value());
+
+  // Accept VpnSplitRoute with ProcessSubtree scope on _CurrentProcess
+  auto resValid = tracker.RegisterProcessPolicy(
+      currentSeq,
+      PolicyRule{.Action = PolicyRule::VpnSplitRoute{.Rules = splitRule}, .Scope = PolicyScope::ProcessSubtree});
+  EXPECT_TRUE(resValid.has_value());
 }
 
 TEST_F(TestProcessTreeTracker, HandleEtwEventParseImagePath) {

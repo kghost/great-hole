@@ -72,6 +72,12 @@ public:
   auto operator=(VpnClientMultiChannel&&) -> VpnClientMultiChannel& = delete;
 
   auto GetName() const -> std::string override;
+  [[nodiscard]] auto GetLocalPort() const -> std::optional<uint16_t> {
+    if (_RunningContext.has_value() && _RunningContext->UdpDynMux) {
+      return _RunningContext->UdpDynMux->LocalEndpoint().port();
+    }
+    return std::nullopt;
+  }
 
   auto Start(std::shared_ptr<Endpoint> tun, std::shared_ptr<UdpDynMux> udpDynMux,
              std::vector<std::shared_ptr<Filter>> filters) -> Omni::Fiber::Coroutine<ErrorCode>;

@@ -41,6 +41,7 @@ The `great-hole-application` module provides high-level application components f
 
 *   `VpnClientMultiChannel` is constructed once when `TunnelDataPlane` is initialized, allowing `RegisterChannel` / `UnregisterChannel` (`TunnelDataPlane::AddEndpoint` / `RemoveEndpoint`) to be called before `Start(...)` and persisting `_Sessions` across `Start(...)` / `Stop()` cycles.
 *   `VpnClientMultiChannel::Start(tun, udpDynMux, filters)` attaches the per-run TUN endpoint, `UdpDynMux`, and packet filters and starts the data plane pipelines.
+*   `TunnelDataPlane` implements `VpnSplitRule::Callback` to register the tunnel's `UdpDynMux` local UDP port (`_Client->GetLocalPort()`) with `VpnSplitRule` on `Start(...)` (resolving tunnel transport packets to `PolicyRule::ByPassRoute{}`) and unregisters it on `Stop()`.
 *   Integrates with `ConnectionTracker` to trace incoming/outgoing packets and supports runtime TUN migration (`MigrateTun`).
 
 ---

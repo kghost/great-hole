@@ -12,8 +12,10 @@
 namespace gh::dns {
 
 DnsUpstream::DnsUpstream(const boost::asio::any_io_executor& executor, std::string name,
-                         std::vector<boost::asio::ip::udp::endpoint> upstreamServers)
-    : _Name(std::move(name)), _Socket(executor), _UpstreamServers(std::move(upstreamServers)) {}
+                         std::vector<boost::asio::ip::udp::endpoint> upstreamServers,
+                         Interface::PolicyRule::RoutingAction action)
+    : _Name(std::move(name)), _Socket(executor), _Action(std::move(action)),
+      _UpstreamServers(std::move(upstreamServers)) {}
 
 DnsUpstream::~DnsUpstream() = default;
 

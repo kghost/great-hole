@@ -101,12 +101,13 @@ TEST(DnsPacketTest, SerializeAndParseAnswerRecord) {
 TEST(DnsRouterTest, SuffixMatchingAndLongestMatchWins) {
   boost::asio::io_context io;
 
-  auto defaultClient =
-      std::make_shared<DnsUpstream>(io.get_executor(), "default", std::vector<boost::asio::ip::udp::endpoint>{});
-  auto companyClient =
-      std::make_shared<DnsUpstream>(io.get_executor(), "company", std::vector<boost::asio::ip::udp::endpoint>{});
-  auto subCompanyClient =
-      std::make_shared<DnsUpstream>(io.get_executor(), "subCompany", std::vector<boost::asio::ip::udp::endpoint>{});
+  auto defaultClient = std::make_shared<DnsUpstream>(
+      io.get_executor(), "default", std::vector<boost::asio::ip::udp::endpoint>{}, Interface::PolicyRule::ByPassRoute{});
+  auto companyClient = std::make_shared<DnsUpstream>(
+      io.get_executor(), "company", std::vector<boost::asio::ip::udp::endpoint>{}, Interface::PolicyRule::ByPassRoute{});
+  auto subCompanyClient = std::make_shared<DnsUpstream>(
+      io.get_executor(), "subCompany", std::vector<boost::asio::ip::udp::endpoint>{},
+      Interface::PolicyRule::ByPassRoute{});
 
   DnsRouter::Configuration config{
       .DefaultRoute = defaultClient,
@@ -145,10 +146,11 @@ TEST(DnsUpstreamTest, EphemeralLocalPortBinding) {
   bool testPassed = false;
 
   manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
-    auto client =
-        std::make_shared<DnsUpstream>(io.get_executor(), "test_upstream",
-                                      std::vector<boost::asio::ip::udp::endpoint>{boost::asio::ip::udp::endpoint(
-                                          boost::asio::ip::address_v4::loopback(), 53053)});
+    auto client = std::make_shared<DnsUpstream>(
+        io.get_executor(), "test_upstream",
+        std::vector<boost::asio::ip::udp::endpoint>{
+            boost::asio::ip::udp::endpoint(boost::asio::ip::address_v4::loopback(), 53053)},
+        Interface::PolicyRule::ByPassRoute{});
 
     auto errStart = co_await client->Start();
     EXPECT_FALSE(errStart);
@@ -242,7 +244,8 @@ TEST(DnsForwarderIntegrationTest, EndToEndForwardingAndRouting) {
     };
 
     TestDnsForwarderCallbacks callbacks;
-    auto forwarder = std::make_shared<DnsForwarder>(io.get_executor(), std::move(config), callbacks);
+    auto forwarder = std::make_shared<DnsForwarder>(io.get_executor(), std::move(config), callbacks,
+                                                    std::weak_ptr<VpnSplitRule>{});
     auto errStart = co_await forwarder->Start();
     EXPECT_FALSE(errStart);
 
@@ -392,7 +395,8 @@ TEST(DnsForwarderTest, ConstructWithMultipleUpstreamsAndDomainRouting) {
     };
 
     TestDnsForwarderCallbacks callbacks;
-    auto forwarder = std::make_shared<DnsForwarder>(io.get_executor(), std::move(config), callbacks);
+    auto forwarder = std::make_shared<DnsForwarder>(io.get_executor(), std::move(config), callbacks,
+                                                    std::weak_ptr<VpnSplitRule>{});
     auto errStart = co_await forwarder->Start();
     EXPECT_FALSE(errStart);
 
@@ -466,7 +470,8 @@ TEST(DnsForwarderTest, ExposeConfigurationOfForwarderAndComponents) {
     };
 
     TestDnsForwarderCallbacks callbacks;
-    auto forwarder = std::make_shared<DnsForwarder>(io.get_executor(), std::move(initConfig), callbacks);
+    auto forwarder = std::make_shared<DnsForwarder>(io.get_executor(), std::move(initConfig), callbacks,
+                                                    std::weak_ptr<VpnSplitRule>{});
 
     auto errStart = co_await forwarder->Start();
     EXPECT_FALSE(errStart);
@@ -603,7 +608,8 @@ TEST(DnsForwarderIntegrationTest, HandleMultipleSequentialQueries) {
     };
 
     TestDnsForwarderCallbacks callbacks;
-    auto forwarder = std::make_shared<DnsForwarder>(io.get_executor(), std::move(config), callbacks);
+    auto forwarder = std::make_shared<DnsForwarder>(io.get_executor(), std::move(config), callbacks,
+                                                    std::weak_ptr<VpnSplitRule>{});
     auto errStart = co_await forwarder->Start();
     EXPECT_FALSE(errStart);
 
@@ -730,7 +736,8 @@ TEST(DnsForwarderCallbacksTest, NotifyAAndAaaaQueriesWithResults) {
     };
 
     TestDnsForwarderCallbacks callbacks;
-    auto forwarder = std::make_shared<DnsForwarder>(ioContext.get_executor(), std::move(config), callbacks);
+    auto forwarder = std::make_shared<DnsForwarder>(ioContext.get_executor(), std::move(config), callbacks,
+                                                    std::weak_ptr<VpnSplitRule>{});
     auto errStart = co_await forwarder->Start();
     EXPECT_FALSE(errStart);
 
@@ -826,7 +833,8 @@ TEST(DnsForwarderCallbacksTest, NotifyUnroutedQueryWithEmptyResults) {
     };
 
     TestDnsForwarderCallbacks callbacks;
-    auto forwarder = std::make_shared<DnsForwarder>(ioContext.get_executor(), std::move(config), callbacks);
+    auto forwarder = std::make_shared<DnsForwarder>(ioContext.get_executor(), std::move(config), callbacks,
+                                                    std::weak_ptr<VpnSplitRule>{});
     auto errStart = co_await forwarder->Start();
     EXPECT_FALSE(errStart);
 
@@ -888,7 +896,8 @@ TEST(DnsForwarderCallbacksTest, NonAOrAaaaQueryDoesNotTriggerCallback) {
     };
 
     TestDnsForwarderCallbacks callbacks;
-    auto forwarder = std::make_shared<DnsForwarder>(ioContext.get_executor(), std::move(config), callbacks);
+    auto forwarder = std::make_shared<DnsForwarder>(ioContext.get_executor(), std::move(config), callbacks,
+                                                    std::weak_ptr<VpnSplitRule>{});
     auto errStart = co_await forwarder->Start();
     EXPECT_FALSE(errStart);
 
@@ -914,6 +923,87 @@ TEST(DnsForwarderCallbacksTest, NonAOrAaaaQueryDoesNotTriggerCallback) {
 
     clientSock.close();
     co_await forwarder->Stop();
+
+    testPassed = true;
+    co_return;
+  });
+
+  ioContext.run();
+  EXPECT_TRUE(testPassed);
+}
+
+TEST(DnsForwarderTest, BindsAndUnbindsVpnSplitRuleCallbacksOnStartAndStop) {
+  boost::asio::io_context ioContext;
+  Omni::Fiber::AsioExecutor executor(ioContext.get_executor());
+  Omni::Fiber::Manager manager(executor);
+
+  bool testPassed = false;
+
+  manager.SpawnRoot("root", [&]() -> Omni::Fiber::Coroutine<void> {
+    boost::asio::ip::udp::endpoint listenEp(boost::asio::ip::address_v4::loopback(), 0);
+    boost::asio::ip::udp::socket tempSock(ioContext.get_executor());
+    tempSock.open(listenEp.protocol());
+    tempSock.bind(listenEp);
+    boost::asio::ip::udp::endpoint forwarderBindEp = tempSock.local_endpoint();
+    tempSock.close();
+
+    boost::asio::ip::udp::endpoint srv1(boost::asio::ip::make_address_v4("8.8.8.8"), 53);
+    boost::asio::ip::udp::endpoint srv2(boost::asio::ip::make_address_v4("10.0.0.1"), 53);
+
+    Interface::DnsForwarderConfiguration initConfig{
+        .Listeners = {{.LocalEndpoint = ToDnsEndpoint(forwarderBindEp)}},
+        .Upstreams =
+            {
+                {"bypass_dns",
+                 {.ServerEndpoints = {ToDnsEndpoint(srv1)}, .Action = Interface::PolicyRule::ByPassRoute{}}},
+                {"discard_dns",
+                 {.ServerEndpoints = {ToDnsEndpoint(srv2)}, .Action = Interface::PolicyRule::DiscardRoute{}}},
+            },
+        .DefaultRoute = "bypass_dns",
+    };
+
+    auto splitRule = std::make_shared<VpnSplitRule>();
+    TestDnsForwarderCallbacks callbacks;
+    auto forwarder = std::make_shared<DnsForwarder>(ioContext.get_executor(), std::move(initConfig), callbacks, splitRule);
+
+    auto errStart = co_await forwarder->Start();
+    EXPECT_FALSE(errStart);
+
+    auto config = forwarder->GetConfiguration();
+    auto itBypass = config.Upstreams.find("bypass_dns");
+    auto itDiscard = config.Upstreams.find("discard_dns");
+    EXPECT_NE(itBypass, config.Upstreams.end());
+    EXPECT_NE(itDiscard, config.Upstreams.end());
+    if (itBypass == config.Upstreams.end() || itDiscard == config.Upstreams.end()) {
+      co_return;
+    }
+
+    EXPECT_TRUE(std::holds_alternative<Interface::PolicyRule::ByPassRoute>(itBypass->second.Action));
+    EXPECT_TRUE(std::holds_alternative<Interface::PolicyRule::DiscardRoute>(itDiscard->second.Action));
+
+    uint16_t bypassPort = itBypass->second.LocalPort;
+    uint16_t discardPort = itDiscard->second.LocalPort;
+    EXPECT_GT(bypassPort, 0u);
+    EXPECT_GT(discardPort, 0u);
+
+    // Resolve via VpnSplitRule while DnsForwarder is running
+    auto localIp = boost::asio::ip::make_address_v4("127.0.0.1");
+    auto remoteIp = boost::asio::ip::make_address_v4("8.8.8.8");
+    ConnectionTracker::ConnectionKey bypassKey = ConnectionTracker::Ip4UdpKey{
+        .LocalAddress = localIp, .RemoteAddress = remoteIp, .LocalPort = bypassPort, .RemotePort = 53};
+    ConnectionTracker::ConnectionKey discardKey = ConnectionTracker::Ip4UdpKey{
+        .LocalAddress = localIp, .RemoteAddress = remoteIp, .LocalPort = discardPort, .RemotePort = 53};
+    ConnectionTracker::ConnectionKey tcpKey = ConnectionTracker::Ip4TcpKey{
+        .LocalAddress = localIp, .RemoteAddress = remoteIp, .LocalPort = discardPort, .RemotePort = 53};
+
+    EXPECT_TRUE(std::holds_alternative<Interface::PolicyRule::ByPassRoute>(splitRule->Resolve(bypassKey)));
+    EXPECT_TRUE(std::holds_alternative<Interface::PolicyRule::DiscardRoute>(splitRule->Resolve(discardKey)));
+    EXPECT_TRUE(std::holds_alternative<Interface::PolicyRule::ByPassRoute>(splitRule->Resolve(tcpKey)));
+
+    co_await forwarder->Stop();
+
+    // After Stop(), callback is removed and discardKey falls back to ByPassRoute
+    EXPECT_TRUE(std::holds_alternative<Interface::PolicyRule::ByPassRoute>(splitRule->Resolve(discardKey)));
 
     testPassed = true;
     co_return;

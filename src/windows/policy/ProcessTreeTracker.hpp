@@ -20,6 +20,7 @@
 #include "MoveOnlyFunction.hpp"
 #include "PolicyRegistry.hpp"
 #include "ServiceBase.hpp"
+#include "VpnSplitRule.hpp"
 
 class TestProcessTreeTracker;
 
@@ -36,7 +37,8 @@ struct ProcessNode {
 
 class ProcessTreeTracker : public ServiceBase {
 public:
-  explicit ProcessTreeTracker(boost::asio::any_io_executor executor, const PolicyRegistry& registry);
+  explicit ProcessTreeTracker(boost::asio::any_io_executor executor, const PolicyRegistry& registry,
+                              std::weak_ptr<VpnSplitRule> vpnSplitRule);
   ~ProcessTreeTracker() override = default;
 
   ProcessTreeTracker(const ProcessTreeTracker&) = delete;
@@ -80,6 +82,7 @@ private:
   boost::asio::any_io_executor _Executor;
   Omni::Fiber::ExternalQueue<Task> _TaskQueue;
   const PolicyRegistry& _Registry;
+  std::weak_ptr<VpnSplitRule> _VpnSplitRule;
   Interface::ProcessSequence _CurrentProcess;
 
   std::map<Interface::ProcessSequence, ProcessNode> _ProcessMap;

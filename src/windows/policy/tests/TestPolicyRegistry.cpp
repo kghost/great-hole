@@ -1,8 +1,10 @@
+#include <memory>
 #include <variant>
 
 #include <gtest/gtest.h>
 
 #include "PolicyRegistry.hpp"
+#include "VpnSplitRule.hpp"
 
 using namespace gh;
 using namespace gh::policy;
@@ -77,4 +79,12 @@ TEST_F(TestPolicyRegistry, PolicyRuleToStringFormat) {
 
   PolicyRule endpointRule{.Action = PolicyRule::EndpointRoute{}, .Scope = PolicyScope::ProcessSubtree};
   EXPECT_EQ(PolicyRuleToString(endpointRule), "Rule(Action=Endpoint[Invalid], Scope=ProcessSubtree)");
+
+  PolicyRule invalidSplitRule{.Action = PolicyRule::VpnSplitRoute{}, .Scope = PolicyScope::ProcessSubtree};
+  EXPECT_EQ(PolicyRuleToString(invalidSplitRule), "Rule(Action=VpnSplit[Invalid], Scope=ProcessSubtree)");
+
+  auto splitRule = std::make_shared<VpnSplitRule>();
+  PolicyRule validSplitRule{.Action = PolicyRule::VpnSplitRoute{.Rules = splitRule},
+                            .Scope = PolicyScope::ProcessSubtree};
+  EXPECT_EQ(PolicyRuleToString(validSplitRule), "Rule(Action=VpnSplit, Scope=ProcessSubtree)");
 }

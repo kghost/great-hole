@@ -79,8 +79,10 @@ void StopOrphanedSessions(gh::base::ComponentLogger& logger) {
 
 } // namespace
 
-ProcessTreeTracker::ProcessTreeTracker(boost::asio::any_io_executor executor, const PolicyRegistry& registry)
-    : _Executor(std::move(executor)), _TaskQueue(_Executor), _Registry(registry) {
+ProcessTreeTracker::ProcessTreeTracker(boost::asio::any_io_executor executor, const PolicyRegistry& registry,
+                                       std::weak_ptr<VpnSplitRule> vpnSplitRule)
+    : _Executor(std::move(executor)), _TaskQueue(_Executor), _Registry(registry),
+      _VpnSplitRule(std::move(vpnSplitRule)) {
   WithProcessHandle(GetCurrentProcessId(), [this](std::optional<HANDLE> handle) -> Nothing {
     assert(handle.has_value());
     auto seq = GetProcessSequence(handle.value());
@@ -121,8 +123,9 @@ auto ProcessTreeTracker::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
 
   BuildInitialSnapshot();
 
-  auto result = RegisterProcessPolicy(
-      _CurrentProcess, PolicyRule{.Action = PolicyRule::ByPassRoute{}, .Scope = PolicyScope::ProcessSubtree});
+  auto result = RegisterProcessPolicy(_CurrentProcess,
+                                      PolicyRule{.Action = PolicyRule::VpnSplitRoute{.Rules = _VpnSplitRule},
+                                                 .Scope = PolicyScope::ProcessSubtree});
   assert(result.has_value());
 
   _EtwThread = std::thread([this]() -> void { EtwThreadProc(); });
@@ -217,7 +220,7 @@ void ProcessTreeTracker::EvaluatePolicyLocked(ProcessNode& node) {
 auto ProcessTreeTracker::RegisterProcessPolicy(Interface::ProcessSequence process, const PolicyRule& rule)
     -> std::expected<void, std::string> {
   if (process == _CurrentProcess &&
-      (!std::holds_alternative<PolicyRule::ByPassRoute>(rule.Action) || rule.Scope != PolicyScope::ProcessSubtree)) {
+      (!std::holds_alternative<PolicyRule::VpnSplitRoute>(rule.Action) || rule.Scope != PolicyScope::ProcessSubtree)) {
     return std::unexpected("Cannot register policy for VPN process");
   }
 

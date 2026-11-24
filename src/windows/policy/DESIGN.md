@@ -107,12 +107,15 @@ The `PolicyRegistry` stores user-defined rules.
 - **Path Rules**: Maps normalized executable paths or wildcards (e.g. `C:\Program Files\Git\bin\git.exe` or `*/git.exe`) to a routing action (`ByPassRoute`, `EndpointRoute`).
 - **Default Route**: Defines the default route when no path-specific rules match.
 
-### 3.4. Policy Selector (`gh::policy::PolicySelector`)
-The `PolicySelector` implements the `ConnectionTracker::Selector` and `WinDivertRouteCallback` interfaces, and coordinates policy resolution:
-1. It implements `WinDivertRouteCallback::WinDivertRoute`. When WinDivert captures outbound packets, it routes them through the `ConnectionTracker`.
-2. It queries `FlowTracker` for the `ProcessId` of the connection key.
-3. If the PID is found, it queries `ProcessTreeTracker` for the policy associated with that PID.
-4. If either the flow mapping or the process policy isn't available yet, the selector returns a `Deferred` connection mark and registers callbacks to resume the connection once the information is resolved.
+### 3.4. Policy Selector (`gh::policy::PolicySelector`) & `VpnSplitRule` (`gh::VpnSplitRule`)
+The `PolicySelector` implements the `TunnelDataPlanePolicyResolverCallback` interface and coordinates policy resolution:
+1. It queries `FlowTracker` for the `ProcessId` of the connection key.
+2. If the PID is found, it queries `ProcessTreeTracker` for the policy associated with that PID.
+3. For the VPN software process itself (`_CurrentProcess`), `ProcessTreeTracker` registers `PolicyRule::VpnSplitRoute` (with `PolicyScope::ProcessSubtree`) holding a `std::weak_ptr<VpnSplitRule>`.
+4. `VpnSplitRule` (in `src/application/VpnSplitRule.hpp`) defines a pure virtual `VpnSplitRule::Callback` interface (`Resolve(const ConnectionTracker::ConnectionKey& key)`) implemented by `TunnelDataPlane` and `DnsForwarder`:
+   - `TunnelDataPlane` registers itself on `Start()` to resolve the tunnel `UdpDynMux` local UDP port to `PolicyRule::ByPassRoute{}`.
+   - `DnsForwarder` registers itself on `DoStart()` to resolve each `DnsUpstream`'s bound local UDP port to its configured `DnsUpstreamConfiguration::Action`.
+   - Any other UDP port or non-UDP connection originating from the VPN process falls back to `PolicyRule::ByPassRoute{}`.
 
 ---
 
@@ -156,11 +159,15 @@ enum class PolicyScope : std::uint8_t {
 
 struct PolicyRule {
     struct ByPassRoute {};
+    struct DiscardRoute {};
     struct EndpointRoute {
         std::weak_ptr<VpnClientMultiChannelSession> Endpoint;
     };
+    struct VpnSplitRoute {
+        std::weak_ptr<VpnSplitRule> Rules;
+    };
 
-    using RoutingAction = std::variant<ByPassRoute, EndpointRoute>;
+    using RoutingAction = std::variant<ByPassRoute, DiscardRoute, EndpointRoute, VpnSplitRoute>;
 
     RoutingAction Action;
     PolicyScope Scope = PolicyScope::SingleProcess;

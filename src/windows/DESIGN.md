@@ -70,8 +70,9 @@ Located in `src/interface/Interface.hpp`, this is a pure virtual C++ interface. 
 Located in `src/windows/Interface.cpp`, this is the concrete Windows implementation. It inherits from `gh::Interface::PlatformInterface`.
 - It implements the virtual interface functions.
 - It instantiates and owns the `boost::asio::io_context` and runs the dedicated Asio runner thread.
-- `StartEngine()` initializes and starts `PolicyEngine` and `InterfaceMonitor`, and constructs `context.DataPlane` (`gh::TunnelDataPlane`), which in turn constructs `_Client` (`gh::VpnClientMultiChannel`) once for the engine's lifetime.
-- `StopVpn()` stops `context.DataPlane` without destroying it, preserving registered `VpnEndpoint` sessions across `StartVpn()` / `StopVpn()` cycles until `StopEngine()` destroys `context.DataPlane`.
+- `StartEngine()` creates `context.VpnSplitRule` (`std::shared_ptr<gh::VpnSplitRule>`), initializes and starts `PolicyEngine` (passing `context.VpnSplitRule` so `_CurrentProcess` is registered with `PolicyRule::VpnSplitRoute`) and `InterfaceMonitor`, and constructs `context.DataPlane` (`gh::TunnelDataPlane` with `context.VpnSplitRule`), which in turn constructs `_Client` (`gh::VpnClientMultiChannel`) once for the engine's lifetime.
+- `StartDnsForwarder()` constructs `context.DnsForwarder` (`gh::dns::DnsForwarder`) with `context.VpnSplitRule` so upstream UDP ports are bound to their configured routing actions while the forwarder runs.
+- `StopVpn()` stops `context.DataPlane` without destroying it, preserving registered `VpnEndpoint` sessions across `StartVpn()` / `StopVpn()` cycles until `StopEngine()` destroys `context.DataPlane` and resets `context.VpnSplitRule`.
 
 ### 2.3. Network Interface & DNS Server Control via LUID
 `PlatformImpl` exposes interface querying and DNS overriding (`OverrideDnsServers` / `RestoreDnsServers`) to the client thread using the persistent 64-bit `InterfaceLuid` as the interface identifier. Calls are marshaled through `Omni::Fiber::ExternalQueue` to execute inside the fiber runtime on `context.InterfaceMonitor`, preserving original adapter DNS settings and ensuring synchronization with IP Helper event loops.

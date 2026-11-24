@@ -39,22 +39,30 @@ using TunnelState = Interface::TunnelState;
 TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor,
                                  TunnelDataPlanePolicyResolverCallback& policyResolver,
                                  Interface::DataPlaneCallbacks& callbacks,
-                                 WindowsLocalAddressMonitor& windowsLocalAddressMonitor)
+                                 WindowsLocalAddressMonitor& windowsLocalAddressMonitor,
+                                 std::weak_ptr<VpnSplitRule> vpnSplitRule)
     : _Executor(std::move(executor)), _PolicyResolver(policyResolver), _Callbacks(callbacks),
       _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor)),
       _WindowsLocalAddressMonitor(windowsLocalAddressMonitor),
-      _Client(std::make_shared<VpnClientMultiChannel>(_Executor, _Callbacks, _ConnectionTracker, *this)) {}
+      _Client(std::make_shared<VpnClientMultiChannel>(_Executor, _Callbacks, _ConnectionTracker, *this)),
+      _VpnSplitRule(std::move(vpnSplitRule)) {}
 
 #else
 TunnelDataPlane::TunnelDataPlane(boost::asio::any_io_executor executor,
                                  TunnelDataPlanePolicyResolverCallback& policyResolver,
-                                 Interface::DataPlaneCallbacks& callbacks)
+                                 Interface::DataPlaneCallbacks& callbacks, std::weak_ptr<VpnSplitRule> vpnSplitRule)
     : _Executor(std::move(executor)), _PolicyResolver(policyResolver), _Callbacks(callbacks),
       _ConnectionTracker(std::make_shared<ConnectionTracker>(_Executor)),
-      _Client(std::make_shared<VpnClientMultiChannel>(_Executor, _Callbacks, _ConnectionTracker, *this)) {}
+      _Client(std::make_shared<VpnClientMultiChannel>(_Executor, _Callbacks, _ConnectionTracker, *this)),
+      _VpnSplitRule(std::move(vpnSplitRule)) {}
 #endif
 
-TunnelDataPlane::~TunnelDataPlane() { assert(!_Running); }
+TunnelDataPlane::~TunnelDataPlane() {
+  assert(!_Running);
+  if (auto splitRule = _VpnSplitRule.lock()) {
+    splitRule->RemoveCallback(*this);
+  }
+}
 
 #ifndef _WIN32
 auto TunnelDataPlane::Start(int tunFd, int mtu, std::vector<char> encryptionKey) -> Omni::Fiber::Coroutine<ErrorCode>
@@ -97,6 +105,10 @@ auto TunnelDataPlane::Start(std::span<Interface::IpAddress> addresses, int32_t m
     co_return err;
   }
 
+  if (auto splitRule = _VpnSplitRule.lock()) {
+    splitRule->AddCallback(*this);
+  }
+
   _Callbacks.OnVpnStateChanged(TunnelState::Running, "VPN tunnel established");
   co_return ErrorCode{};
 }
@@ -123,6 +135,10 @@ auto TunnelDataPlane::Stop() -> Omni::Fiber::Coroutine<ErrorCode> {
   }
   _Running = false;
   _Callbacks.OnVpnStateChanged(TunnelState::Stopping, "VPN stopping");
+
+  if (auto splitRule = _VpnSplitRule.lock()) {
+    splitRule->RemoveCallback(*this);
+  }
 
   auto err = co_await _Client->Stop();
   if (err) {
@@ -157,14 +173,48 @@ auto TunnelDataPlane::GetTrafficStats(const std::weak_ptr<VpnClientMultiChannelS
   return VpnClientMultiChannel::GetStats(weak);
 }
 
+auto TunnelDataPlane::Resolve(const ConnectionTracker::ConnectionKey& key) const
+    -> std::optional<Interface::PolicyRule::RoutingAction> {
+  if (!_Client) {
+    return std::nullopt;
+  }
+  auto tunnelPort = _Client->GetLocalPort();
+  if (!tunnelPort.has_value()) {
+    return std::nullopt;
+  }
+  return std::visit(
+      Overload{
+          [&](const ConnectionTracker::Ip4UdpKey& udpKey) -> std::optional<Interface::PolicyRule::RoutingAction> {
+            if (udpKey.LocalPort == tunnelPort.value()) {
+              return Interface::PolicyRule::ByPassRoute{};
+            }
+            return std::nullopt;
+          },
+          [&](const ConnectionTracker::Ip6UdpKey& udpKey) -> std::optional<Interface::PolicyRule::RoutingAction> {
+            if (udpKey.LocalPort == tunnelPort.value()) {
+              return Interface::PolicyRule::ByPassRoute{};
+            }
+            return std::nullopt;
+          },
+          [](const auto&) -> std::optional<Interface::PolicyRule::RoutingAction> { return std::nullopt; },
+      },
+      key);
+}
+
 auto TunnelDataPlane::Select(const ConnectionTracker::ConnectionKey& key) -> ConnectionTracker::Selector::Action {
   auto action = _PolicyResolver.ResolvePolicy(key);
+  if (const auto* splitRoute = std::get_if<Interface::PolicyRule::VpnSplitRoute>(&action)) {
+    action = VpnSplitRule::ResolveRoute(*splitRoute, key);
+  }
   return std::visit(
       Overload{[](const Interface::PolicyRule::ByPassRoute&) -> ConnectionTracker::Selector::Action {
                  return Action(std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Bypass{}));
                },
                [](const Interface::PolicyRule::DiscardRoute&) -> ConnectionTracker::Selector::Action {
                  return Action(std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Discard{}));
+               },
+               [](const Interface::PolicyRule::VpnSplitRoute&) -> ConnectionTracker::Selector::Action {
+                 return Action(std::make_unique<VpnClientMultiChannel::Mark>(VpnClientMultiChannel::Mark::Bypass{}));
                },
                [&](const Interface::PolicyRule::EndpointRoute& route) -> ConnectionTracker::Selector::Action {
                  if (auto session = route.Endpoint.lock()) {

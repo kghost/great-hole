@@ -72,7 +72,7 @@ A policy rule is defined by the following schema:
 | `TargetType` | Enum | `ExecutablePath` (persistent matches), `ProcessId` (ad-hoc dynamic matches), or `JobInstance` (UI-launched). |
 | `TargetValue` | String / Int | Path to the executable (e.g., `C:\bin\app.exe`) or the numeric `PID`. |
 | `Scope` | Enum | `SingleProcess` (applies to target PID only) or `ProcessSubtree` (applies to target and all descendants). |
-| `Action` | Enum | `Endpoint` (route to tunnel), `ByPass` (bypass VPN), or `Discard` (silently drop packets). |
+| `Action` | Enum | `Endpoint` (route to tunnel), `ByPass` (bypass VPN), `Discard` (silently drop packets), or `VpnSplit` (used internally for the VPN process via `VpnSplitRule` to split tunnel UDP transport and DNS forwarder upstream traffic). |
 | `EndpointId` | Int64 | The handle of the target VPN endpoint (only applicable if `Action` is `Endpoint`). |
 
 ### 3.2. Flow-to-PID Mapping

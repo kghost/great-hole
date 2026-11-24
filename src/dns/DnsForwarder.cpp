@@ -10,6 +10,7 @@
 
 #include "ErrorCode.hpp"
 #include "InterfaceCommonTypes.hpp"
+#include "Utils/Overload.hpp"
 
 namespace gh::dns {
 
@@ -40,8 +41,8 @@ auto FromDnsEndpoint(const Interface::DnsEndpoint& dnsEndpoint) -> boost::asio::
 } // namespace
 
 DnsForwarder::DnsForwarder(boost::asio::any_io_executor executor, Interface::DnsForwarderConfiguration config,
-                           Interface::DnsForwarderCallbacks& callbacks)
-    : _Executor(std::move(executor)) {
+                           Interface::DnsForwarderCallbacks& callbacks, std::weak_ptr<VpnSplitRule> vpnSplitRule)
+    : _Executor(std::move(executor)), _VpnSplitRule(std::move(vpnSplitRule)) {
   std::unordered_map<std::string, std::shared_ptr<DnsUpstream>> upstreamsByName;
   _Upstreams.reserve(config.Upstreams.size());
   for (const auto& [name, upstreamConfig] : config.Upstreams) {
@@ -50,7 +51,7 @@ DnsForwarder::DnsForwarder(boost::asio::any_io_executor executor, Interface::Dns
     for (const auto& serverEndpoint : upstreamConfig.ServerEndpoints) {
       servers.push_back(FromDnsEndpoint(serverEndpoint));
     }
-    auto upstream = std::make_shared<DnsUpstream>(_Executor, name, std::move(servers));
+    auto upstream = std::make_shared<DnsUpstream>(_Executor, name, std::move(servers), upstreamConfig.Action);
     _Upstreams.push_back(upstream);
     upstreamsByName[name] = upstream;
   }
@@ -83,7 +84,37 @@ DnsForwarder::DnsForwarder(boost::asio::any_io_executor executor, Interface::Dns
   }
 }
 
-DnsForwarder::~DnsForwarder() = default;
+DnsForwarder::~DnsForwarder() {
+  if (auto splitRule = _VpnSplitRule.lock()) {
+    splitRule->RemoveCallback(*this);
+  }
+}
+
+auto DnsForwarder::Resolve(const ConnectionTracker::ConnectionKey& key) const
+    -> std::optional<Interface::PolicyRule::RoutingAction> {
+  auto matchPort = [this](uint16_t localPort) -> std::optional<Interface::PolicyRule::RoutingAction> {
+    if (localPort == 0) {
+      return std::nullopt;
+    }
+    for (const auto& upstream : _Upstreams) {
+      if (upstream->GetLocalPort() == localPort) {
+        return upstream->GetAction();
+      }
+    }
+    return std::nullopt;
+  };
+  return std::visit(
+      Overload{
+          [&](const ConnectionTracker::Ip4UdpKey& udpKey) -> std::optional<Interface::PolicyRule::RoutingAction> {
+            return matchPort(udpKey.LocalPort);
+          },
+          [&](const ConnectionTracker::Ip6UdpKey& udpKey) -> std::optional<Interface::PolicyRule::RoutingAction> {
+            return matchPort(udpKey.LocalPort);
+          },
+          [](const auto&) -> std::optional<Interface::PolicyRule::RoutingAction> { return std::nullopt; },
+      },
+      key);
+}
 
 auto DnsForwarder::GetConfiguration() const -> Interface::DnsForwarderConfiguration {
   Interface::DnsForwarderConfiguration config;
@@ -105,6 +136,7 @@ auto DnsForwarder::GetConfiguration() const -> Interface::DnsForwarderConfigurat
     config.Upstreams.emplace(upstream->GetUpstreamName(), Interface::DnsUpstreamConfiguration{
         .ServerEndpoints = std::move(serverEndpoints),
         .LocalPort = upstream->GetLocalPort(),
+        .Action = upstream->GetAction(),
     });
   }
 
@@ -161,12 +193,20 @@ auto DnsForwarder::DoStart() -> Omni::Fiber::Coroutine<ErrorCode> {
     startedListeners.push_back(listener);
   }
 
+  if (auto splitRule = _VpnSplitRule.lock()) {
+    splitRule->AddCallback(*this);
+  }
+
   co_return ErrorCode{};
 }
 
 auto DnsForwarder::DoWork() -> Omni::Fiber::Coroutine<void> { co_await _Service.value()._Stop.GetFiberCancelEvent(); }
 
 auto DnsForwarder::DoGracefulStop() -> Omni::Fiber::Coroutine<ErrorCode> {
+  if (auto splitRule = _VpnSplitRule.lock()) {
+    splitRule->RemoveCallback(*this);
+  }
+
   for (auto& listener : _Listeners) {
     co_await listener->Stop();
   }
